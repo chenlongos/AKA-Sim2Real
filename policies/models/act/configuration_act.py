@@ -20,6 +20,7 @@ class ACTConfig:
         num_encoder_layers: int = 6,
         num_decoder_layers: int = 6,
         dropout: float = 0.1,
+        dim_feedforward: int = 3200,  # 根据 LeRobot: 3200
         # 动作分块
         action_chunk_size: int = 16,
         # 相机数量
@@ -43,6 +44,7 @@ class ACTConfig:
         self.num_encoder_layers = num_encoder_layers
         self.num_decoder_layers = num_decoder_layers
         self.dropout = dropout
+        self.dim_feedforward = dim_feedforward  # 前馈网络维度
         self.action_chunk_size = action_chunk_size
         self.num_cameras = num_cameras
         # CVAE

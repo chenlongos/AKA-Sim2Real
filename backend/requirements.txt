@@ -21,3 +21,6 @@ huggingface_hub>=0.16.0
 
 # Development
 httpx>=0.24.0
+
+python-multipart
+einops

@@ -16,10 +16,6 @@ logger = logging.getLogger(__name__)
 # 当前按下的按键集合
 current_actions = set()
 
-# 数据采集状态
-is_collecting = False
-
-
 class SimNamespace(AsyncNamespace):
     """模拟器 Socket.IO 命名空间"""
 
@@ -55,13 +51,20 @@ class SimNamespace(AsyncNamespace):
 
     async def on_act_infer(self, sid: str, payload: dict):
         """ACT 模型推理"""
-        logger.info(f"收到 ACT 推理请求: {payload}")
+        logger.info(f"收到 ACT 推理请求")
 
         try:
             import config as cfg
             inference_state = payload.get("state", [0.0] * cfg.config.STATE_DIM)
+            image = payload.get("image", None)
+            logger.info(f"state: {inference_state}, image provided: {image is not None}")
+            if image:
+                logger.info(f"image length: {len(image)}")
+
             from act_model import act_inference
-            action = act_inference(inference_state)
+            action = act_inference(inference_state, image)
+
+            logger.info(f"推理结果: {action[0]}")
 
             await self.emit("act_infer_result", {
                 "success": True,
@@ -74,39 +77,170 @@ class SimNamespace(AsyncNamespace):
                 "error": str(e),
             })
 
-    async def on_set_collection(self, sid: str, enabled: bool):
-        """设置数据采集状态"""
-        global is_collecting
-        is_collecting = enabled
-        logger.info(f"数据采集{'开启' if enabled else '关闭'}")
+    async def on_start_episode(self, sid: str, payload: dict):
+        """
+        开始新的 episode
 
-        if not enabled and state.dataset_samples:
-            # 停止采集时自动导出
-            logger.info("停止采集，自动导出数据...")
+        Args:
+            payload: {"episode_id": int, "task_name": str}
+        """
+        episode_id = payload.get("episode_id", state.current_episode_id)
+        task_name = payload.get("task_name", "default")
+
+        logger.info(f"开始新 episode: {episode_id}, task: {task_name}")
+
+        # 使用新的 episode buffer 机制
+        state.start_episode(episode_id, task_name)
+
+        # 重置车辆状态
+        state.reset_car_state()
+        await self.emit("car_state_update", state.car_state)
+
+        await self.emit("episode_started", {
+            "episode_id": episode_id,
+            "task_name": task_name,
+            "frame_count": 0,
+        })
+
+    async def on_end_episode(self, sid: str, payload: dict):
+        """
+        结束当前 episode
+
+        Args:
+            payload: {"episode_id": int}
+        """
+        episode_id = payload.get("episode_id", state.current_episode_id)
+
+        logger.info(f"结束 episode: {episode_id}")
+
+        # 获取 episode 的所有样本
+        samples = state.end_episode(episode_id)
+
+        # 导出数据
+        if samples:
+            logger.info(f"导出 episode {episode_id} 的 {len(samples)} 个样本...")
             try:
-                from data_export import export_dataset
-                output_path = export_dataset(state.dataset_samples)
+                from data_export import export_episode
+                output_path = export_episode(
+                    samples,
+                    episode_id=episode_id,
+                    task_name=state.episode_buffer.get(episode_id, {}).get("task_name", "default"),
+                )
                 logger.info(f"数据已导出到: {output_path}")
-                await self.emit("collection_count", {
-                    "count": len(state.dataset_samples),
+                await self.emit("episode_ended", {
+                    "episode_id": episode_id,
+                    "frame_count": len(samples),
                     "exported": True,
-                    "output_path": output_path
+                    "output_path": output_path,
                 })
             except Exception as e:
-                logger.error(f"自动导出失败: {e}")
-                await self.emit("collection_count", {
-                    "count": len(state.dataset_samples),
+                logger.error(f"导出失败: {e}")
+                await self.emit("episode_ended", {
+                    "episode_id": episode_id,
+                    "frame_count": len(samples),
                     "exported": False,
-                    "error": str(e)
+                    "error": str(e),
                 })
         else:
-            await self.emit("collection_count", {"count": len(state.dataset_samples)})
+            await self.emit("episode_ended", {
+                "episode_id": episode_id,
+                "frame_count": 0,
+            })
+
+        # 清除 buffer
+        state.clear_episode_buffer(episode_id)
+
+    async def on_finalize_episode(self, sid: str, payload: dict):
+        """
+        完成 episode 并保存到磁盘（实时保存模式）
+
+        Args:
+            payload: {"episode_id": int}
+        """
+        episode_id = payload.get("episode_id", state.current_episode_id)
+
+        logger.info(f"完成 episode: {episode_id}")
+
+        # 获取 episode 的所有样本
+        samples = state.get_episode_samples(episode_id)
+
+        if samples:
+            try:
+                from data_export import export_episode
+                output_path = export_episode(
+                    samples,
+                    episode_id=episode_id,
+                    task_name=state.episode_metadata.get(episode_id, {}).get("task_name", "default"),
+                )
+                logger.info(f"数据已导出到: {output_path}")
+                await self.emit("episode_finalized", {
+                    "episode_id": episode_id,
+                    "frame_count": len(samples),
+                    "output_path": output_path,
+                })
+            except Exception as e:
+                logger.error(f"导出失败: {e}")
+                await self.emit("episode_finalized", {
+                    "episode_id": episode_id,
+                    "frame_count": len(samples),
+                    "error": str(e),
+                })
+
+    async def on_set_episode(self, sid: str, episode_id: int):
+        """设置当前采集的轮次"""
+        state.current_episode_id = episode_id
+        # 如果这个轮次不存在，初始化为空列表
+        if episode_id not in state.episode_samples:
+            state.episode_samples[episode_id] = []
+        logger.info(f"设置当前采集轮次: {episode_id}")
+        # 发送当前各轮次的样本数
+        await self.emit("episode_info", {
+            "current_episode": episode_id,
+            "episodes": {k: len(v) for k, v in state.episode_samples.items()},
+            "buffer_size": state.get_current_buffer_size(episode_id),
+        })
+
+    async def on_get_episodes(self, sid: str):
+        """获取所有轮次信息"""
+        await self.emit("episode_info", {
+            "current_episode": state.current_episode_id,
+            "episodes": {k: len(v) for k, v in state.episode_samples.items()},
+            "buffer_size": state.get_current_buffer_size(state.current_episode_id),
+        })
+
+    async def on_delete_episode(self, sid: str, payload: dict):
+        """删除指定轮次的数据"""
+        episode_id = payload.get("episode_id")
+        if episode_id is None:
+            return
+
+        # 从内存中删除
+        if episode_id in state.episode_samples:
+            del state.episode_samples[episode_id]
+        if episode_id in state.episode_buffer:
+            del state.episode_buffer[episode_id]
+        if episode_id in state.episode_metadata:
+            del state.episode_metadata[episode_id]
+        if episode_id in state.episode_frame_index:
+            del state.episode_frame_index[episode_id]
+
+        # 重新广播轮次信息
+        await self.on_get_episodes(sid)
+
+    async def on_get_episode_status(self, sid: str):
+        """获取当前 episode 状态"""
+        episode_id = state.current_episode_id
+        await self.emit("episode_status", {
+            "episode_id": episode_id,
+            "is_recording": state.is_recording,
+            "frame_count": state.get_current_buffer_size(episode_id),
+            "task_name": state.episode_buffer.get(episode_id, {}).get("task_name", "default"),
+        })
 
     async def on_collect_data(self, sid: str, payload: dict):
         """接收前端发送的图像数据进行保存"""
-        global is_collecting
-
-        if not is_collecting:
+        # 检查是否正在录制 episode
+        if not state.is_recording:
             return
 
         try:
@@ -115,19 +249,39 @@ class SimNamespace(AsyncNamespace):
             actions = payload.get("actions", [])
 
             # 获取当前车辆状态
-            car_state = state.car_state.copy()
+            car_state_copy = state.car_state.copy()
 
-            # 保存样本
+            # 只保留有变化的状态：x, y, angle, speed (去掉常量 maxSpeed, acceleration, rotationSpeed)
+            state_4d = {
+                "x": car_state_copy.get("x", 0),
+                "y": car_state_copy.get("y", 0),
+                "angle": car_state_copy.get("angle", 0),
+                "speed": car_state_copy.get("speed", 0),
+            }
+
+            # 保存样本到当前轮次
             sample = {
                 "image": image_data,  # base64编码的JPEG图像
-                "state": car_state,
+                "state": state_4d,
                 "actions": actions,
             }
-            state.dataset_samples.append(sample)
+
+            # 确保当前轮次的列表存在
+            if state.current_episode_id not in state.episode_samples:
+                state.episode_samples[state.current_episode_id] = []
+
+            state.episode_samples[state.current_episode_id].append(sample)
+
+            # 同时添加到 episode buffer（用于新的导出机制）
+            state.add_frame_to_episode(state.current_episode_id, sample)
 
             # 定期广播计数 (每10个样本)
-            if len(state.dataset_samples) % 10 == 0:
-                await self.emit("collection_count", {"count": len(state.dataset_samples)})
+            current_count = len(state.episode_samples[state.current_episode_id])
+            if current_count % 10 == 0:
+                await self.emit("collection_count", {
+                    "count": current_count,
+                    "episode_id": state.current_episode_id
+                })
 
         except Exception as e:
             logger.error(f"数据采集失败: {e}")

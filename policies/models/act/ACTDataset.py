@@ -42,13 +42,12 @@ class ACTDataset(torch.utils.data.Dataset):
 
         Returns:
             sample: 包含 'observation' 和 'action' 的字典
-        """
-        # 获取动作块对应的观察
-        # 假设观察是每个时间步都有，这里取最后一个时间步的观察作为当前观察
-        # 和前 action_chunk_size - 1 个历史观察
 
-        # 获取当前时间步的观察
-        current_idx = idx + self.action_chunk_size - 1
+        注意: 根据 ACT 论文，模型根据当前观测预测未来 chunk_size 步的动作
+        所以观测和动作应该是对齐的：观测是时刻 t，动作是 t 到 t+chunk_size-1
+        """
+        # 获取当前时间步的观察（不是未来时刻！）
+        current_idx = idx
 
         # 支持两种数据格式
         if "observation.image" in self.data:
@@ -58,6 +57,7 @@ class ACTDataset(torch.utils.data.Dataset):
             images = self.data["observation"]["image"][current_idx]
             state = self.data["observation"]["state"][current_idx]
 
+        # 动作是从当前时刻开始的未来 chunk_size 步
         action = self.data["action"][idx:idx + self.action_chunk_size]
 
         # 归一化图像

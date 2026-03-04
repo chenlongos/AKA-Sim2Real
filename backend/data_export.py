@@ -1,214 +1,632 @@
 """
-AKA-Sim 数据导出模块 - 将采集的数据导出为ACT训练格式
+AKA-Sim 数据导出模块 - LeRobot 风格数据采集
+支持完整的 episode 元数据管理、任务管理、自动分块
 """
 
 import base64
 import json
 import os
-import struct
+import time
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import threading
 
 import numpy as np
 import torch
+import pandas as pd
+from PIL import Image
 
 
-def export_dataset(
-    samples: List[Dict[str, Any]],
+# 默认配置
+DEFAULT_CHUNK_SIZE = 1000  # 每个 parquet 文件的最大样本数
+DEFAULT_CHUNK_SIZE_BYTES = 100 * 1024 * 1024  # 100MB 基于大小的分块
+ACTION_CHUNK_SIZE = 16
+DEFAULT_FPS = 10
+
+# 动作编码
+ACTION_TO_IDX = {"forward": 0, "backward": 1, "left": 2, "right": 3, "stop": 4}
+ACTION_DIM = len(ACTION_TO_IDX)
+
+# 状态编码 (4维) - 只保留有变化的状态
+STATE_KEYS = ["x", "y", "angle", "speed"]  # 去掉常量: maxSpeed, acceleration, rotationSpeed
+STATE_DIM = len(STATE_KEYS)
+
+
+class LeRobotDatasetMetadata:
+    """
+    LeRobot 风格数据集元数据管理类
+
+    目录结构:
+    output/dataset/
+    ├── data/
+    │   └── chunk-XXX/
+    │       └── file-XXX.parquet
+    ├── meta/
+    │   ├── episodes/
+    │   │   └── chunk-XXX/
+    │   │       └── file-XXX.parquet    # 每个 episode 的索引信息
+    │   ├── info.json                    # 数据集元信息
+    │   ├── stats.json                   # 统计信息
+    │   └── tasks.parquet                # 任务列表
+    └── videos/
+        └── observation.images.fpv/
+            └── chunk-XXX/
+                └── frame_XXXXXX.jpg
+    """
+
+    def __init__(
+        self,
+        output_dir: str = None,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        fps: int = DEFAULT_FPS,
+        features: dict = None,
+    ):
+        if output_dir is None:
+            output_dir = Path(__file__).parent.parent / "output" / "dataset"
+        self.output_dir = Path(output_dir)
+
+        self.data_dir = self.output_dir / "data"
+        self.videos_dir = self.output_dir / "videos" / "observation.images.fpv"
+        self.meta_dir = self.output_dir / "meta"
+        self.episodes_dir = self.meta_dir / "episodes"
+
+        self.chunk_size = chunk_size
+        self.fps = fps
+
+        # 默认特征定义
+        self.features = features or {
+            "observation": {
+                "image": {"dtype": "jpeg", "shape": [240, 320, 3]},
+                "state": {"dtype": "float32", "shape": [STATE_DIM]},
+            },
+            "action": {"dtype": "float32", "shape": [ACTION_CHUNK_SIZE, ACTION_DIM]},
+        }
+
+        # 元数据缓存
+        self._info = None
+        self._stats = None
+        self._tasks = []
+        self._episodes = []
+        self._metadata_buffer = []
+        self._buffer_lock = threading.Lock()
+
+        # 当前写入状态
+        self._total_samples = 0
+        self._total_episodes = 0
+
+        # 加载已有元数据
+        self._load_existing_metadata()
+
+    def _load_existing_metadata(self):
+        """加载已有元数据（如果存在）"""
+        info_path = self.meta_dir / "info.json"
+        stats_path = self.meta_dir / "stats.json"
+
+        if info_path.exists():
+            with open(info_path, "r") as f:
+                self._info = json.load(f)
+            self._total_samples = self._info.get("total_frames", 0)
+            self._total_episodes = self._info.get("total_episodes", 0)
+
+        if stats_path.exists():
+            with open(stats_path, "r") as f:
+                self._stats = json.load(f)
+
+        # 加载已有 episodes
+        if self.episodes_dir.exists():
+            for parquet_file in sorted(self.episodes_dir.glob("**/*.parquet")):
+                df = pd.read_parquet(parquet_file)
+                for _, row in df.iterrows():
+                    self._episodes.append(row.to_dict())
+
+    @property
+    def info(self):
+        if self._info is None:
+            self._info = {
+                "version": "1.0",
+                "dataset_name": "aka-sim",
+                "fps": self.fps,
+                "total_frames": self._total_samples,
+                "total_episodes": self._total_episodes,
+                "chunk_size": self.chunk_size,
+                "features": self.features,
+            }
+        return self._info
+
+    @property
+    def stats(self):
+        if self._stats is None:
+            self._stats = {
+                "observation.state": {
+                    "min": [],
+                    "max": [],
+                    "mean": [],
+                    "std": [],
+                }
+            }
+        return self._stats
+
+    def _ensure_dirs(self):
+        """确保目录结构存在"""
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.videos_dir.mkdir(parents=True, exist_ok=True)
+        self.meta_dir.mkdir(parents=True, exist_ok=True)
+        self.episodes_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_episode(
+        self,
+        samples: List[Dict[str, Any]],
+        episode_id: int,
+        task_name: str = "default",
+    ) -> Dict[str, Any]:
+        """
+        保存 episode 到磁盘
+
+        Args:
+            samples: 该 episode 的样本列表
+            episode_id: episode ID
+            task_name: 任务名称
+
+        Returns:
+            episode 元数据
+        """
+        if not samples:
+            return {}
+
+        self._ensure_dirs()
+
+        episode_start_idx = self._total_samples
+        num_frames = len(samples)
+
+        # 收集状态统计
+        all_states = []
+        action_counts = {k: 0 for k in ACTION_TO_IDX.keys()}
+
+        # 处理每个样本
+        for i, sample in enumerate(samples):
+            # 保存图像
+            image_data = sample.get("image", "")
+            if image_data.startswith("data:image"):
+                image_data = image_data.split(",")[1]
+
+            image_bytes = base64.b64decode(image_data)
+
+            # 根据总索引计算 chunk
+            # 使用全局递增的帧索引
+            global_frame_idx = episode_start_idx + i
+            chunk_idx = global_frame_idx // self.chunk_size
+            file_idx = global_frame_idx % self.chunk_size
+
+            image_filename = f"frame_{file_idx:06d}.jpg"
+            chunk_dir = self.videos_dir / f"chunk-{chunk_idx:03d}"
+            chunk_dir.mkdir(exist_ok=True)
+            image_path = chunk_dir / image_filename
+
+            # 如果图像已存在则跳过（避免覆盖）
+            if not image_path.exists():
+                with open(image_path, "wb") as f:
+                    f.write(image_bytes)
+
+            # 收集状态
+            state_values = [sample.get("state", {}).get(k, 0) for k in STATE_KEYS]
+            all_states.append(state_values)
+
+            # 统计动作
+            for action in sample.get("actions", []):
+                if action in action_counts:
+                    action_counts[action] += 1
+
+        # 计算状态归一化统计
+        states_array = np.array(all_states, dtype=np.float32)
+        state_min = states_array.min(axis=0)
+        state_max = states_array.max(axis=0)
+        state_mean = states_array.mean(axis=0)
+        state_std = states_array.std(axis=0) + 1e-6  # 避免除零
+
+        # 归一化状态
+        state_range = state_max - state_min
+        state_range = np.where(state_range > 1e-6, state_range, np.ones_like(state_range))
+        normalized_states = (states_array - state_min) / state_range
+
+        # 创建动作数据
+        actions_array = np.zeros((num_frames, ACTION_CHUNK_SIZE, ACTION_DIM), dtype=np.float32)
+        for i in range(num_frames):
+            sample_actions = samples[i].get("actions", [])
+            for j in range(min(len(sample_actions), ACTION_CHUNK_SIZE)):
+                action = sample_actions[j]
+                if action in ACTION_TO_IDX:
+                    actions_array[i, j, ACTION_TO_IDX[action]] = 1.0
+
+        # 写入数据 parquet
+        for chunk_idx in range((episode_start_idx // self.chunk_size), ((self._total_samples + num_frames) // self.chunk_size) + 1):
+            start_idx = max(episode_start_idx, chunk_idx * self.chunk_size)
+            end_idx = min(self._total_samples + num_frames, (chunk_idx + 1) * self.chunk_size)
+
+            if end_idx <= episode_start_idx or start_idx >= episode_start_idx + num_frames:
+                continue
+
+            chunk_start = max(start_idx, episode_start_idx)
+            chunk_end = min(end_idx, episode_start_idx + num_frames)
+
+            # 构建该 chunk 的数据
+            local_start = chunk_start - episode_start_idx
+            local_end = chunk_end - episode_start_idx
+
+            actions_list = []
+            for i in range(local_start, local_end):
+                action_flat = actions_array[i].flatten().tolist()
+                actions_list.append(action_flat)
+
+            chunk_data = {
+                "observation.image": [
+                    f"videos/observation.images.fpv/chunk-{chunk_idx:03d}/frame_{i - (chunk_idx * self.chunk_size):06d}.jpg"
+                    for i in range(chunk_start, chunk_end)
+                ],
+                "observation.state": normalized_states[local_start:local_end].tolist(),
+                "action": actions_list,
+            }
+
+            df = pd.DataFrame(chunk_data)
+            chunk_file_dir = self.data_dir / f"chunk-{chunk_idx:03d}"
+            chunk_file_dir.mkdir(exist_ok=True)
+
+            # 每 100 个样本一个文件（需要追加而不是覆盖）
+            for file_idx in range(0, end_idx - start_idx, 100):
+                sub_end = min(file_idx + 100, end_idx - start_idx)
+                sub_df = df.iloc[file_idx:sub_end]
+                sub_file = chunk_file_dir / f"file-{file_idx // 100:03d}.parquet"
+
+                # 如果文件已存在，读取并追加新数据
+                if sub_file.exists():
+                    existing_df = pd.read_parquet(sub_file)
+                    combined_df = pd.concat([existing_df, sub_df], ignore_index=True)
+                    combined_df.to_parquet(sub_file, index=False)
+                else:
+                    sub_df.to_parquet(sub_file, index=False)
+
+        # 更新统计
+        self._update_stats(state_min, state_max, state_mean, state_std, action_counts)
+
+        # 创建 episode 元数据
+        episode_meta = {
+            "episode_index": episode_id,
+            "task_name": task_name,
+            "start_frame_index": episode_start_idx,
+            "num_frames": num_frames,
+            "chunk_index": episode_start_idx // self.chunk_size,
+            "start_timestamp": time.time() - (num_frames / self.fps),
+            "duration": num_frames / self.fps,
+        }
+
+        # 保存 episode 元数据
+        self._save_episode_metadata(episode_meta)
+
+        # 更新 info
+        self._total_samples += num_frames
+        self._total_episodes += 1
+        self._info = None  # 标记需要重新计算
+
+        # 写入元数据
+        self._save_all_metadata()
+
+        return episode_meta
+
+    def _update_stats(
+        self,
+        state_min: np.ndarray,
+        state_max: np.ndarray,
+        state_mean: np.ndarray,
+        state_std: np.ndarray,
+        action_counts: Dict[str, int],
+    ):
+        """更新统计信息"""
+        if self._stats is None:
+            self._stats = {
+                "observation.state": {
+                    "min": state_min.tolist(),
+                    "max": state_max.tolist(),
+                    "mean": state_mean.tolist(),
+                    "std": state_std.tolist(),
+                },
+                "action_counts": action_counts,
+            }
+        else:
+            # 合并统计
+            old_min = np.array(self._stats.get("observation.state", {}).get("min", STATE_DIM * [0]), dtype=np.float32)
+            old_max = np.array(self._stats.get("observation.state", {}).get("max", STATE_DIM * [1]), dtype=np.float32)
+
+            combined_min = np.minimum(old_min, state_min)
+            combined_max = np.maximum(old_max, state_max)
+
+            self._stats["observation.state"] = {
+                "min": combined_min.tolist(),
+                "max": combined_max.tolist(),
+                "mean": ((combined_min + combined_max) / 2).tolist(),
+                "std": (combined_max - combined_min).tolist(),
+            }
+
+            # 合并动作计数
+            old_action_counts = self._stats.get("action_counts", {})
+            self._stats["action_counts"] = {
+                k: old_action_counts.get(k, 0) + action_counts.get(k, 0)
+                for k in ACTION_TO_IDX.keys()
+            }
+
+    def _save_episode_metadata(self, episode_meta: Dict[str, Any]):
+        """保存单个 episode 元数据到 parquet"""
+        self._episodes.append(episode_meta)
+
+        # 写入 episodes parquet
+        df = pd.DataFrame(self._episodes)
+        chunk_idx = episode_meta["start_frame_index"] // self.chunk_size
+
+        chunk_dir = self.episodes_dir / f"chunk-{chunk_idx:03d}"
+        chunk_dir.mkdir(exist_ok=True)
+
+        # 只保存该 chunk 的 episodes
+        chunk_start = chunk_idx * self.chunk_size
+        chunk_end = (chunk_idx + 1) * self.chunk_size
+
+        chunk_episodes = [
+            ep for ep in self._episodes
+            if chunk_start <= ep["start_frame_index"] < chunk_end
+        ]
+
+        if chunk_episodes:
+            df_chunk = pd.DataFrame(chunk_episodes)
+            parquet_file = chunk_dir / "episodes.parquet"
+            df_chunk.to_parquet(parquet_file, index=False)
+
+    def _save_all_metadata(self):
+        """保存所有元数据文件"""
+        # 保存 info.json
+        self._ensure_dirs()
+        info = self.info
+        with open(self.meta_dir / "info.json", "w") as f:
+            json.dump(info, f, indent=2)
+
+        # 保存 stats.json
+        with open(self.meta_dir / "stats.json", "w") as f:
+            json.dump(self.stats, f, indent=2)
+
+        # 保存 tasks.parquet
+        if self._tasks:
+            df_tasks = pd.DataFrame(self._tasks)
+            df_tasks.to_parquet(self.meta_dir / "tasks.parquet", index=False)
+
+    def add_task(self, task_name: str, description: str = ""):
+        """添加任务"""
+        task = {
+            "task_name": task_name,
+            "description": description,
+            "created_at": time.time(),
+        }
+        self._tasks.append(task)
+
+    def get_info(self) -> Dict[str, Any]:
+        """获取数据集信息"""
+        return self.info
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        return self.stats
+
+    def get_episodes(self) -> List[Dict[str, Any]]:
+        """获取所有 episodes"""
+        return self._episodes
+
+    def finalize(self):
+        """完成数据导出，保存所有元数据"""
+        self._save_all_metadata()
+
+
+# 全局元数据实例
+_global_metadata: Optional[LeRobotDatasetMetadata] = None
+_metadata_lock = threading.Lock()
+
+
+def get_metadata(
     output_dir: str = None,
-    chunk_size: int = 1000,
-    action_chunk_size: int = 16,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    fps: int = DEFAULT_FPS,
+) -> LeRobotDatasetMetadata:
+    """获取全局元数据实例（单例模式）"""
+    global _global_metadata
+
+    with _metadata_lock:
+        if _global_metadata is None:
+            _global_metadata = LeRobotDatasetMetadata(
+                output_dir=output_dir,
+                chunk_size=chunk_size,
+                fps=fps,
+            )
+    return _global_metadata
+
+
+def reset_metadata():
+    """重置全局元数据实例"""
+    global _global_metadata
+    with _metadata_lock:
+        if _global_metadata is not None:
+            _global_metadata.finalize()
+        _global_metadata = None
+
+
+def export_episode(
+    samples: List[Dict[str, Any]],
+    episode_id: int = 1,
+    task_name: str = "default",
+    output_dir: str = None,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    action_chunk_size: int = ACTION_CHUNK_SIZE,
 ) -> str:
     """
-    将采集的样本导出为ACT训练数据格式
+    导出单个 episode
 
     Args:
-        samples: 采集的样本列表，每个样本包含 image, state, actions
+        samples: 样本列表
+        episode_id: episode ID
+        task_name: 任务名称
         output_dir: 输出目录
-        chunk_size: 每个parquet文件的最大样本数
+        chunk_size: 分块大小
         action_chunk_size: 动作分块大小
 
     Returns:
         导出的目录路径
     """
-    # 默认保存到项目根目录
-    if output_dir is None:
-        output_dir = Path(__file__).parent.parent / "output" / "dataset"
-    else:
-        output_dir = Path(output_dir)
+    if not samples:
+        return ""
 
-    import pandas as pd
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    metadata = get_metadata(output_dir, chunk_size)
+    metadata.save_episode(samples, episode_id, task_name)
 
-    output_path = Path(output_dir)
-    data_dir = output_path / "data"
-    videos_dir = output_path / "videos" / "observation.images.fpv"
-    meta_dir = output_path / "meta" / "episodes"
+    return str(metadata.output_dir)
 
-    # 创建目录
-    data_dir.mkdir(parents=True, exist_ok=True)
-    videos_dir.mkdir(parents=True, exist_ok=True)
-    meta_dir.mkdir(parents=True, exist_ok=True)
 
-    # 动作编码: forward=0, backward=1, left=2, right=3, stop=4
-    action_to_idx = {"forward": 0, "backward": 1, "left": 2, "right": 3, "stop": 4}
+def export_all_episodes(
+    episode_samples: Dict[int, List[Dict[str, Any]]],
+    output_dir: str = None,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    action_chunk_size: int = ACTION_CHUNK_SIZE,
+) -> str:
+    """
+    导出所有 episodes
 
-    # 状态编码 (7维)
-    # [x, y, angle, speed, maxSpeed, acceleration, rotationSpeed]
-    state_keys = ["x", "y", "angle", "speed", "maxSpeed", "acceleration", "rotationSpeed"]
+    Args:
+        episode_samples: 所有 episodes 的样本 {episode_id: samples}
+        output_dir: 输出目录
+        chunk_size: 分块大小
+        action_chunk_size: 动作分块大小
 
-    num_samples = len(samples)
-    num_chunks = (num_samples + chunk_size - 1) // chunk_size
+    Returns:
+        导出的目录路径
+    """
+    if not episode_samples:
+        return ""
 
-    print(f"导出 {num_samples} 个样本到 {output_dir}")
-    print(f"分为 {num_chunks} 个数据块")
+    metadata = get_metadata(output_dir, chunk_size)
 
-    # 状态统计
-    all_states = []
-    action_counts = {k: 0 for k in action_to_idx.keys()}
+    # 添加默认任务
+    metadata.add_task("default", "Default driving task")
 
-    for i, sample in enumerate(samples):
-        # 解码并保存图像
-        image_data = sample["image"]
-        if image_data.startswith("data:image"):
-            # 移除 data:image/jpeg;base64, 前缀
-            image_data = image_data.split(",")[1]
+    for episode_id in sorted(episode_samples.keys()):
+        samples = episode_samples[episode_id]
+        if samples:
+            metadata.save_episode(samples, episode_id, "default")
 
-        image_bytes = base64.b64decode(image_data)
+    metadata.finalize()
 
-        # 保存图像文件
-        chunk_idx = i // chunk_size
-        file_idx = i % chunk_size
-        image_filename = f"frame_{file_idx:06d}.jpg"
-        chunk_dir = videos_dir / f"chunk-{chunk_idx:03d}"
-        chunk_dir.mkdir(exist_ok=True)
-        image_path = chunk_dir / image_filename
+    return str(metadata.output_dir)
 
-        with open(image_path, "wb") as f:
-            f.write(image_bytes)
 
-        # 收集状态和动作统计
-        state_values = [sample["state"].get(k, 0) for k in state_keys]
-        all_states.append(state_values)
+def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
+    """
+    加载数据集
 
-        for action in sample.get("actions", []):
-            if action in action_counts:
-                action_counts[action] += 1
+    Args:
+        data_dir: 数据集目录
+    """
+    from pathlib import Path
 
-        # 定期打印进度
-        if (i + 1) % 100 == 0:
-            print(f"  处理进度: {i + 1}/{num_samples}")
+    project_root = Path(__file__).parent.parent
+    data_path = project_root / data_dir
 
-    # 计算状态归一化参数
-    states_array = np.array(all_states, dtype=np.float32)
+    # 加载统计信息
+    stats_path = data_path / "meta" / "stats.json"
+    if stats_path.exists():
+        with open(stats_path, "r") as f:
+            stats = json.load(f)
 
-    # 确保是2维数组
-    if states_array.ndim == 1:
-        states_array = states_array.reshape(-1, 1)
+    # 加载info获取维度信息
+    info_path = data_path / "meta" / "info.json"
+    if info_path.exists():
+        with open(info_path, "r") as f:
+            info = json.load(f)
 
-    state_mean = states_array.mean(axis=0)
-    state_std = states_array.std(axis=0)
-    state_min = states_array.min(axis=0)
-    state_max = states_array.max(axis=0)
+    action_chunk_size = info.get("chunk_size", ACTION_CHUNK_SIZE)
+    action_dim = ACTION_DIM
 
-    # 转换为tensor避免除零问题
-    state_min_tensor = torch.from_numpy(state_min).float()
-    state_max_tensor = torch.from_numpy(state_max).float()
-    state_range = state_max_tensor - state_min_tensor
-    state_range = torch.where(state_range > 1e-6, state_range, torch.ones_like(state_range))
+    # 加载所有parquet文件
+    parquet_files = sorted(data_path.glob("data/chunk-*/file-*.parquet"))
 
-    # 创建数据parquet文件
-    print("创建数据文件...")
+    images = []
+    states = []
+    actions = []
 
-    # 状态归一化 (使用min-max归一化)
-    states_tensor = torch.from_numpy(states_array).float()
-    normalized_states = (states_tensor - state_min_tensor) / state_range
+    for parquet_file in parquet_files:
+        df = pd.read_parquet(parquet_file)
 
-    # 创建动作序列 (每个样本对应 action_chunk_size 个动作)
-    # 对于离散动作，我们使用 one-hot 编码
-    action_dim = len(action_to_idx)
+        # 加载图像
+        for img_path in df["observation.image"]:
+            full_path = data_path / img_path
+            if full_path.exists():
+                img = Image.open(full_path).convert("RGB")
+                img = img.resize((224, 224))
+                img_tensor = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
+                images.append(img_tensor)
+            else:
+                images.append(torch.zeros(3, 224, 224))
 
-    # 动作序列：对于每个时间步，如果有动作则编码为one-hot，否则为全零
-    actions_array = np.zeros((num_samples, action_chunk_size, action_dim), dtype=np.float32)
+        # 加载状态
+        for state_list in df["observation.state"]:
+            state_arr = np.array(state_list, dtype=np.float32)
+            state = torch.from_numpy(state_arr).float()
+            states.append(state)
 
-    for i in range(num_samples):
-        sample_actions = samples[i].get("actions", [])
-        for j in range(min(len(sample_actions), action_chunk_size)):
-            action = sample_actions[j]
-            if action in action_to_idx:
-                actions_array[i, j, action_to_idx[action]] = 1.0
+        # 加载动作
+        for action_data in df["action"]:
+            if isinstance(action_data, list):
+                if len(action_data) > 0 and isinstance(action_data[0], (list, np.ndarray)):
+                    flat = []
+                    for item in action_data:
+                        if hasattr(item, 'flatten'):
+                            flat.extend(item.flatten().tolist())
+                        else:
+                            flat.extend(list(item))
+                    action_arr = np.array(flat, dtype=np.float32)
+                else:
+                    action_arr = np.array(action_data, dtype=np.float32)
+            elif hasattr(action_data, 'flatten'):
+                action_arr = action_data.flatten()
+            else:
+                action_arr = np.array(action_data, dtype=np.float32)
 
-    # 分块写入parquet
-    for chunk_idx in range(num_chunks):
-        start_idx = chunk_idx * chunk_size
-        end_idx = min((chunk_idx + 1) * chunk_size, num_samples)
+            action_arr = action_arr.reshape(action_chunk_size, action_dim)
+            action = torch.from_numpy(action_arr).float()
+            actions.append(action)
 
-        # 将action转换为可序列化的格式 (每个样本的action展平为1D列表)
-        actions_list = []
-        for i in range(start_idx, end_idx):
-            # 将 (action_chunk_size, action_dim) 展平为 (action_chunk_size * action_dim,)
-            action_flat = actions_array[i].flatten().tolist()
-            actions_list.append(action_flat)
+    images = torch.stack(images)
+    states = torch.stack(states)
+    actions = torch.stack(actions)
 
-        chunk_data = {
-            "observation.image": [f"videos/observation.images.fpv/chunk-{chunk_idx:03d}/frame_{i - start_idx:06d}.jpg"
-                                for i in range(start_idx, end_idx)],
-            "observation.state": normalized_states[start_idx:end_idx].tolist(),
-            "action": actions_list,
-        }
-
-        df = pd.DataFrame(chunk_data)
-        chunk_file = data_dir / f"chunk-{chunk_idx:03d}"
-        chunk_file.mkdir(exist_ok=True)
-
-        for file_idx in range(0, end_idx - start_idx, 100):
-            sub_end = min(file_idx + 100, end_idx - start_idx)
-            sub_df = df.iloc[file_idx:sub_end]
-            sub_file = chunk_file / f"file-{file_idx // 100:03d}.parquet"
-            sub_df.to_parquet(sub_file, index=False)
-
-    # 创建元数据
-    print("创建元数据...")
-
-    # info.json
-    info = {
-        "version": "1.0",
-        "num_samples": num_samples,
-        "action_chunk_size": action_chunk_size,
-        "action_dim": action_dim,
-        "state_dim": len(state_keys),
-        "num_cameras": 1,
-        "camera_names": ["fpv"],
+    return {
+        "observation.image": images,
+        "observation.state": states,
+        "action": actions,
     }
-    with open(output_path / "meta" / "info.json", "w") as f:
-        json.dump(info, f, indent=2)
 
-    # stats.json
-    stats = {
-        "state_mean": state_mean.tolist() if hasattr(state_mean, 'tolist') else state_mean,
-        "state_std": state_std.tolist() if hasattr(state_std, 'tolist') else state_std,
-        "state_min": state_min.tolist() if hasattr(state_min, 'tolist') else state_min,
-        "state_max": state_max.tolist() if hasattr(state_max, 'tolist') else state_max,
-        "action_counts": action_counts,
-    }
-    with open(output_path / "meta" / "stats.json", "w") as f:
-        json.dump(stats, f, indent=2)
 
-    print(f"导出完成! 数据保存在: {output_dir}")
-    print(f"  数据文件: {data_dir}")
-    print(f"  图像文件: {videos_dir}")
-    print(f"  元数据: {meta_dir}")
-
-    return str(output_path)
+# 兼容旧接口
+def export_dataset(
+    samples: List[Dict[str, Any]],
+    output_dir: str = None,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    action_chunk_size: int = ACTION_CHUNK_SIZE,
+) -> str:
+    """导出数据集（兼容旧接口）"""
+    return export_episode(
+        samples=samples,
+        episode_id=1,
+        output_dir=output_dir,
+        chunk_size=chunk_size,
+        action_chunk_size=action_chunk_size,
+    )
 
 
 def create_demo_samples(num_samples: int = 100) -> List[Dict[str, Any]]:
     """创建演示样本用于测试导出功能"""
     samples = []
     for i in range(num_samples):
-        # 创建一个简单的测试图像 (1x1 像素的红色 JPEG)
-        # 这是一个最小的有效 JPEG 图像
         sample = {
             "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBEQCEAwEPwAB//9k=",
             "state": {

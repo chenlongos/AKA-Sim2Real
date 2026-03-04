@@ -69,11 +69,21 @@ class TrainingCallbacks:
                 pass
 
 
-def load_dataset(data_dir: str = "dataset") -> Dict[str, torch.Tensor]:
-    """加载数据集"""
+def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
+    """
+    加载数据集
+
+    Args:
+        data_dir: 数据集目录
+    """
     # 使用项目根目录
     project_root = Path(__file__).parent.parent
     data_path = project_root / data_dir
+
+    # 如果 dataset 目录存在，也尝试从那里加载（兼容旧格式）
+    legacy_path = project_root / "dataset"
+    if not data_path.exists() and legacy_path.exists():
+        data_path = legacy_path
 
     # 加载统计信息
     with open(data_path / "meta" / "stats.json", "r") as f:
@@ -175,6 +185,10 @@ class SimpleDataset(torch.utils.data.Dataset):
         state = self.data["observation.state"][idx]
         action = self.data["action"][idx]
 
+        # 只保留有变化的状态：x, y, angle, speed (前4维)
+        # 去掉常量：maxSpeed, acceleration, rotationSpeed
+        state = state[:4]
+
         # 归一化图像
         images = (images.unsqueeze(0) - self.image_mean) / self.image_std
 
@@ -194,6 +208,7 @@ async def train_model(
     epochs: int = 50,
     batch_size: int = 8,
     lr: float = 1e-4,
+    resume_from: str = None,  # 从已有模型继续训练
 ) -> Optional[ACTModel]:
     """
     训练ACT模型
@@ -205,6 +220,7 @@ async def train_model(
         epochs: 训练轮数
         batch_size: 批次大小
         lr: 学习率
+        resume_from: 从已有模型文件继续训练，None表示从头训练
 
     Returns:
         训练好的模型
@@ -222,6 +238,8 @@ async def train_model(
     try:
         logger.info("=" * 50)
         logger.info("开始训练ACT模型")
+        if resume_from:
+            logger.info(f"从已有模型继续训练: {resume_from}")
         logger.info("=" * 50)
 
         # 加载数据
@@ -229,28 +247,42 @@ async def train_model(
 
         # 获取动作维度
         action_dim = data["action"].shape[-1]
-        state_dim = data["observation.state"].shape[-1]
+        raw_state_dim = data["observation.state"].shape[-1]
         action_chunk_size = data["action"].shape[1]
 
-        logger.info(f"action_dim: {action_dim}, state_dim: {state_dim}, chunk_size: {action_chunk_size}")
+        # 只使用前 4 维：x, y, angle, speed
+        state_dim = 4
 
-        # 创建配置
+        logger.info(f"action_dim: {action_dim}, state_dim: {state_dim} (原始: {raw_state_dim}), chunk_size: {action_chunk_size}")
+
+        # 创建配置 - 与推理配置一致
         config = ACTConfig(
-            state_dim=state_dim,
+            state_dim=4,  # 只用 x, y, angle, speed
             action_dim=action_dim,
             action_chunk_size=action_chunk_size,
-            hidden_dim=256,  # 减小以加快训练
-            num_encoder_layers=2,
-            num_decoder_layers=2,
-            num_attention_heads=4,
+            hidden_dim=512,
+            num_encoder_layers=4,
+            num_decoder_layers=4,
+            num_attention_heads=8,
+            dim_feedforward=3200,
             use_cvae=False,
             use_temporal_ensembling=False,
             use_spatial_softmax=True,
-            latent_dim=16,
+            latent_dim=32,
         )
 
         # 创建模型
         model = ACTModel(config)
+
+        # 如果指定了从已有模型继续训练
+        if resume_from:
+            resume_path = Path(resume_from)
+            if resume_path.exists():
+                model.load_state_dict(torch.load(resume_path, map_location='cpu'))
+                logger.info(f"已加载已有模型: {resume_path}")
+            else:
+                logger.warning(f"指定的可模型文件不存在: {resume_path}，从头开始训练")
+
         logger.info(f"模型参数量: {sum(p.numel() for p in model.parameters()):,}")
 
         # 数据集

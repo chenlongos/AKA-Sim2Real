@@ -32,9 +32,44 @@ export const sendImageData = (imageData: string, actions: string[]) => {
     });
 }
 
-// 开始/停止数据采集
-export const setDataCollection = (enabled: boolean) => {
-    socket.emit('set_collection', enabled);
+// 设置当前采集轮次
+export const setEpisode = (episodeId: number) => {
+    socket.emit('set_episode', episodeId);
+}
+
+// 获取所有轮次信息
+export const getEpisodes = () => {
+    socket.emit('get_episodes');
+}
+
+// 删除指定轮次的数据
+export const deleteEpisode = (episodeId: number) => {
+    socket.emit('delete_episode', { episode_id: episodeId });
+}
+
+// 开始新的 episode
+export const startEpisode = (episodeId: number, taskName: string = "default") => {
+    socket.emit('start_episode', { episode_id: episodeId, task_name: taskName });
+}
+
+// 结束当前 episode
+export const endEpisode = (episodeId?: number) => {
+    socket.emit('end_episode', { episode_id: episodeId });
+}
+
+// 完成 episode 并保存到磁盘
+export const finalizeEpisode = (episodeId?: number) => {
+    socket.emit('finalize_episode', { episode_id: episodeId });
+}
+
+// 获取当前 episode 状态
+export const getEpisodeStatus = () => {
+    socket.emit('get_episode_status');
+}
+
+// 暂停数据采集
+export const pauseCollection = () => {
+    socket.emit('pause_collection');
 }
 
 // 训练相关
@@ -44,6 +79,8 @@ export const startTraining = (params: {
     epochs?: number;
     batch_size?: number;
     lr?: number;
+    episode_ids?: number[];  // 指定使用哪些轮次
+    resume_from?: string;   // 从已有模型继续训练
 }) => {
     return fetch('/api/train', {
         method: 'POST',
@@ -65,11 +102,11 @@ export const loadTrainedModel = () => {
     return fetch('/api/act/load_trained', { method: 'POST' }).then(res => res.json());
 };
 
-export const runInference = (state: number[]) => {
+export const runInference = (state: number[], image?: string) => {
     return fetch('/api/act/run_inference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state }),
+        body: JSON.stringify({ state, image }),
     }).then(res => res.json());
 };
 

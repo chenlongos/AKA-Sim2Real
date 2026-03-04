@@ -143,6 +143,7 @@ def train(
         num_encoder_layers=4,
         num_decoder_layers=4,
         num_attention_heads=8,
+        dim_feedforward=3200,  # 根据 LeRobot
         use_cvae=False,  # 简化训练
         use_temporal_ensembling=False,
         use_spatial_softmax=True,

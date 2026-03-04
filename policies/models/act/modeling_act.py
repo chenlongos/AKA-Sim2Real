@@ -7,10 +7,50 @@ ACT (Action Chunking Transformer) Model Implementation
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import einops
 from typing import Optional, Tuple, Dict
 import math
 from .configuration_act import ACTConfig
 from .ACTDataset import ACTDataset
+
+
+class ACTSinusoidalPositionEmbedding2d(nn.Module):
+    """2D sinusoidal positional embeddings - 与 LeRobot 一致"""
+
+    def __init__(self, dimension: int):
+        super().__init__()
+        self.dimension = dimension
+        self._two_pi = 2 * math.pi
+        self._eps = 1e-6
+        self._temperature = 10000
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: A (B, C, H, W) batch of 2D feature map
+        Returns:
+            A (1, C, H, W) batch of corresponding sinusoidal positional embeddings
+        """
+        not_mask = torch.ones_like(x[0, :1])  # (1, H, W)
+        y_range = not_mask.cumsum(1, dtype=torch.float32)
+        x_range = not_mask.cumsum(2, dtype=torch.float32)
+
+        # 归一化到 [0, 2π]
+        y_range = y_range / (y_range[:, -1:, :] + self._eps) * self._two_pi
+        x_range = x_range / (x_range[:, :, -1:] + self._eps) * self._two_pi
+
+        inverse_frequency = self._temperature ** (
+            2 * (torch.arange(self.dimension, dtype=torch.float32, device=x.device) // 2) / self.dimension
+        )
+
+        x_range = x_range.unsqueeze(-1) / inverse_frequency
+        y_range = y_range.unsqueeze(-1) / inverse_frequency
+
+        pos_embed_x = torch.stack((x_range[..., 0::2].sin(), x_range[..., 1::2].cos()), dim=-1).flatten(3)
+        pos_embed_y = torch.stack((y_range[..., 0::2].sin(), y_range[..., 1::2].cos()), dim=-1).flatten(3)
+        pos_embed = torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)
+
+        return pos_embed
 
 
 class SpatialSoftmax(nn.Module):
@@ -437,7 +477,7 @@ class ACTModel(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=config.hidden_dim,
             nhead=config.num_attention_heads,
-            dim_feedforward=config.hidden_dim * 4,
+            dim_feedforward=config.dim_feedforward,  # 使用配置中的值 (3200)
             dropout=config.dropout,
             activation="gelu",
             batch_first=True,
@@ -451,7 +491,7 @@ class ACTModel(nn.Module):
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=config.hidden_dim,
             nhead=config.num_attention_heads,
-            dim_feedforward=config.hidden_dim * 4,
+            dim_feedforward=config.dim_feedforward,  # 使用配置中的值 (3200)
             dropout=config.dropout,
             activation="gelu",
             batch_first=True,
@@ -464,13 +504,14 @@ class ACTModel(nn.Module):
         # 动作预测头
         self.action_head = nn.Linear(config.hidden_dim, config.action_dim)
 
-        # 位置编码
-        self.action_pos_embedding = nn.Parameter(
-            torch.randn(1, config.action_chunk_size, config.hidden_dim) * 0.02
-        )
+        # 2D 图像位置编码 - 与 LeRobot 一致
+        self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(config.hidden_dim // 2)
 
-        # 状态查询
-        self.state_query = nn.Parameter(torch.randn(1, 1, config.hidden_dim) * 0.02)
+        # 图像特征投影层
+        self.encoder_img_feat_input_proj = nn.Conv2d(512, config.hidden_dim, kernel_size=1)
+
+        # 状态 1D 位置编码
+        self.encoder_1d_feature_pos_embed = nn.Embedding(2, config.hidden_dim)  # latent + state
 
         # Temporal Ensembling 状态
         self.register_buffer('prev_action', None)
@@ -484,7 +525,7 @@ class ACTModel(nn.Module):
         infer_cvae: bool = True,
     ) -> Dict[str, torch.Tensor]:
         """
-        前向传播
+        前向传播 - 修改为 LeRobot 架构 (使用 Cross-Attention)
 
         Args:
             images: [batch_size, num_cameras, channels, height, width]
@@ -501,77 +542,60 @@ class ACTModel(nn.Module):
         if state.ndim == 2:
             state = state.unsqueeze(1)
 
-        # 1. 视觉编码
+        # ========== 1. 视觉编码 (使用 Spatial Softmax 或 特征图 + 2D Pos Embed) ==========
         vision_features = self.vision_encoder(images)  # [B, 1, hidden_dim]
 
-        # 2. 状态编码
+        # ========== 2. 状态编码 ==========
         state_features = self.state_encoder(state)  # [B, 1, hidden_dim]
 
-        # 3. 融合视觉和状态特征
-        if vision_features.shape[1] != state_features.shape[1]:
-            min_len = min(vision_features.shape[1], state_features.shape[1])
-            vision_features = vision_features[:, :min_len, :]
-            state_features = state_features[:, :min_len, :]
-
+        # ========== 3. 融合并过 Transformer Encoder ==========
         fused = torch.cat([vision_features, state_features], dim=-1)
-        fused = self.fusion_proj(fused)  # [B, seq_len, hidden_dim]
+        fused = self.fusion_proj(fused)  # [B, 2, hidden_dim]
 
-        # 4. Transformer 编码器
-        memory = self.transformer_encoder(fused)  # [B, seq_len, hidden_dim]
+        encoder_out = self.transformer_encoder(fused)  # [B, 2, hidden_dim]
 
-        # 5. CVAE 处理
+        # ========== 4. CVAE 处理 (不使用) ==========
         latent_z = None
         kl_loss = None
-        observation_context = memory.mean(dim=1)  # [B, hidden_dim]
+        observation_context = encoder_out.mean(dim=1)  # [B, hidden_dim]
 
-        if self.config.use_cvae and action_target is not None and infer_cvae:
-            # 训练时：使用未来动作推断隐变量分布
-            mu, logvar = self.cvae_encoder(action_target, observation_context)
-            latent_z = self.cvae_encoder.reparameterize(mu, logvar)
-
-            # 计算 KL 散度损失
-            kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-
-        # 6. 动作解码
+        # ========== 5. Transformer Decoder (Cross-Attention 到 encoder 输出) ==========
         action_chunk_size = self.config.action_chunk_size
-        action_query = self.action_pos_embedding[:, :action_chunk_size, :].expand(
-            batch_size, -1, -1
+        hidden_dim = self.config.hidden_dim
+
+        # 直接创建位置编码，确保在同一设备上
+        decoder_pos_embed = torch.randn(1, action_chunk_size, hidden_dim, dtype=encoder_out.dtype, device=encoder_out.device) * 0.02
+        decoder_pos_embed = decoder_pos_embed.expand(batch_size, -1, -1)  # [B, chunk, hidden]
+
+        # 解码器输入 (零初始化 + 位置编码)
+        decoder_in = torch.zeros(
+            (batch_size, action_chunk_size, hidden_dim),
+            dtype=encoder_out.dtype,
+            device=encoder_out.device,
         )  # [B, chunk, hidden]
 
-        # 如果使用 CVAE，将隐变量添加到查询
-        if latent_z is not None and self.config.use_cvae:
-            z_features = self.latent_proj(latent_z)  # [B, hidden]
-            z_features = z_features.unsqueeze(1)  # [B, 1, hidden]
-            action_query = action_query + z_features
+        # Cross-attention: decoder queries attend to encoder output (memory)
+        decoder_out = self.transformer_decoder(
+            decoder_in + decoder_pos_embed,  # [B, chunk, hidden]
+            memory=encoder_out,  # encoder output as memory
+        )  # [B, chunk, hidden]
 
-        # 添加状态查询作为第一个 token
-        state_query = self.state_query.expand(batch_size, -1, -1)  # [B, 1, hidden]
-        action_query = torch.cat([state_query, action_query], dim=1)  # [B, 1+chunk, hidden]
-
-        # 因果掩码
-        tgt_len = action_query.shape[1]
-        causal_mask = torch.triu(
-            torch.ones(tgt_len, tgt_len, device=action_query.device),
-            diagonal=1
-        ).bool()
-
-        # 解码
-        decoded = self.transformer_decoder(
-            action_query,
-            memory,
-            tgt_mask=causal_mask,
-        )  # [B, 1+chunk, hidden]
-
-        # 7. 预测动作
-        action_features = decoded[:, 1:, :]  # [B, chunk, hidden]
-        action_pred = self.action_head(action_features)  # [B, chunk, action_dim]
+        # ========== 6. 预测动作 ==========
+        action_pred = self.action_head(decoder_out)  # [B, chunk, action_dim]
 
         result = {
             "action": action_pred,
             "vision_features": vision_features,
             "state_features": state_features,
-            "memory": memory,
+            "memory": encoder_out,
         }
+
+        if latent_z is not None:
+            result["latent_z"] = latent_z
+        if kl_loss is not None:
+            result["kl_loss"] = kl_loss
+
+        return result
 
         if latent_z is not None:
             result["latent_z"] = latent_z
