@@ -3,13 +3,11 @@ AKA-Sim 后端 - Socket.IO 事件处理
 """
 
 import asyncio
-import base64
-import io
 import logging
 
 from socketio import AsyncNamespace
 
-import state
+from models import state
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +59,7 @@ class SimNamespace(AsyncNamespace):
             if image:
                 logger.info(f"image length: {len(image)}")
 
-            from act_model import act_inference
+            from services.act_model import act_inference
             action = act_inference(inference_state, image)
 
             logger.info(f"推理结果: {action[0]}")
@@ -120,7 +118,7 @@ class SimNamespace(AsyncNamespace):
         if samples:
             logger.info(f"导出 episode {episode_id} 的 {len(samples)} 个样本...")
             try:
-                from data_export import export_episode
+                from services.data_export import export_episode
                 output_path = export_episode(
                     samples,
                     episode_id=episode_id,
@@ -166,7 +164,7 @@ class SimNamespace(AsyncNamespace):
 
         if samples:
             try:
-                from data_export import export_episode
+                from services.data_export import export_episode
                 output_path = export_episode(
                     samples,
                     episode_id=episode_id,

@@ -5,7 +5,6 @@ AKA-Sim 数据导出模块 - LeRobot 风格数据采集
 
 import base64
 import json
-import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -62,7 +61,7 @@ class LeRobotDatasetMetadata:
         features: dict = None,
     ):
         if output_dir is None:
-            output_dir = Path(__file__).parent.parent / "output" / "dataset"
+            output_dir = Path(__file__).parent.parent.parent / "output" / "dataset"
         self.output_dir = Path(output_dir)
 
         self.data_dir = self.output_dir / "data"
@@ -528,7 +527,7 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
     """
     from pathlib import Path
 
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).parent.parent.parent
     data_path = project_root / data_dir
 
     # 加载统计信息
@@ -646,7 +645,7 @@ def create_demo_samples(num_samples: int = 100) -> List[Dict[str, Any]]:
 
 if __name__ == "__main__":
     # 测试导出功能
-    import state as sim_state
+    from models import state as sim_state
 
     if sim_state.dataset_samples:
         print(f"使用已采集的 {len(sim_state.dataset_samples)} 个样本导出")

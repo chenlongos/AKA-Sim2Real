@@ -12,10 +12,10 @@ from fastapi import FastAPI
 from socketio import AsyncServer
 
 # 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-import act_model
+from services import act_model
 import api
 from api import router as api_router
 from config import config

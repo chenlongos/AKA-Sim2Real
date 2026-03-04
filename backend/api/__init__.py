@@ -4,16 +4,14 @@ AKA-Sim 后端 - REST API 端点
 
 import asyncio
 import logging
-from typing import List
 
 from fastapi import APIRouter, HTTPException, Body
 
-import act_model as act_model_module
+from services import act_model as act_model_module, training
 from config import config
-from models import ACTInferenceRequest, DatasetPayload
-import state
-from data_export import export_dataset
-import training
+from api.models import ACTInferenceRequest, DatasetPayload
+from models import state
+from services.data_export import export_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +194,7 @@ async def start_training(
         # 检查数据集是否存在 - 使用项目根目录
         import os
         from pathlib import Path
-        project_root = Path(__file__).parent.parent
+        project_root = Path(__file__).parent.parent.parent
         data_path = project_root / data_dir
 
         if not data_path.exists():

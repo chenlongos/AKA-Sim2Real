@@ -6,7 +6,7 @@ import asyncio
 import logging
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -62,7 +62,6 @@ class TrainingCallbacks:
     def _emit_progress(self):
         """发送进度到前端"""
         if self.sio_server:
-            import state as sim_state
             try:
                 asyncio.create_task(self.sio_server.emit("training_progress", training_state))
             except Exception:
@@ -77,7 +76,7 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
         data_dir: 数据集目录
     """
     # 使用项目根目录
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).parent.parent.parent
     data_path = project_root / data_dir
 
     # 如果 dataset 目录存在，也尝试从那里加载（兼容旧格式）
@@ -335,7 +334,7 @@ async def train_model(
 
         # 保存模型到output目录
         if output_dir is None:
-            project_root = Path(__file__).parent.parent
+            project_root = Path(__file__).parent.parent.parent
             output_path = project_root / "output" / "train"
         else:
             output_path = Path(output_dir)
