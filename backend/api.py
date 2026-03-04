@@ -115,7 +115,7 @@ async def infer_act(request: ACTInferenceRequest):
 
 
 @router.post("/api/act/load_trained")
-async def load_trained_model(model_path: str = "checkpoints/final_model.pt"):
+async def load_trained_model(model_path: str = "checkpoints/model.pt"):
     """加载训练好的ACT模型"""
     try:
         act_model_module.load_act_model(model_path)

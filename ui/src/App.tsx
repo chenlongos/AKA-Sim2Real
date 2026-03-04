@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import SimPage from "./pages/SimPage.tsx";
+import SimPage from "./pages/SimPage";
 import NotFound from "./pages/NotFound.tsx";
 
 function App() {
