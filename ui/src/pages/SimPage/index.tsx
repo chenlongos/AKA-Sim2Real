@@ -17,7 +17,7 @@ import {
     getEpisodeStatus,
     sendImageData,
 } from "../../api/socket.ts";
-import type {CarState} from "../../models/types.ts";
+import type {CarState, Obstacle} from "../../models/types.ts";
 import {TopDownView} from "./TopDownView.tsx";
 import {FirstPersonView, type FirstPersonViewRef} from "./FirstPersonView.tsx";
 import {TrainingControl} from "./TrainingControl.tsx";
@@ -34,6 +34,9 @@ const SimPage = () => {
         angle: -Math.PI / 2,
         speed: 0,
     })
+    const [obstacles, setObstacles] = useState<Obstacle[]>([
+        {x: 300, y: 200, width: 80, height: 80},
+    ])
     const [collectedCount, setCollectedCount] = useState(0)
     const [isTraining, setIsTraining] = useState(false)
     const [trainingProgress, setTrainingProgress] = useState({epoch: 0, total_epochs: 50, loss: 0, progress: 0})
@@ -181,9 +184,13 @@ const SimPage = () => {
         }
     }, [])
 
-    const sendCommand = (cmd: string) => {
+    const sendCommand = (cmd: string[]) => {
         // 发送动作到后端
-        sendActions([cmd])
+        if (cmd.length === 0) {
+            sendActions(['stop'])
+            return
+        }
+        sendActions(cmd)
     }
 
     const handleSetEpisode = (episodeId: number) => {
@@ -269,38 +276,46 @@ const SimPage = () => {
                 alert('模型加载失败: ' + result.message)
             }
         } catch (e) {
-            alert('加载模型失败')
+            const msg = e instanceof Error ? e.message : String(e)
+            alert('加载模型失败: ' + msg)
         }
     }
 
     const doInference = async () => {
-        const state = [
-            carState.x,
-            carState.y,
-            carState.angle,
-            carState.speed,
-        ]
+        // 计算车体速度作为状态输入
+        const speed = carState.speed
+        const angle = carState.angle
+        const xVel = speed * Math.cos(angle)
+        const yVel = speed * Math.sin(angle)
+        // thetaVel 暂时设为0（后续可以从后端获取或使用默认值）
+        const thetaVel = 0
+
+        const state = [xVel, yVel, thetaVel]
         const imageBase64 = firstPersonViewRef.current?.getImageData()
         const result = await runInference(state, imageBase64)
         if (result.success) {
-            const actions: string[] = []
-            const firstAction = result.action[0]
-            const actionNames = ['forward', 'backward', 'left', 'right', 'stop']
-            const threshold = 0.01
-            for (let i = 0; i < firstAction.length; i++) {
-                if (firstAction[i] > threshold) {
-                    actions.push(actionNames[i])
+            // 推理结果是 [x_vel, y_vel, theta_vel]
+            result.action.forEach((action: [any, any, any]) => {
+                sendCommand([])
+                const [xVelTarget, yVelTarget, _thetaVelTarget] = action
+                const next_speed = Math.sqrt(xVelTarget ** 2 + yVelTarget ** 2)
+                const next_angle = Math.atan2(yVelTarget, xVelTarget)
+
+                if (angle > next_angle) {
+                    sendCommand(["right"])
+                    setInferenceResult(["right"])
+                } else if (angle > next_angle) {
+                    sendCommand(["left"])
+                    setInferenceResult(["left"])
                 }
-            }
-            if (actions.length === 0) {
-                const maxIdx = firstAction.indexOf(Math.max(...firstAction))
-                actions.push(actionNames[maxIdx])
-            }
-            setInferenceResult(actions)
-            lastInferredActionRef.current = actions
-            if (actions.length > 0) {
-                sendActions(actions)
-            }
+                if (speed < next_speed) {
+                    sendCommand(["forward"])
+                    setInferenceResult(prev => [...prev, "forward"])
+                } else if (speed > next_angle) {
+                    sendCommand(["backward"])
+                    setInferenceResult(prev => [...prev, "backward"])
+                }
+            })
         }
     }
 
@@ -405,7 +420,7 @@ const SimPage = () => {
         const loop = (currentTime: number) => {
             if (currentTime - lastSendTime >= SEND_INTERVAL) {
                 const actions = autoInference ? lastInferredActionRef.current : getCurrentActions()
-                sendActions(actions)
+                sendCommand(actions)
                 lastSendTime = currentTime
             }
             window.requestAnimationFrame(loop)
@@ -452,6 +467,8 @@ const SimPage = () => {
                 <div className="flex-1 flex flex-col h-full">
                     <TopDownView
                         carState={carState}
+                        obstacles={obstacles}
+                        onObstaclesChange={setObstacles}
                         collectedCount={collectedCount}
                         resetCar={resetCar}
                         sendCommand={sendCommand}
@@ -461,6 +478,7 @@ const SimPage = () => {
                     <FirstPersonView
                         ref={firstPersonViewRef}
                         carState={carState}
+                        obstacles={obstacles}
                         isRecording={isRecording}
                         onCollect={(imageData, actions) => sendImageData(imageData, actions)}
                         getCurrentActions={getCurrentActions}

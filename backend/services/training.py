@@ -92,8 +92,7 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
     with open(data_path / "meta" / "info.json", "r") as f:
         info = json.load(f)
 
-    action_chunk_size = info.get("action_chunk_size", 16)
-    action_dim = info.get("action_dim", 5)
+    action_dim = info.get("action_dim", 2)  # [steering, throttle]
 
     # 加载所有parquet文件
     parquet_files = sorted(data_path.glob("data/chunk-*/file-*.parquet"))
@@ -123,30 +122,19 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
             state = torch.from_numpy(state_arr).float()
             states.append(state)
 
-        # 加载动作 - 处理各种格式
+        # 加载动作（[chunk_size, 3]）
         for action_data in df["action"]:
-            if isinstance(action_data, list):
-                # 检查是否是嵌套列表
+            # action_data 可能是 numpy.ndarray 或 list
+            if isinstance(action_data, np.ndarray):
+                # 直接堆叠
+                action_arr = np.vstack(action_data).astype(np.float32)
+            elif isinstance(action_data, list):
                 if len(action_data) > 0 and isinstance(action_data[0], (list, np.ndarray)):
-                    # 嵌套列表: 需要展平
-                    flat = []
-                    for item in action_data:
-                        if hasattr(item, 'flatten'):
-                            flat.extend(item.flatten().tolist())
-                        else:
-                            flat.extend(list(item))
-                    action_arr = np.array(flat, dtype=np.float32)
-                else:
-                    # 已经是展平的列表
                     action_arr = np.array(action_data, dtype=np.float32)
-            elif hasattr(action_data, 'flatten'):
-                # numpy数组
-                action_arr = action_data.flatten()
+                else:
+                    action_arr = np.array([action_data], dtype=np.float32)
             else:
-                action_arr = np.array(action_data, dtype=np.float32)
-
-            # reshape回 (action_chunk_size, action_dim)
-            action_arr = action_arr.reshape(action_chunk_size, action_dim)
+                action_arr = np.array([[action_data]], dtype=np.float32)
             action = torch.from_numpy(action_arr).float()
             actions.append(action)
 
@@ -156,40 +144,60 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
 
     logger.info(f"加载完成: {len(images)} 个样本")
 
+    # 返回数据和统计信息
     return {
         "observation.image": images,
         "observation.state": states,
         "action": actions,
+        "stats": stats,  # 返回统计信息用于归一化
     }
 
 
 class SimpleDataset(torch.utils.data.Dataset):
-    """简化数据集"""
+    """简化数据集 - 支持归一化"""
 
-    def __init__(self, data: Dict[str, torch.Tensor], action_chunk_size: int = 16):
+    def __init__(self, data: Dict[str, torch.Tensor], stats: Optional[Dict] = None):
         self.data = data
-        self.action_chunk_size = action_chunk_size
+        self.stats = stats
         # 每条记录已经是一个完整样本
         self.num_samples = data["action"].shape[0]
         self.image_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
         self.image_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+
+        # 状态和动作归一化参数
+        if stats:
+            self.state_mean = torch.tensor(stats.get("observation.state", {}).get("mean", [0, 0, 0]), dtype=torch.float32)
+            self.state_std = torch.tensor(stats.get("observation.state", {}).get("std", [1, 1, 1]), dtype=torch.float32)
+            self.action_mean = torch.tensor(stats.get("action", {}).get("mean", [0, 0, 0]), dtype=torch.float32)
+            self.action_std = torch.tensor(stats.get("action", {}).get("std", [1, 1, 1]), dtype=torch.float32)
+            # 避免除零
+            self.state_std = torch.where(self.state_std > 1e-6, self.state_std, torch.ones_like(self.state_std))
+            self.action_std = torch.where(self.action_std > 1e-6, self.action_std, torch.ones_like(self.action_std))
+        else:
+            self.state_mean = torch.zeros(3)
+            self.state_std = torch.ones(3)
+            self.action_mean = torch.zeros(3)
+            self.action_std = torch.ones(3)
 
     def __len__(self):
         return self.num_samples
 
     def __getitem__(self, idx):
         # 每条记录已经是一个完整的 (image, state, action_chunk) 样本
-        # 不需要额外的切片
         images = self.data["observation.image"][idx]
         state = self.data["observation.state"][idx]
         action = self.data["action"][idx]
 
-        # 只保留有变化的状态：x, y, angle, speed (前4维)
-        # 去掉常量：maxSpeed, acceleration, rotationSpeed
-        state = state[:4]
-
         # 归一化图像
         images = (images.unsqueeze(0) - self.image_mean) / self.image_std
+
+        # 归一化状态 (只取前3维)
+        if self.stats:
+            state = (state[:3] - self.state_mean) / self.state_std
+
+        # 归一化动作
+        if self.stats:
+            action = (action - self.action_mean) / self.action_std
 
         return {
             "observation": {
@@ -245,26 +253,26 @@ async def train_model(
         data = load_dataset(data_dir)
 
         # 获取动作维度
-        action_dim = data["action"].shape[-1]
+        action_dim = data["action"].shape[-1]  # 现在是 2
         raw_state_dim = data["observation.state"].shape[-1]
-        action_chunk_size = data["action"].shape[1]
 
-        # 只使用前 4 维：x, y, angle, speed
-        state_dim = 4
+        # 使用 3 维速度：x_vel, y_vel, theta_vel
+        state_dim = 3
 
-        logger.info(f"action_dim: {action_dim}, state_dim: {state_dim} (原始: {raw_state_dim}), chunk_size: {action_chunk_size}")
+        logger.info(f"action_dim: {action_dim}, state_dim: {state_dim} (原始: {raw_state_dim})")
 
         # 创建配置 - 与推理配置一致
         config = ACTConfig(
-            state_dim=4,  # 只用 x, y, angle, speed
+            state_dim=3,  # [x_vel, y_vel, theta_vel]
             action_dim=action_dim,
-            action_chunk_size=action_chunk_size,
+            action_chunk_size=8,  # 预测未来8帧
             hidden_dim=512,
             num_encoder_layers=4,
             num_decoder_layers=4,
             num_attention_heads=8,
             dim_feedforward=3200,
-            use_cvae=False,
+            use_cvae=True,  # 启用 CVAE
+            kl_weight=0.1,
             use_temporal_ensembling=False,
             use_spatial_softmax=True,
             latent_dim=32,
@@ -284,8 +292,9 @@ async def train_model(
 
         logger.info(f"模型参数量: {sum(p.numel() for p in model.parameters()):,}")
 
-        # 数据集
-        dataset = SimpleDataset(data, action_chunk_size)
+        # 数据集 - 传入统计信息用于归一化
+        stats = data.get("stats")
+        dataset = SimpleDataset(data, stats=stats)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
         # 优化器
@@ -317,10 +326,20 @@ async def train_model(
 
                 optimizer.zero_grad()
 
-                # 使用forward进行训练 (不使用eval模式)
+                # actions 已经是 [batch, chunk_size, action_dim] = [batch, 8, 3]
+                # 使用forward进行训练
                 output = model(images, states, action_target=actions, infer_cvae=False)
                 predicted_actions = output["action"]
-                loss = criterion(predicted_actions, actions)
+                kl_loss = output.get("kl_loss")
+
+                # 计算 L1 损失
+                l1_loss = criterion(predicted_actions, actions)
+
+                # 计算总损失
+                if kl_loss is not None:
+                    loss = l1_loss + kl_loss * config.kl_weight
+                else:
+                    loss = l1_loss
 
                 loss.backward()
                 optimizer.step()

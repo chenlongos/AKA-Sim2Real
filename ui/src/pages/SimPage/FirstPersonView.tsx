@@ -1,5 +1,5 @@
-import {useEffect, useRef, useImperativeHandle, forwardRef} from "react";
-import type {CarState} from "../../models/types.ts";
+import {forwardRef, useEffect, useImperativeHandle, useRef} from "react";
+import type {CarState, Obstacle} from "../../models/types.ts";
 
 export interface FirstPersonViewRef {
     getImageData: () => string | undefined;
@@ -7,6 +7,7 @@ export interface FirstPersonViewRef {
 
 interface FirstPersonViewProps {
     carState: CarState;
+    obstacles: Obstacle[];
     isRecording: boolean;
     onCollect?: (imageData: string, actions: string[]) => void;
     getCurrentActions?: () => string[];
@@ -14,6 +15,16 @@ interface FirstPersonViewProps {
 
 const MAP_W = 800;
 const MAP_H = 600;
+
+// 将障碍物转换为边界线段
+const getObstacleBoundaries = (obstacles: Obstacle[]) => {
+    return obstacles.flatMap(obs => [
+        {x1: obs.x - obs.width / 2, y1: obs.y - obs.height / 2, x2: obs.x + obs.width / 2, y2: obs.y - obs.height / 2, color: '#e74c3c'}, // 上边
+        {x1: obs.x + obs.width / 2, y1: obs.y - obs.height / 2, x2: obs.x + obs.width / 2, y2: obs.y + obs.height / 2, color: '#e74c3c'}, // 右边
+        {x1: obs.x + obs.width / 2, y1: obs.y + obs.height / 2, x2: obs.x - obs.width / 2, y2: obs.y + obs.height / 2, color: '#e74c3c'}, // 下边
+        {x1: obs.x - obs.width / 2, y1: obs.y + obs.height / 2, x2: obs.x - obs.width / 2, y2: obs.y - obs.height / 2, color: '#e74c3c'}, // 左边
+    ]);
+};
 
 const getRaySegmentIntersection = (rx: number, ry: number, rdx: number, rdy: number, wall: {
     x1: number,
@@ -42,18 +53,19 @@ const getRaySegmentIntersection = (rx: number, ry: number, rdx: number, rdy: num
     return null;
 };
 
-const castRay = (sx: number, sy: number, angle: number) => {
+const castRay = (sx: number, sy: number, angle: number, obstacles: Obstacle[]) => {
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     let minDist = Infinity;
     let hitColor = null;
 
-    // 将所有障碍物转换为线段进行检测
+    // 地图边界 + 障碍物边界
     const boundaries = [
         {x1: 0, y1: 0, x2: MAP_W, y2: 0, color: '#333'}, // 上墙
         {x1: MAP_W, y1: 0, x2: MAP_W, y2: MAP_H, color: '#333'}, // 右墙
         {x1: MAP_W, y1: MAP_H, x2: 0, y2: MAP_H, color: '#333'}, // 下墙
-        {x1: 0, y1: MAP_H, x2: 0, y2: 0, color: '#333'}  // 左墙
+        {x1: 0, y1: MAP_H, x2: 0, y2: 0, color: '#333'},  // 左墙
+        ...getObstacleBoundaries(obstacles),  // 障碍物
     ];
 
     // 检测射线与每一条线段的交点
@@ -68,7 +80,7 @@ const castRay = (sx: number, sy: number, angle: number) => {
     return minDist === Infinity ? null : {distance: minDist, color: hitColor};
 };
 
-const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState) => {
+const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState, obstacles: Obstacle[]) => {
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
     const {x, y, angle} = carState;
@@ -90,7 +102,7 @@ const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState) => {
         const rayAngle = (angle + Math.PI - fov / 2) + (i / rayCount) * fov;
 
         // 计算这一条射线碰到了什么，以及距离是多少
-        const hit = castRay(x, y, rayAngle);
+        const hit = castRay(x, y, rayAngle, obstacles);
 
         if (hit) {
             const correctedDist = hit.distance * Math.cos(rayAngle - angle);
@@ -109,6 +121,7 @@ const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState) => {
 
 export const FirstPersonView = forwardRef<FirstPersonViewRef, FirstPersonViewProps>(({
     carState,
+    obstacles,
     isRecording,
     onCollect,
     getCurrentActions
@@ -123,6 +136,8 @@ export const FirstPersonView = forwardRef<FirstPersonViewRef, FirstPersonViewPro
         }
     }), [])
 
+    const lastCollectTimeRef = useRef(0)
+
     useEffect(() => {
         const canvas = canvasRef.current
         if (canvas == null) return
@@ -132,8 +147,7 @@ export const FirstPersonView = forwardRef<FirstPersonViewRef, FirstPersonViewPro
         ctx.imageSmoothingEnabled = false;
 
         let animationFrameId: number
-        let lastCollectTime = 0;
-        const COLLECT_INTERVAL = 500; // 采集间隔(ms)，2fps
+        const COLLECT_INTERVAL = 1000 / 30; // 采集间隔(ms)，10fps
         const FPS = 30;
         const frameInterval = 1000 / FPS;
         let lastTime = 0;
@@ -141,20 +155,19 @@ export const FirstPersonView = forwardRef<FirstPersonViewRef, FirstPersonViewPro
         const renderLoop = (currentTime: number) => {
             animationFrameId = window.requestAnimationFrame(renderLoop)
 
-            const delta = currentTime - lastTime
-            if (delta < frameInterval) return
+            if (currentTime - lastTime < frameInterval) return
 
-            lastTime = currentTime - (delta % frameInterval)
+            lastTime = currentTime
 
             // 渲染
-            drawFirstPerson(ctx, carState)
+            drawFirstPerson(ctx, carState, obstacles)
 
             // 采集数据
-            if (isRecording && onCollect && getCurrentActions && currentTime - lastCollectTime >= COLLECT_INTERVAL) {
+            if (isRecording && onCollect && getCurrentActions && currentTime - lastCollectTimeRef.current >= COLLECT_INTERVAL) {
                 const imageData = canvas.toDataURL('image/jpeg', 0.8)
                 const actions = getCurrentActions()
                 onCollect(imageData, actions)
-                lastCollectTime = currentTime
+                lastCollectTimeRef.current = currentTime
             }
         }
 
@@ -163,7 +176,7 @@ export const FirstPersonView = forwardRef<FirstPersonViewRef, FirstPersonViewPro
         return () => {
             window.cancelAnimationFrame(animationFrameId)
         }
-    }, [carState, isRecording, onCollect, getCurrentActions])
+    }, [carState, obstacles, isRecording, onCollect, getCurrentActions])
 
     return (
         <div

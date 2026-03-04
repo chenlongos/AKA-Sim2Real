@@ -5,3 +5,11 @@ export interface CarState {
     angle: number;
     speed: number;
 }
+
+// 障碍物类型
+export interface Obstacle {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}

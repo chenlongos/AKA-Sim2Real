@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 import torch
 
@@ -15,19 +15,31 @@ class ACTDataset(torch.utils.data.Dataset):
         normalize_images: bool = True,
         image_mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
         image_std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
+        state_mean: Optional[torch.Tensor] = None,
+        state_std: Optional[torch.Tensor] = None,
+        action_mean: Optional[torch.Tensor] = None,
+        action_std: Optional[torch.Tensor] = None,
     ):
         """
         Args:
             data: 包含 'observation.image', 'observation.state', 'action' 的字典
             action_chunk_size: 动作分块大小
+            state_mean/std: 状态归一化参数
+            action_mean/std: 动作归一化参数
         """
         self.data = data
         self.action_chunk_size = action_chunk_size
 
-        # 归一化参数
+        # 图像归一化参数
         self.normalize_images = normalize_images
         self.image_mean = torch.tensor(image_mean).view(1, 3, 1, 1)
         self.image_std = torch.tensor(image_std).view(1, 3, 1, 1)
+
+        # 状态和动作归一化参数
+        self.state_mean = state_mean
+        self.state_std = state_std
+        self.action_mean = action_mean
+        self.action_std = action_std
 
         # 计算数据集大小
         # 动作序列长度
@@ -63,6 +75,14 @@ class ACTDataset(torch.utils.data.Dataset):
         # 归一化图像
         if self.normalize_images:
             images = (images - self.image_mean.to(images.device)) / self.image_std.to(images.device)
+
+        # 归一化状态
+        if self.state_mean is not None and self.state_std is not None:
+            state = (state - self.state_mean.to(state.device)) / (self.state_std.to(state.device) + 1e-8)
+
+        # 归一化动作
+        if self.action_mean is not None and self.action_std is not None:
+            action = (action - self.action_mean.to(action.device)) / (self.action_std.to(action.device) + 1e-8)
 
         return {
             "observation": {

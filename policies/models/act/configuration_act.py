@@ -28,6 +28,7 @@ class ACTConfig:
         # CVAE 参数
         latent_dim: int = 32,  # 隐变量 z 的维度
         use_cvae: bool = True,  # 是否使用 CVAE
+        kl_weight: float = 0.1,  # KL 散度损失权重
         # Temporal Ensembling 参数
         use_temporal_ensembling: bool = True,  # 是否使用时间集成
         temporal_ensembling_weight: float = 0.5,  # 时间集成权重 (EMA系数)
@@ -50,6 +51,7 @@ class ACTConfig:
         # CVAE
         self.latent_dim = latent_dim
         self.use_cvae = use_cvae
+        self.kl_weight = kl_weight
         # Temporal Ensembling
         self.use_temporal_ensembling = use_temporal_ensembling
         self.temporal_ensembling_weight = temporal_ensembling_weight

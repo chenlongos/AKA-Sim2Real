@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
@@ -134,6 +135,19 @@ def train(
     # 加载数据
     data = load_dataset(data_dir)
 
+    # 加载归一化统计
+    stats_path = Path(data_dir) / "meta" / "stats.json"
+    state_mean, state_std, action_mean, action_std = None, None, None, None
+    if stats_path.exists():
+        with open(stats_path, "r") as f:
+            stats = json.load(f)
+        state_mean = torch.tensor(stats["observation.state"]["mean"], dtype=torch.float32)
+        state_std = torch.tensor(stats["observation.state"]["std"], dtype=torch.float32)
+        action_mean = torch.tensor(stats["action"]["mean"], dtype=torch.float32)
+        action_std = torch.tensor(stats["action"]["std"], dtype=torch.float32)
+        print(f"状态归一化: mean={state_mean}, std={state_std}")
+        print(f"动作归一化: mean={action_mean}, std={action_std}")
+
     # 创建配置
     config = ACTConfig(
         state_dim=state_dim,
@@ -144,7 +158,8 @@ def train(
         num_decoder_layers=4,
         num_attention_heads=8,
         dim_feedforward=3200,  # 根据 LeRobot
-        use_cvae=False,  # 简化训练
+        use_cvae=True,  # 启用 CVAE
+        kl_weight=0.1,  # KL 损失权重
         use_temporal_ensembling=False,
         use_spatial_softmax=True,
         latent_dim=32,
@@ -159,6 +174,10 @@ def train(
         data,
         action_chunk_size=action_chunk_size,
         normalize_images=True,
+        state_mean=state_mean,
+        state_std=state_std,
+        action_mean=action_mean,
+        action_std=action_std,
     )
 
     dataloader = DataLoader(
@@ -180,6 +199,8 @@ def train(
 
     for epoch in range(epochs):
         total_loss = 0
+        total_l1_loss = 0
+        total_kl_loss = 0
         num_batches = 0
 
         for batch in dataloader:
@@ -187,18 +208,31 @@ def train(
             states = batch["observation"]["state"].to(device)
             actions = batch["action"].to(device)
 
-            # 前向传播
+            # 前向传播 (训练模式)
             optimizer.zero_grad()
 
-            # 预测动作
-            predicted_actions = model.get_action(
+            # 使用 forward 方法获取预测和 KL 损失
+            output = model(
                 images,
                 states,
-                use_temporal_ensembling=False,
+                action_target=actions,
+                infer_cvae=False,
             )
 
-            # 计算损失
-            loss = criterion(predicted_actions, actions)
+            predicted_actions = output["action"]
+            kl_loss = output.get("kl_loss")
+
+            # 计算 L1 损失
+            l1_loss = F.l1_loss(predicted_actions, actions)
+
+            # 计算总损失
+            if kl_loss is not None:
+                loss = l1_loss + kl_loss * config.kl_weight
+                total_kl_loss += kl_loss.item()
+            else:
+                loss = l1_loss
+
+            total_l1_loss += l1_loss.item()
 
             # 反向传播
             loss.backward()
@@ -208,7 +242,12 @@ def train(
             num_batches += 1
 
         avg_loss = total_loss / num_batches
-        print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
+        avg_l1 = total_l1_loss / num_batches
+        if config.use_cvae:
+            avg_kl = total_kl_loss / num_batches
+            print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f} (L1: {avg_l1:.6f}, KL: {avg_kl:.6f})")
+        else:
+            print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
 
         # 保存检查点
         if (epoch + 1) % 10 == 0:

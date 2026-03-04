@@ -1,11 +1,13 @@
-import {useEffect, useRef} from "react";
-import type {CarState} from "../../models/types.ts";
+import {useEffect, useRef, useState} from "react";
+import type {CarState, Obstacle} from "../../models/types.ts";
 
 interface TopDownViewProps {
     carState: CarState;
+    obstacles: Obstacle[];
+    onObstaclesChange: (obstacles: Obstacle[]) => void;
     collectedCount: number;
     resetCar: () => void;
-    sendCommand: (cmd: string) => void;
+    sendCommand: (cmd: string[]) => void;
 }
 
 const MAP_W = 800;
@@ -44,10 +46,23 @@ const drawCarBody = (ctx: CanvasRenderingContext2D, x: number, y: number, angle:
     ctx.restore();
 }
 
-const drawTopDown = (ctx: CanvasRenderingContext2D, carState: CarState) => {
+const drawObstacles = (ctx: CanvasRenderingContext2D, obstacles: Obstacle[]) => {
+    obstacles.forEach(obs => {
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillRect(obs.x - obs.width / 2, obs.y - obs.height / 2, obs.width, obs.height);
+        ctx.strokeStyle = '#c0392b';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(obs.x - obs.width / 2, obs.y - obs.height / 2, obs.width, obs.height);
+    });
+}
+
+const drawTopDown = (ctx: CanvasRenderingContext2D, carState: CarState, obstacles: Obstacle[]) => {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
     drawGrid(ctx, ctx.canvas.width, ctx.canvas.height)
+
+    // 绘制障碍物
+    drawObstacles(ctx, obstacles)
 
     ctx.save()
 
@@ -67,11 +82,71 @@ const drawTopDown = (ctx: CanvasRenderingContext2D, carState: CarState) => {
 
 export const TopDownView = ({
     carState,
+    obstacles,
+    onObstaclesChange,
     collectedCount,
     resetCar,
     sendCommand
 }: TopDownViewProps) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
+    const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
+    const [dragOffset, setDragOffset] = useState<{x: number, y: number}>({x: 0, y: 0})
+
+    // 检查点是否在障碍物内
+    const isPointInObstacle = (px: number, py: number, obs: Obstacle): boolean => {
+        return px >= obs.x - obs.width / 2 &&
+               px <= obs.x + obs.width / 2 &&
+               py >= obs.y - obs.height / 2 &&
+               py <= obs.y + obs.height / 2
+    }
+
+    // 鼠标按下事件
+    const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current
+        if (!canvas) return
+
+        const rect = canvas.getBoundingClientRect()
+        const x = e.clientX - rect.left
+        const y = e.clientY - rect.top
+
+        // 检查是否点击了某个障碍物
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            if (isPointInObstacle(x, y, obstacles[i])) {
+                setDraggingIdx(i)
+                setDragOffset({
+                    x: x - obstacles[i].x,
+                    y: y - obstacles[i].y
+                })
+                return
+            }
+        }
+    }
+
+    // 鼠标移动事件
+    const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (draggingIdx === null) return
+
+        const canvas = canvasRef.current
+        if (!canvas) return
+
+        const rect = canvas.getBoundingClientRect()
+        const x = e.clientX - rect.left
+        const y = e.clientY - rect.top
+
+        // 边界限制
+        const obs = obstacles[draggingIdx]
+        const newX = Math.max(obs.width / 2, Math.min(MAP_W - obs.width / 2, x - dragOffset.x))
+        const newY = Math.max(obs.height / 2, Math.min(MAP_H - obs.height / 2, y - dragOffset.y))
+
+        onObstaclesChange(obstacles.map((o, i) =>
+            i === draggingIdx ? {...o, x: newX, y: newY} : o
+        ))
+    }
+
+    // 鼠标释放事件
+    const handleMouseUp = () => {
+        setDraggingIdx(null)
+    }
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -82,7 +157,7 @@ export const TopDownView = ({
         let animationFrameId: number
 
         const renderLoop = () => {
-            drawTopDown(ctx, carState)
+            drawTopDown(ctx, carState, obstacles)
             animationFrameId = window.requestAnimationFrame(renderLoop)
         }
 
@@ -91,7 +166,12 @@ export const TopDownView = ({
         return () => {
             window.cancelAnimationFrame(animationFrameId)
         }
-    }, [carState])
+    }, [carState, obstacles])
+
+    // 鼠标事件处理
+    const handleMouseLeave = () => {
+        setDraggingIdx(null)
+    }
 
     return (
         <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-3 h-full">
@@ -101,7 +181,11 @@ export const TopDownView = ({
                     ref={canvasRef}
                     width={MAP_W}
                     height={MAP_H}
-                    className="bg-white block rounded"
+                    className="bg-white block rounded cursor-move"
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseLeave}
                 />
                 <div className="absolute top-2 left-2 bg-white/85 p-1.5 rounded text-xs">
                     使用 WASD 或 方向键 移动<br/>
@@ -109,16 +193,16 @@ export const TopDownView = ({
                 </div>
             </div>
             <div className="flex gap-2.5 flex-wrap justify-center items-center">
-                <button onClick={() => sendCommand('forward')}
+                <button onClick={() => sendCommand(['forward'])}
                         className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 前进
                 </button>
-                <button onClick={() => sendCommand('left')}
+                <button onClick={() => sendCommand(['left'])}
                         className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 左转
                 </button>
-                <button onClick={() => sendCommand('right')}
+                <button onClick={() => sendCommand(['right'])}
                         className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 右转
                 </button>
-                <button onClick={() => sendCommand('backward')}
+                <button onClick={() => sendCommand(['backward'])}
                         className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 后退
                 </button>
                 <button onClick={() => resetCar()}

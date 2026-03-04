@@ -1,22 +1,31 @@
 """
-ACT (Action Chunking Transformer) Model Implementation
-基于 LeRobot 的 PyTorch 实现 - 完整版
-包含 CVAE、Spatial Softmax 和 Temporal Ensembling
+ACT (Action Chunking Transformer) Model - 完全对齐 LeRobot
+支持 CVAE、多相机、完整的 Transformer 架构
 """
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import einops
-from typing import Optional, Tuple, Dict
-import math
+from typing import Optional, Dict, Tuple, List
 from .configuration_act import ACTConfig
-from .ACTDataset import ACTDataset
+
+
+def create_sinusoidal_pos_embedding(num_positions: int, dimension: int) -> torch.Tensor:
+    """1D sinusoidal positional embeddings"""
+    def get_position_angle_vec(position):
+        return [position / math.pow(10000, 2 * (hid_j // 2) / dimension) for hid_j in range(dimension)]
+
+    sinusoid_table = torch.tensor([
+        get_position_angle_vec(pos_i) for pos_i in range(num_positions)
+    ], dtype=torch.float32)
+    sinusoid_table[:, 0::2] = sinusoid_table[:, 0::2].sin()
+    sinusoid_table[:, 1::2] = sinusoid_table[:, 1::2].cos()
+    return sinusoid_table
 
 
 class ACTSinusoidalPositionEmbedding2d(nn.Module):
-    """2D sinusoidal positional embeddings - 与 LeRobot 一致"""
-
+    """2D sinusoidal positional embeddings"""
     def __init__(self, dimension: int):
         super().__init__()
         self.dimension = dimension
@@ -25,17 +34,10 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
         self._temperature = 10000
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: A (B, C, H, W) batch of 2D feature map
-        Returns:
-            A (1, C, H, W) batch of corresponding sinusoidal positional embeddings
-        """
-        not_mask = torch.ones_like(x[0, :1])  # (1, H, W)
+        not_mask = torch.ones_like(x[0, :1])
         y_range = not_mask.cumsum(1, dtype=torch.float32)
         x_range = not_mask.cumsum(2, dtype=torch.float32)
 
-        # 归一化到 [0, 2π]
         y_range = y_range / (y_range[:, -1:, :] + self._eps) * self._two_pi
         x_range = x_range / (x_range[:, :, -1:] + self._eps) * self._two_pi
 
@@ -53,384 +55,197 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
         return pos_embed
 
 
-class SpatialSoftmax(nn.Module):
-    """
-    Spatial Softmax - 保留图像特征图中的空间关键点信息
-    这是 ACT 视觉编码器的关键组件
-    """
-
-    def __init__(
-        self,
-        height: int = 7,
-        width: int = 7,
-        temperature: float = 1.0,
-        learned_temperature: bool = False,
-    ):
-        super().__init__()
-        self.height = height
-        self.width = width
-        self.temperature = temperature
-        self.learned_temperature = learned_temperature
-
-        # 创建坐标网格
-        # 生成 -1 到 1 之间的归一化坐标
-        pos_x, pos_y = torch.meshgrid(
-            torch.linspace(-1, 1, width),
-            torch.linspace(-1, 1, height),
-            indexing='xy'
-        )
-        # 堆叠成 [2, height, width]
-        pos = torch.stack([pos_x, pos_y], dim=0)
-        self.register_buffer('pos', pos)
-
-        # 可学习的温度参数
-        if learned_temperature:
-            self.log_temperature = nn.Parameter(torch.zeros(1))
-        else:
-            self.log_temperature = None
-
-    def forward(self, features: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            features: [batch_size, channels, height, width]
-
-        Returns:
-            softmax_features: [batch_size, channels * 2] (x, y 坐标加权)
-        """
-        batch_size, channels, height, width = features.shape
-
-        # 确保特征图尺寸匹配
-        if height != self.height or width != self.width:
-            features = F.interpolate(
-                features,
-                size=(self.height, self.width),
-                mode='bilinear',
-                align_corners=True
-            )
-
-        # 展平空间维度
-        features = features.view(batch_size, channels, -1)  # [B, C, H*W]
-        features = F.softmax(features, dim=-1)
-
-        # 获取温度
-        if self.learned_temperature:
-            temperature = self.log_temperature.exp()
-        else:
-            temperature = self.temperature
-
-        # 计算加权的 x, y 坐标
-        pos = self.pos  # [2, H, W]
-        pos = pos.view(2, -1)  # [2, H*W]
-
-        # 期望位置 = sum(features * position)
-        expected_x = (features * pos[0:1]).sum(dim=-1)  # [B, C]
-        expected_y = (features * pos[1:2]).sum(dim=-1)  # [B, C]
-
-        # 拼接 x, y 坐标
-        spatial_features = torch.cat([expected_x, expected_y], dim=-1)  # [B, C*2]
-
-        return spatial_features / temperature
-
-
 class RGBEncoder(nn.Module):
-    """
-    视觉编码器 - 支持 Spatial Softmax
-    使用预训练的 ResNet18 作为骨干网络
-    """
-
-    def __init__(
-        self,
-        image_size: Tuple[int, int] = (224, 224),
-        in_channels: int = 3,
-        hidden_dim: int = 512,
-        pretrained: bool = True,
-        use_spatial_softmax: bool = True,
-        spatial_softmax_temperature: float = 1.0,
-    ):
+    """视觉编码器 - LeRobot 风格"""
+    def __init__(self, in_channels: int = 3, hidden_dim: int = 512):
         super().__init__()
-        self.image_size = image_size
         self.hidden_dim = hidden_dim
-        self.use_spatial_softmax = use_spatial_softmax
+        self.feature_dim = 512
 
-        # 使用 ResNet18 作为视觉骨干
         from torchvision.models import resnet18, ResNet18_Weights
-
-        if pretrained:
-            weights = ResNet18_Weights.DEFAULT
-        else:
-            weights = None
-
+        weights = ResNet18_Weights.DEFAULT
         resnet = resnet18(weights=weights)
 
-        # 移除最后的分类层，获取特征图
-        # ResNet18 的特征图尺寸是 7x7 (对于 224x224 输入)
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
-        self.feature_dim = 512
-        self.feature_size = 7  # ResNet18 最后一层特征图大小
+        self.encoder_img_feat_input_proj = nn.Conv2d(self.feature_dim, hidden_dim, kernel_size=1)
+        self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(hidden_dim // 2)
 
-        # Spatial Softmax
-        if use_spatial_softmax:
-            self.spatial_softmax = SpatialSoftmax(
-                height=self.feature_size,
-                width=self.feature_size,
-                temperature=spatial_softmax_temperature,
-                learned_temperature=True,
-            )
-            # Spatial softmax 输出 2 * 512 = 1024 维
-            self.spatial_proj = nn.Linear(self.feature_dim * 2, hidden_dim)
-        else:
-            self.spatial_softmax = None
-            # 简单的平均池化
-            self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-            self.projection = nn.Linear(self.feature_dim, hidden_dim)
-
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
+    def forward(self, images: torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
         """
         Args:
-            images: [batch_size, num_cameras, channels, height, width]
-                   或 [batch_size, channels, height, width]
+            images: [batch_size, num_cameras, channels, height, width] 或 [B, C, H, W]
 
         Returns:
-            features: [batch_size, 1, hidden_dim] 或 [batch_size, num_cameras, hidden_dim]
+            features: list of [batch_size, H*W, hidden_dim] (每相机)
+            shape_2d: (batch_size, hidden_dim, H, W)
         """
         batch_size = images.shape[0]
 
-        # 处理多相机输入
         if images.ndim == 5:
-            # [batch_size, num_cameras, channels, height, width]
             num_cameras = images.shape[1]
-            images = images.view(-1, *images.shape[2:])  # [batch_size * num_cameras, C, H, W]
+            images = images.view(-1, *images.shape[2:])
         else:
             num_cameras = 1
 
-        # 提取特征
-        features = self.backbone(images)  # [B, 512, 7, 7]
+        features = self.backbone(images)
 
-        if self.use_spatial_softmax:
-            # Spatial Softmax: [B, 512, 7, 7] -> [B, 1024]
-            features = self.spatial_softmax(features)  # [B, 1024]
-            # 投影到 hidden_dim
-            features = self.spatial_proj(features)  # [B, hidden_dim]
-        else:
-            # 简单平均池化
-            features = self.avgpool(features)  # [B, 512, 1, 1]
-            features = features.squeeze(-1).squeeze(-1)  # [B, 512]
-            features = self.projection(features)  # [B, hidden_dim]
+        cam_pos_embed = self.encoder_cam_feat_pos_embed(features)
+        cam_pos_embed = cam_pos_embed.flatten(2).transpose(1, 2)
 
-        # 恢复批量维度
-        if images.ndim == 5:  # 多相机输入
-            features = features.view(batch_size, num_cameras, -1)  # [B, num_cameras, hidden_dim]
+        features_flat = features.flatten(2).transpose(1, 2)  # [B*num, H*W, 512]
 
-            # 如果有多个相机，对特征取平均
-            if num_cameras > 1:
-                features = features.mean(dim=1, keepdim=True)  # [B, 1, hidden_dim]
-            else:
-                features = features.unsqueeze(1)  # [B, 1, hidden_dim]
-        else:
-            features = features.unsqueeze(1)  # [B, 1, hidden_dim]
+        features = features_flat + cam_pos_embed
+
+        # 投影到 hidden_dim
+        proj = nn.Linear(self.feature_dim, self.hidden_dim).to(features.device)
+        features = proj(features)
+
+        features = features.view(batch_size, num_cameras, -1, self.hidden_dim)
+        features = features.squeeze(1)
 
         return features
 
 
-class CVAEEncoder(nn.Module):
-    """
-    CVAE 编码器 - 从未来动作序列推断隐变量 z 的分布
-    这是 ACT 的核心组件，用于建模人类演示中的多模态分布
-    """
-
-    def __init__(
-        self,
-        action_dim: int,
-        hidden_dim: int = 512,
-        latent_dim: int = 32,
-    ):
-        super().__init__()
-        self.action_dim = action_dim
-        self.hidden_dim = hidden_dim
-        self.latent_dim = latent_dim
-
-        # 动作编码器
-        self.action_encoder = nn.Sequential(
-            nn.Linear(action_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-        )
-
-        # 观察上下文编码器
-        self.context_encoder = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-        )
-
-        # 隐变量分布参数预测
-        self.fc_mu = nn.Linear(hidden_dim, latent_dim)
-        self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
-
-    def forward(
-        self,
-        action_sequence: torch.Tensor,
-        observation_context: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            action_sequence: [batch_size, action_chunk_size, action_dim]
-            observation_context: [batch_size, hidden_dim] 可选的观察上下文
-
-        Returns:
-            mu: [batch_size, latent_dim]
-            logvar: [batch_size, latent_dim]
-        """
-        batch_size = action_sequence.shape[0]
-
-        # 编码动作序列
-        action_features = self.action_encoder(action_sequence)  # [B, chunk, hidden]
-
-        # 对动作序列取平均
-        action_features = action_features.mean(dim=1)  # [B, hidden_dim]
-
-        # 如果提供了观察上下文，将其融合
-        if observation_context is not None:
-            context = self.context_encoder(observation_context)  # [B, hidden_dim]
-            combined = action_features + context  # 残差连接
-        else:
-            combined = action_features
-
-        # 预测分布参数
-        mu = self.fc_mu(combined)
-        logvar = self.fc_logvar(combined)
-
-        return mu, logvar
-
-    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-        """
-        重参数化技巧 - 从分布中采样
-
-        Args:
-            mu: [batch_size, latent_dim]
-            logvar: [batch_size, latent_dim]
-
-        Returns:
-            z: [batch_size, latent_dim]
-        """
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        z = mu + eps * std
-        return z
-
-
-class CVAEDecoder(nn.Module):
-    """
-    CVAE 解码器 - 从隐变量 z 和观察生成动作
-    """
-
-    def __init__(
-        self,
-        action_dim: int,
-        hidden_dim: int = 512,
-        latent_dim: int = 32,
-    ):
-        super().__init__()
-        self.action_dim = action_dim
-        self.hidden_dim = hidden_dim
-        self.latent_dim = latent_dim
-
-        # 将隐变量投影到 hidden_dim
-        self.latent_proj = nn.Linear(latent_dim, hidden_dim)
-
-        # 融合隐变量和观察特征
-        self.fusion = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
-            nn.GELU(),
-        )
-
-    def forward(
-        self,
-        latent_z: torch.Tensor,
-        observation_features: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            latent_z: [batch_size, latent_dim]
-            observation_features: [batch_size, seq_len, hidden_dim]
-
-        Returns:
-            action: [batch_size, action_dim]
-        """
-        batch_size = latent_z.shape[0]
-
-        # 投影隐变量
-        z_features = self.latent_proj(latent_z)  # [B, hidden_dim]
-
-        # 获取观察特征的平均
-        if observation_features.ndim == 3:
-            obs_features = observation_features.mean(dim=1)  # [B, hidden_dim]
-        else:
-            obs_features = observation_features  # [B, hidden_dim]
-
-        # 融合
-        combined = torch.cat([z_features, obs_features], dim=-1)  # [B, hidden_dim * 2]
-        output = self.fusion(combined)  # [B, hidden_dim]
-
-        return output
-
-
 class StateEncoder(nn.Module):
-    """
-    状态编码器 - 处理非图像状态（关节位置、速度等）
-    """
-
-    def __init__(
-        self,
-        state_dim: int,
-        hidden_dim: int = 512,
-    ):
+    """状态编码器"""
+    def __init__(self, state_dim: int, hidden_dim: int):
         super().__init__()
-        self.state_dim = state_dim
-        self.hidden_dim = hidden_dim
-
-        # 多层感知机
         self.encoder = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
         )
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            state: [batch_size, state_dim] 或 [batch_size, seq_len, state_dim]
+        if state.ndim == 2:
+            state = state.unsqueeze(1)
+        return self.encoder(state)
 
-        Returns:
-            features: [batch_size, hidden_dim] 或 [batch_size, seq_len, hidden_dim]
-        """
-        original_shape = state.shape
-        is_3d = state.ndim == 3
 
-        if is_3d:
-            batch_size, seq_len, state_dim = state.shape
-            state = state.view(-1, state_dim)
+class ACTEncoderLayer(nn.Module):
+    """Transformer Encoder Layer - 与 LeRobot 一致"""
+    def __init__(self, config: ACTConfig):
+        super().__init__()
+        self.self_attn = nn.MultiheadAttention(
+            config.hidden_dim, config.num_attention_heads, dropout=config.dropout, batch_first=True
+        )
+        self.linear1 = nn.Linear(config.hidden_dim, config.dim_feedforward)
+        self.dropout = nn.Dropout(config.dropout)
+        self.linear2 = nn.Linear(config.dim_feedforward, config.hidden_dim)
 
-        features = self.encoder(state)
+        self.norm1 = nn.LayerNorm(config.hidden_dim)
+        self.norm2 = nn.LayerNorm(config.hidden_dim)
+        self.dropout1 = nn.Dropout(config.dropout)
+        self.dropout2 = nn.Dropout(config.dropout)
 
-        if is_3d:
-            features = features.view(batch_size, seq_len, -1)
+        self.activation = F.gelu
+        self.pre_norm = True  # LeRobot 使用 pre-norm
 
-        return features
+    def forward(self, x: torch.Tensor, pos_embed: Optional[torch.Tensor] = None,
+                key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        skip = x
+        x = self.norm1(x)
+        q = k = x if pos_embed is None else x + pos_embed
+        x, _ = self.self_attn(q, k, value=x, key_padding_mask=key_padding_mask)
+        x = skip + self.dropout1(x)
+
+        skip = x
+        x = self.norm2(x)
+        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
+        x = skip + self.dropout2(x)
+        return x
+
+
+class ACTEncoder(nn.Module):
+    """Transformer Encoder"""
+    def __init__(self, config: ACTConfig, is_vae_encoder: bool = False):
+        super().__init__()
+        self.is_vae_encoder = is_vae_encoder
+        num_layers = config.num_encoder_layers  # VAE encoder 和主 encoder 用相同层数
+        self.layers = nn.ModuleList([ACTEncoderLayer(config) for _ in range(num_layers)])
+        self.norm = nn.LayerNorm(config.hidden_dim)
+
+    def forward(self, x: torch.Tensor, pos_embed: Optional[torch.Tensor] = None,
+                key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        for layer in self.layers:
+            x = layer(x, pos_embed=pos_embed, key_padding_mask=key_padding_mask)
+        x = self.norm(x)
+        return x
+
+
+class ACTDecoderLayer(nn.Module):
+    """Transformer Decoder Layer - 与 LeRobot 一致"""
+    def __init__(self, config: ACTConfig):
+        super().__init__()
+        self.self_attn = nn.MultiheadAttention(
+            config.hidden_dim, config.num_attention_heads, dropout=config.dropout, batch_first=True
+        )
+        self.multihead_attn = nn.MultiheadAttention(
+            config.hidden_dim, config.num_attention_heads, dropout=config.dropout, batch_first=True
+        )
+
+        self.linear1 = nn.Linear(config.hidden_dim, config.dim_feedforward)
+        self.dropout = nn.Dropout(config.dropout)
+        self.linear2 = nn.Linear(config.dim_feedforward, config.hidden_dim)
+
+        self.norm1 = nn.LayerNorm(config.hidden_dim)
+        self.norm2 = nn.LayerNorm(config.hidden_dim)
+        self.norm3 = nn.LayerNorm(config.hidden_dim)
+        self.dropout1 = nn.Dropout(config.dropout)
+        self.dropout2 = nn.Dropout(config.dropout)
+        self.dropout3 = nn.Dropout(config.dropout)
+
+        self.activation = F.gelu
+        self.pre_norm = True
+
+    def maybe_add_pos_embed(self, x: torch.Tensor, pos_embed: Optional[torch.Tensor]) -> torch.Tensor:
+        return x if pos_embed is None else x + pos_embed
+
+    def forward(self, x: torch.Tensor, encoder_out: torch.Tensor,
+                decoder_pos_embed: Optional[torch.Tensor] = None,
+                encoder_pos_embed: Optional[torch.Tensor] = None) -> torch.Tensor:
+        skip = x
+        x = self.norm1(x)
+        q = k = self.maybe_add_pos_embed(x, decoder_pos_embed)
+        x, _ = self.self_attn(q, k, value=x)
+        x = skip + self.dropout1(x)
+
+        skip = x
+        x = self.norm2(x)
+        x, _ = self.multihead_attn(
+            query=self.maybe_add_pos_embed(x, decoder_pos_embed),
+            key=self.maybe_add_pos_embed(encoder_out, encoder_pos_embed),
+            value=encoder_out,
+        )
+        x = skip + self.dropout2(x)
+
+        skip = x
+        x = self.norm3(x)
+        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
+        x = skip + self.dropout3(x)
+        return x
+
+
+class ACTDecoder(nn.Module):
+    """Transformer Decoder"""
+    def __init__(self, config: ACTConfig):
+        super().__init__()
+        self.layers = nn.ModuleList([ACTDecoderLayer(config) for _ in range(config.num_decoder_layers)])
+        self.norm = nn.LayerNorm(config.hidden_dim)
+
+    def forward(self, x: torch.Tensor, encoder_out: torch.Tensor,
+                decoder_pos_embed: Optional[torch.Tensor] = None,
+                encoder_pos_embed: Optional[torch.Tensor] = None) -> torch.Tensor:
+        for layer in self.layers:
+            x = layer(x, encoder_out, decoder_pos_embed=decoder_pos_embed, encoder_pos_embed=encoder_pos_embed)
+        if self.norm is not None:
+            x = self.norm(x)
+        return x
 
 
 class ACTModel(nn.Module):
     """
-    ACT (Action Chunking Transformer) 模型 - 完整版
-
-    架构:
-    1. 视觉编码器 (RGBEncoder): 处理图像输入，支持 Spatial Softmax
-    2. 状态编码器 (StateEncoder): 处理关节状态
-    3. CVAE 编码器 (CVAEEncoder): 从未来动作推断隐变量 z (训练时)
-    4. CVAE 解码器 (CVAEDecoder): 从隐变量 z 和观察生成动作
-    5. Transformer 编码器: 进一步处理融合特征
-    6. Transformer 解码器: 输出动作序列
+    ACT 模型 - 完全对齐 LeRobot
     """
 
     def __init__(self, config: ACTConfig):
@@ -439,12 +254,8 @@ class ACTModel(nn.Module):
 
         # 视觉编码器
         self.vision_encoder = RGBEncoder(
-            image_size=config.image_size,
             in_channels=config.in_channels,
             hidden_dim=config.hidden_dim,
-            pretrained=True,
-            use_spatial_softmax=config.use_spatial_softmax,
-            spatial_softmax_temperature=config.spatial_softmax_temperature,
         )
 
         # 状态编码器
@@ -453,69 +264,66 @@ class ACTModel(nn.Module):
             hidden_dim=config.hidden_dim,
         )
 
-        # CVAE 组件
+        # CVAE 编码器 (仅当 use_cvae=True 时)
         if config.use_cvae:
-            self.cvae_encoder = CVAEEncoder(
-                action_dim=config.action_dim,
-                hidden_dim=config.hidden_dim,
-                latent_dim=config.latent_dim,
+            self.action_encoder = nn.Linear(
+                config.action_chunk_size * config.action_dim,
+                config.hidden_dim
             )
-            self.cvae_decoder = CVAEDecoder(
-                action_dim=config.action_dim,
-                hidden_dim=config.hidden_dim,
-                latent_dim=config.latent_dim,
-            )
+            self.vae_output_proj = nn.Linear(config.hidden_dim, config.latent_dim * 2)
+            self.latent_query = nn.Embedding(1, config.hidden_dim)
 
-        # 融合投影层
-        self.fusion_proj = nn.Linear(config.hidden_dim * 2, config.hidden_dim)
+        # Transformer Encoder
+        self.encoder = ACTEncoder(config)
 
-        # 隐变量投影（用于添加到查询中）
-        if config.use_cvae:
-            self.latent_proj = nn.Linear(config.latent_dim, config.hidden_dim)
-
-        # Transformer 编码器
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=config.hidden_dim,
-            nhead=config.num_attention_heads,
-            dim_feedforward=config.dim_feedforward,  # 使用配置中的值 (3200)
-            dropout=config.dropout,
-            activation="gelu",
-            batch_first=True,
-        )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=config.num_encoder_layers,
-        )
-
-        # Transformer 解码器
-        decoder_layer = nn.TransformerDecoderLayer(
-            d_model=config.hidden_dim,
-            nhead=config.num_attention_heads,
-            dim_feedforward=config.dim_feedforward,  # 使用配置中的值 (3200)
-            dropout=config.dropout,
-            activation="gelu",
-            batch_first=True,
-        )
-        self.transformer_decoder = nn.TransformerDecoder(
-            decoder_layer,
-            num_layers=config.num_decoder_layers,
-        )
+        # Transformer Decoder
+        self.decoder = ACTDecoder(config)
 
         # 动作预测头
         self.action_head = nn.Linear(config.hidden_dim, config.action_dim)
 
-        # 2D 图像位置编码 - 与 LeRobot 一致
+        # 位置编码
+        # Encoder 1D 位置编码: [latent, state]
+        self.encoder_1d_feature_pos_embed = nn.Embedding(2, config.hidden_dim)
+
+        # 图像 2D 位置编码
         self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(config.hidden_dim // 2)
 
-        # 图像特征投影层
-        self.encoder_img_feat_input_proj = nn.Conv2d(512, config.hidden_dim, kernel_size=1)
+        # Decoder 位置编码
+        self.decoder_pos_embed = nn.Embedding(config.action_chunk_size, config.hidden_dim)
 
-        # 状态 1D 位置编码
-        self.encoder_1d_feature_pos_embed = nn.Embedding(2, config.hidden_dim)  # latent + state
+        # Latent 投影
+        self.latent_proj = nn.Linear(config.latent_dim, config.hidden_dim)
 
-        # Temporal Ensembling 状态
-        self.register_buffer('prev_action', None)
-        self.temporal_ensembling_alpha = config.temporal_ensembling_weight
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        """Xavier-uniform initialization"""
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def _encode_action(self, action_target: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """VAE 编码器"""
+        batch_size = action_target.shape[0]
+        action_flat = action_target.reshape(batch_size, -1)
+        h = F.gelu(self.action_encoder(action_flat))
+        latent_params = self.vae_output_proj(h)
+        mu = latent_params[:, :self.config.latent_dim]
+        log_sigma_x2 = latent_params[:, self.config.latent_dim:]
+        return mu, log_sigma_x2
+
+    def _sample_latent(self, mu: torch.Tensor, log_sigma_x2: torch.Tensor) -> torch.Tensor:
+        """重参数化采样"""
+        sigma = (log_sigma_x2 / 2).exp()
+        eps = torch.randn_like(mu)
+        z = mu + sigma * eps
+        return z
+
+    def _compute_kl_loss(self, mu: torch.Tensor, log_sigma_x2: torch.Tensor) -> torch.Tensor:
+        """KL 散度损失"""
+        kl = -0.5 * (1 + log_sigma_x2 - mu.pow(2) - log_sigma_x2.exp())
+        return kl.sum(-1).mean()
 
     def forward(
         self,
@@ -525,351 +333,91 @@ class ACTModel(nn.Module):
         infer_cvae: bool = True,
     ) -> Dict[str, torch.Tensor]:
         """
-        前向传播 - 修改为 LeRobot 架构 (使用 Cross-Attention)
-
-        Args:
-            images: [batch_size, num_cameras, channels, height, width]
-            state: [batch_size, state_dim]
-            action_target: [batch_size, action_chunk_size, action_dim] (训练时提供)
-            infer_cvae: 是否使用 CVAE
-
-        Returns:
-            output_dict: 包含 'action' 和其他中间结果
+        前向传播 - 与 LeRobot 一致
         """
         batch_size = images.shape[0]
 
-        # 确保 state 是 3D
-        if state.ndim == 2:
-            state = state.unsqueeze(1)
+        # 1. 处理 latent (CVAE)
+        mu = None
+        log_sigma_x2 = None
 
-        # ========== 1. 视觉编码 (使用 Spatial Softmax 或 特征图 + 2D Pos Embed) ==========
-        vision_features = self.vision_encoder(images)  # [B, 1, hidden_dim]
+        if self.config.use_cvae and action_target is not None and self.training:
+            mu, log_sigma_x2 = self._encode_action(action_target)
+            latent = self._sample_latent(mu, log_sigma_x2)
+        elif self.config.use_cvae and infer_cvae:
+            latent = torch.zeros(batch_size, self.config.latent_dim, device=images.device)
+        else:
+            latent = torch.zeros(batch_size, self.config.latent_dim, device=images.device)
 
-        # ========== 2. 状态编码 ==========
+        # 2. 视觉编码 - 返回特征
+        vision_features = self.vision_encoder(images)  # [B, H*W, hidden_dim]
+
+        # 3. 状态编码
         state_features = self.state_encoder(state)  # [B, 1, hidden_dim]
 
-        # ========== 3. 融合并过 Transformer Encoder ==========
-        fused = torch.cat([vision_features, state_features], dim=-1)
-        fused = self.fusion_proj(fused)  # [B, 2, hidden_dim]
+        # 4. Latent 投影
+        latent_features = self.latent_proj(latent).unsqueeze(1)  # [B, 1, hidden_dim]
 
-        encoder_out = self.transformer_encoder(fused)  # [B, 2, hidden_dim]
+        # 5. 构建 Encoder 输入 - [latent, state, image_features]
+        encoder_in = torch.cat([latent_features, state_features, vision_features], dim=1)  # [B, 2+H*W, hidden_dim]
 
-        # ========== 4. CVAE 处理 (不使用) ==========
-        latent_z = None
-        kl_loss = None
-        observation_context = encoder_out.mean(dim=1)  # [B, hidden_dim]
+        # 简单位置编码
+        seq_len = encoder_in.shape[1]
+        pos_embed = torch.arange(seq_len, device=images.device).unsqueeze(0).unsqueeze(-1).float() / float(seq_len)
+        pos_embed = pos_embed.expand(-1, -1, self.config.hidden_dim) * 0.01
 
-        # ========== 5. Transformer Decoder (Cross-Attention 到 encoder 输出) ==========
-        action_chunk_size = self.config.action_chunk_size
-        hidden_dim = self.config.hidden_dim
+        # 6. Transformer Encoder
+        encoder_out = self.encoder(encoder_in, pos_embed=pos_embed)
 
-        # 直接创建位置编码，确保在同一设备上
-        decoder_pos_embed = torch.randn(1, action_chunk_size, hidden_dim, dtype=encoder_out.dtype, device=encoder_out.device) * 0.02
-        decoder_pos_embed = decoder_pos_embed.expand(batch_size, -1, -1)  # [B, chunk, hidden]
+        # 7. Transformer Decoder
+        decoder_pos_embed = self.decoder_pos_embed.weight.unsqueeze(0).expand(batch_size, -1, -1)
 
-        # 解码器输入 (零初始化 + 位置编码)
         decoder_in = torch.zeros(
-            (batch_size, action_chunk_size, hidden_dim),
-            dtype=encoder_out.dtype,
-            device=encoder_out.device,
-        )  # [B, chunk, hidden]
+            batch_size, self.config.action_chunk_size, self.config.hidden_dim,
+            device=images.device
+        ) + decoder_pos_embed
 
-        # Cross-attention: decoder queries attend to encoder output (memory)
-        decoder_out = self.transformer_decoder(
-            decoder_in + decoder_pos_embed,  # [B, chunk, hidden]
-            memory=encoder_out,  # encoder output as memory
-        )  # [B, chunk, hidden]
+        decoder_out = self.decoder(
+            decoder_in,
+            encoder_out,
+            decoder_pos_embed=decoder_pos_embed,
+            encoder_pos_embed=pos_embed,
+        )
 
-        # ========== 6. 预测动作 ==========
-        action_pred = self.action_head(decoder_out)  # [B, chunk, action_dim]
+        # 8. 预测动作
+        action_pred = self.action_head(decoder_out)
 
-        result = {
+        # 计算 KL 损失
+        kl_loss = None
+        if self.config.use_cvae and mu is not None and log_sigma_x2 is not None:
+            kl_loss = self._compute_kl_loss(mu, log_sigma_x2)
+
+        return {
             "action": action_pred,
-            "vision_features": vision_features,
-            "state_features": state_features,
-            "memory": encoder_out,
+            "mu": mu,
+            "log_sigma_x2": log_sigma_x2,
+            "kl_loss": kl_loss,
         }
-
-        if latent_z is not None:
-            result["latent_z"] = latent_z
-        if kl_loss is not None:
-            result["kl_loss"] = kl_loss
-
-        return result
-
-        if latent_z is not None:
-            result["latent_z"] = latent_z
-        if kl_loss is not None:
-            result["kl_loss"] = kl_loss
-
-        return result
 
     def get_action(
         self,
         images: torch.Tensor,
         state: torch.Tensor,
-        use_temporal_ensembling: bool = True,
+        use_temporal_ensembling: bool = False,
         noise: float = 0.0,
     ) -> torch.Tensor:
-        """
-        推理时获取动作 - 支持 Temporal Ensembling
-
-        Args:
-            images: [batch_size, num_cameras, channels, height, width]
-            state: [batch_size, state_dim]
-            use_temporal_ensembling: 是否使用时间集成
-            noise: 添加到动作的噪声（用于探索）
-
-        Returns:
-            actions: [batch_size, action_chunk_size, action_dim]
-        """
+        """推理时获取动作"""
         self.eval()
         with torch.no_grad():
-            # 推理时不使用 CVAE（因为没有未来动作）
-            output = self.forward(images, state, action_target=None, infer_cvae=False)
+            output = self.forward(
+                images,
+                state,
+                action_target=None,
+                infer_cvae=True
+            )
             action = output["action"]
-
-            # Temporal Ensembling: 与上一帧预测加权平均
-            if use_temporal_ensembling and self.config.use_temporal_ensembling:
-                if self.prev_action is not None:
-                    # EMA 融合: alpha * prev + (1-alpha) * current
-                    action = (
-                        self.temporal_ensembling_alpha * self.prev_action
-                        + (1 - self.temporal_ensembling_alpha) * action
-                    )
-
-                # 保存当前预测用于下一帧
-                self.prev_action = action.clone()
 
             if noise > 0:
                 action = action + torch.randn_like(action) * noise
 
         return action
-
-    def reset_temporal_ensembling(self):
-        """重置 Temporal Ensembling 状态"""
-        self.prev_action = None
-
-
-class ACTLoss(nn.Module):
-    """
-    ACT 损失函数 - 支持 CVAE 的 ELBO 损失
-    """
-
-    def __init__(
-        self,
-        action_chunk_size: int = 16,
-        kl_weight: float = 0.1,
-    ):
-        super().__init__()
-        self.action_chunk_size = action_chunk_size
-        self.kl_weight = kl_weight
-        self.mse_loss = nn.MSELoss(reduction='none')
-
-    def forward(
-        self,
-        pred_action: torch.Tensor,
-        target_action: torch.Tensor,
-        kl_loss: Optional[torch.Tensor] = None,
-        weight: Optional[torch.Tensor] = None,
-    ) -> Dict[str, torch.Tensor]:
-        """
-        计算损失
-
-        Args:
-            pred_action: [batch_size, action_chunk_size, action_dim]
-            target_action: [batch_size, action_chunk_size, action_dim]
-            kl_loss: KL 散度损失 (CVAE)
-            weight: 可选的权重
-
-        Returns:
-            loss_dict: 包含总损失和各组成部分
-        """
-        # MSE 损失
-        mse = self.mse_loss(pred_action, target_action)  # [B, chunk, dim]
-        mse = mse.mean(dim=-1)  # [B, chunk]
-
-        if weight is not None:
-            mse = mse * weight
-
-        reconstruction_loss = mse.mean()
-        first_step_loss = mse[:, 0].mean()
-        last_step_loss = mse[:, -1].mean()
-
-        # 总损失
-        total_loss = reconstruction_loss
-        if kl_loss is not None:
-            total_loss = total_loss + self.kl_weight * kl_loss
-
-        return {
-            "loss": total_loss,
-            "reconstruction_loss": reconstruction_loss,
-            "kl_loss": kl_loss if kl_loss is not None else torch.tensor(0.0),
-            "first_step_loss": first_step_loss,
-            "last_step_loss": last_step_loss,
-            "per_step_loss": mse,
-        }
-
-
-class ACTTrainer:
-    """
-    ACT 模型训练器
-    """
-
-    def __init__(
-        self,
-        model: ACTModel,
-        optimizer: torch.optim.Optimizer,
-        loss_fn: Optional[ACTLoss] = None,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
-    ):
-        self.model = model.to(device)
-        self.optimizer = optimizer
-        self.loss_fn = loss_fn or ACTLoss(model.config.action_chunk_size)
-        self.device = device
-
-    def train_step(
-        self,
-        batch: Dict[str, torch.Tensor],
-    ) -> Dict[str, float]:
-        """
-        执行一个训练步骤
-        """
-        self.model.train()
-
-        images = batch["observation"]["image"].to(self.device)
-        state = batch["observation"]["state"].to(self.device)
-        action = batch["action"].to(self.device)
-
-        # 前向传播
-        output = self.model(images, state, action, infer_cvae=True)
-
-        # 计算损失
-        loss_dict = self.loss_fn(
-            output["action"],
-            action,
-            kl_loss=output.get("kl_loss"),
-        )
-
-        # 反向传播
-        self.optimizer.zero_grad()
-        loss_dict["loss"].backward()
-
-        # 梯度裁剪
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-
-        self.optimizer.step()
-
-        metrics = {
-            "loss": loss_dict["loss"].item(),
-            "reconstruction_loss": loss_dict["reconstruction_loss"].item(),
-            "kl_loss": loss_dict["kl_loss"].item() if isinstance(loss_dict["kl_loss"], torch.Tensor) else loss_dict["kl_loss"],
-            "first_step_loss": loss_dict["first_step_loss"].item(),
-            "last_step_loss": loss_dict["last_step_loss"].item(),
-        }
-
-        return metrics
-
-    def evaluate(
-        self,
-        dataloader: torch.utils.data.DataLoader,
-    ) -> Dict[str, float]:
-        """
-        评估模型
-        """
-        self.model.eval()
-        total_metrics = {}
-        num_batches = 0
-
-        with torch.no_grad():
-            for batch in dataloader:
-                images = batch["observation"]["image"].to(self.device)
-                state = batch["observation"]["state"].to(self.device)
-                action = batch["action"].to(self.device)
-
-                output = self.model(images, state, action, infer_cvae=False)
-                loss_dict = self.loss_fn(output["action"], action)
-
-                for k, v in loss_dict.items():
-                    if isinstance(v, torch.Tensor):
-                        v = v.item()
-                    if k not in total_metrics:
-                        total_metrics[k] = 0
-                    total_metrics[k] += v
-
-                num_batches += 1
-
-        for k in total_metrics:
-            total_metrics[k] /= num_batches
-
-        return total_metrics
-
-
-def create_act_model(
-    state_dim: int = 7,
-    action_dim: int = 7,
-    action_chunk_size: int = 16,
-    hidden_dim: int = 512,
-    num_encoder_layers: int = 6,
-    num_decoder_layers: int = 6,
-    num_attention_heads: int = 8,
-    use_cvae: bool = True,
-    use_temporal_ensembling: bool = True,
-    use_spatial_softmax: bool = True,
-    **kwargs,
-) -> ACTModel:
-    """
-    创建 ACT 模型的便捷函数
-    """
-    config = ACTConfig(
-        state_dim=state_dim,
-        action_dim=action_dim,
-        action_chunk_size=action_chunk_size,
-        hidden_dim=hidden_dim,
-        num_encoder_layers=num_encoder_layers,
-        num_decoder_layers=num_decoder_layers,
-        num_attention_heads=num_attention_heads,
-        use_cvae=use_cvae,
-        use_temporal_ensembling=use_temporal_ensembling,
-        use_spatial_softmax=use_spatial_softmax,
-        **kwargs,
-    )
-    return ACTModel(config)
-
-
-if __name__ == "__main__":
-    # 测试完整版 ACT
-    config = ACTConfig(
-        state_dim=7,
-        action_dim=7,
-        action_chunk_size=16,
-        hidden_dim=256,
-        num_encoder_layers=2,
-        num_decoder_layers=2,
-        num_attention_heads=4,
-        use_cvae=True,
-        use_temporal_ensembling=True,
-        use_spatial_softmax=True,
-        latent_dim=32,
-    )
-
-    model = ACTModel(config)
-    print(f"ACT 模型参数量: {sum(p.numel() for p in model.parameters()):,}")
-
-    # 测试前向传播
-    batch_size = 2
-    images = torch.randn(batch_size, 1, 3, 224, 224)
-    state = torch.randn(batch_size, 7)
-    action_target = torch.randn(batch_size, 16, 7)
-
-    output = model(images, state, action_target)
-    print(f"输出动作形状: {output['action'].shape}")
-    print(f"隐变量形状: {output.get('latent_z', 'N/A')}")
-    print(f"KL 损失: {output.get('kl_loss', 'N/A')}")
-
-    # 测试推理
-    model.eval()
-    action1 = model.get_action(images, state, use_temporal_ensembling=True)
-    action2 = model.get_action(images, state, use_temporal_ensembling=True)
-    print(f"推理动作形状: {action1.shape}")
-    print("测试完成!")

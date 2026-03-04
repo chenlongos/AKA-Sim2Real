@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
 
     # 尝试加载模型
+    # TODO 没必要
     try:
         act_model.load_act_model()
     except Exception as e:

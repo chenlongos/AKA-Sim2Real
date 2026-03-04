@@ -19,16 +19,26 @@ from PIL import Image
 # 默认配置
 DEFAULT_CHUNK_SIZE = 1000  # 每个 parquet 文件的最大样本数
 DEFAULT_CHUNK_SIZE_BYTES = 100 * 1024 * 1024  # 100MB 基于大小的分块
-ACTION_CHUNK_SIZE = 16
+ACTION_CHUNK_SIZE = 8  # 预测未来8帧的动作序列
+ACTION_DIM = 3  # [x.vel, y.vel, theta.vel] 每帧3维
 DEFAULT_FPS = 10
 
-# 动作编码
-ACTION_TO_IDX = {"forward": 0, "backward": 1, "left": 2, "right": 3, "stop": 4}
-ACTION_DIM = len(ACTION_TO_IDX)
-
-# 状态编码 (4维) - 只保留有变化的状态
-STATE_KEYS = ["x", "y", "angle", "speed"]  # 去掉常量: maxSpeed, acceleration, rotationSpeed
+# 状态编码 (3维) - 车辆速度
+STATE_KEYS = ["x_vel", "y_vel", "theta_vel"]  # 当前车辆速度
 STATE_DIM = len(STATE_KEYS)
+
+# 动作到连续值的映射（离散动作 -> 目标速度，归一化到 -100 ~ +100）
+ACTION_TO_CONTINUOUS = {
+    "forward": [100.0, 0.0, 0.0],    # 前进：100
+    "backward": [-100.0, 0.0, 0.0],  # 后退：-100
+    "left": [0.0, 0.0, 1.0],        # 左转：前进50 + 左转1.0
+    "right": [0.0, 0.0, -1.0],     # 右转：前进50 + 右转-1.0
+    "stop": [0.0, 0.0, 0.0],         # 停止
+}
+
+# 动作统计范围
+ACTION_MIN = [-100.0, -100.0, -1.0]
+ACTION_MAX = [100.0, 100.0, 1.0]
 
 
 class LeRobotDatasetMetadata:
@@ -179,7 +189,7 @@ class LeRobotDatasetMetadata:
 
         # 收集状态统计
         all_states = []
-        action_counts = {k: 0 for k in ACTION_TO_IDX.keys()}
+        all_actions = []
 
         # 处理每个样本
         for i, sample in enumerate(samples):
@@ -210,31 +220,38 @@ class LeRobotDatasetMetadata:
             state_values = [sample.get("state", {}).get(k, 0) for k in STATE_KEYS]
             all_states.append(state_values)
 
-            # 统计动作
-            for action in sample.get("actions", []):
-                if action in action_counts:
-                    action_counts[action] += 1
+            # 收集动作（取最后一个动作转为连续值）
+            sample_actions = sample.get("actions", [])
+            if sample_actions:
+                last_action = sample_actions[-1]
+                action_values = ACTION_TO_CONTINUOUS.get(last_action, [0.0, 0.0, 0.0])
+            else:
+                action_values = [0.0, 0.0, 0.0]  # 默认停止
+            all_actions.append(action_values)
 
-        # 计算状态归一化统计
+        # 计算状态统计（仅用于保存，不做归一化）
         states_array = np.array(all_states, dtype=np.float32)
         state_min = states_array.min(axis=0)
         state_max = states_array.max(axis=0)
         state_mean = states_array.mean(axis=0)
-        state_std = states_array.std(axis=0) + 1e-6  # 避免除零
+        state_std = states_array.std(axis=0) + 1e-6
 
-        # 归一化状态
-        state_range = state_max - state_min
-        state_range = np.where(state_range > 1e-6, state_range, np.ones_like(state_range))
-        normalized_states = (states_array - state_min) / state_range
+        # 将动作扩展为未来 chunk 帧的序列
+        # 每帧的动作重复 ACTION_CHUNK_SIZE 次，形成序列
+        actions_expanded = []
+        for i in range(len(all_actions)):
+            chunk_actions = []
+            for j in range(ACTION_CHUNK_SIZE):
+                future_idx = min(i + j, len(all_actions) - 1)
+                chunk_actions.append(all_actions[future_idx])
+            actions_expanded.append(chunk_actions)
 
-        # 创建动作数据
-        actions_array = np.zeros((num_frames, ACTION_CHUNK_SIZE, ACTION_DIM), dtype=np.float32)
-        for i in range(num_frames):
-            sample_actions = samples[i].get("actions", [])
-            for j in range(min(len(sample_actions), ACTION_CHUNK_SIZE)):
-                action = sample_actions[j]
-                if action in ACTION_TO_IDX:
-                    actions_array[i, j, ACTION_TO_IDX[action]] = 1.0
+        # 动作数据：[num_samples, chunk_size, 3]
+        actions_array = np.array(actions_expanded, dtype=np.float32)
+
+        # 计算动作统计（从实际数据计算）
+        action_mean = np.mean(actions_array, axis=(0, 1))  # [3]
+        action_std = np.std(actions_array, axis=(0, 1))    # [3]
 
         # 写入数据 parquet
         for chunk_idx in range((episode_start_idx // self.chunk_size), ((self._total_samples + num_frames) // self.chunk_size) + 1):
@@ -251,17 +268,15 @@ class LeRobotDatasetMetadata:
             local_start = chunk_start - episode_start_idx
             local_end = chunk_end - episode_start_idx
 
-            actions_list = []
-            for i in range(local_start, local_end):
-                action_flat = actions_array[i].flatten().tolist()
-                actions_list.append(action_flat)
+            # 动作数据已经是 2 维连续值
+            actions_list = actions_array[local_start:local_end].tolist()
 
             chunk_data = {
                 "observation.image": [
                     f"videos/observation.images.fpv/chunk-{chunk_idx:03d}/frame_{i - (chunk_idx * self.chunk_size):06d}.jpg"
                     for i in range(chunk_start, chunk_end)
                 ],
-                "observation.state": normalized_states[local_start:local_end].tolist(),
+                "observation.state": states_array[local_start:local_end].tolist(),
                 "action": actions_list,
             }
 
@@ -269,13 +284,17 @@ class LeRobotDatasetMetadata:
             chunk_file_dir = self.data_dir / f"chunk-{chunk_idx:03d}"
             chunk_file_dir.mkdir(exist_ok=True)
 
-            # 每 100 个样本一个文件（需要追加而不是覆盖）
-            for file_idx in range(0, end_idx - start_idx, 100):
-                sub_end = min(file_idx + 100, end_idx - start_idx)
-                sub_df = df.iloc[file_idx:sub_end]
-                sub_file = chunk_file_dir / f"file-{file_idx // 100:03d}.parquet"
+            # 每 100 个样本一个文件
+            # 使用全局帧索引计算文件编号，避免不同 episode 覆盖
+            global_start = start_idx  # 全局起始帧索引
+            for local_idx in range(0, end_idx - start_idx, 100):
+                sub_end = min(local_idx + 100, end_idx - start_idx)
+                sub_df = df.iloc[local_idx:sub_end]
+                # 使用全局索引：(global_start + local_idx) // 100
+                global_file_idx = (global_start + local_idx) // 100
+                sub_file = chunk_file_dir / f"file-{global_file_idx:03d}.parquet"
 
-                # 如果文件已存在，读取并追加新数据
+                # 追加模式：如果文件已存在，则读取并合并
                 if sub_file.exists():
                     existing_df = pd.read_parquet(sub_file)
                     combined_df = pd.concat([existing_df, sub_df], ignore_index=True)
@@ -284,7 +303,9 @@ class LeRobotDatasetMetadata:
                     sub_df.to_parquet(sub_file, index=False)
 
         # 更新统计
-        self._update_stats(state_min, state_max, state_mean, state_std, action_counts)
+        action_min = np.array(ACTION_MIN, dtype=np.float32)
+        action_max = np.array(ACTION_MAX, dtype=np.float32)
+        self._update_stats(state_min, state_max, state_mean, state_std, action_min, action_max, action_mean, action_std)
 
         # 创建 episode 元数据
         episode_meta = {
@@ -316,7 +337,10 @@ class LeRobotDatasetMetadata:
         state_max: np.ndarray,
         state_mean: np.ndarray,
         state_std: np.ndarray,
-        action_counts: Dict[str, int],
+        action_min: np.ndarray,
+        action_max: np.ndarray,
+        action_mean: np.ndarray,
+        action_std: np.ndarray,
     ):
         """更新统计信息"""
         if self._stats is None:
@@ -327,7 +351,12 @@ class LeRobotDatasetMetadata:
                     "mean": state_mean.tolist(),
                     "std": state_std.tolist(),
                 },
-                "action_counts": action_counts,
+                "action": {
+                    "min": action_min.tolist(),
+                    "max": action_max.tolist(),
+                    "mean": action_mean.tolist(),
+                    "std": action_std.tolist(),
+                },
             }
         else:
             # 合并统计
@@ -344,11 +373,16 @@ class LeRobotDatasetMetadata:
                 "std": (combined_max - combined_min).tolist(),
             }
 
-            # 合并动作计数
-            old_action_counts = self._stats.get("action_counts", {})
-            self._stats["action_counts"] = {
-                k: old_action_counts.get(k, 0) + action_counts.get(k, 0)
-                for k in ACTION_TO_IDX.keys()
+            # 合并动作统计（连续值）
+            old_action_min = np.array(self._stats.get("action", {}).get("min", ACTION_MIN), dtype=np.float32)
+            old_action_max = np.array(self._stats.get("action", {}).get("max", ACTION_MAX), dtype=np.float32)
+            combined_action_min = np.minimum(old_action_min, action_min)
+            combined_action_max = np.maximum(old_action_max, action_max)
+            self._stats["action"] = {
+                "min": combined_action_min.tolist(),
+                "max": combined_action_max.tolist(),
+                "mean": ((combined_action_min + combined_action_max) / 2).tolist(),
+                "std": (combined_action_max - combined_action_min).tolist(),
             }
 
     def _save_episode_metadata(self, episode_meta: Dict[str, Any]):
@@ -457,7 +491,6 @@ def export_episode(
     task_name: str = "default",
     output_dir: str = None,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
-    action_chunk_size: int = ACTION_CHUNK_SIZE,
 ) -> str:
     """
     导出单个 episode
@@ -468,7 +501,6 @@ def export_episode(
         task_name: 任务名称
         output_dir: 输出目录
         chunk_size: 分块大小
-        action_chunk_size: 动作分块大小
 
     Returns:
         导出的目录路径
@@ -486,7 +518,6 @@ def export_all_episodes(
     episode_samples: Dict[int, List[Dict[str, Any]]],
     output_dir: str = None,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
-    action_chunk_size: int = ACTION_CHUNK_SIZE,
 ) -> str:
     """
     导出所有 episodes
@@ -495,7 +526,6 @@ def export_all_episodes(
         episode_samples: 所有 episodes 的样本 {episode_id: samples}
         output_dir: 输出目录
         chunk_size: 分块大小
-        action_chunk_size: 动作分块大小
 
     Returns:
         导出的目录路径
@@ -542,7 +572,6 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
         with open(info_path, "r") as f:
             info = json.load(f)
 
-    action_chunk_size = info.get("chunk_size", ACTION_CHUNK_SIZE)
     action_dim = ACTION_DIM
 
     # 加载所有parquet文件
@@ -572,25 +601,13 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
             state = torch.from_numpy(state_arr).float()
             states.append(state)
 
-        # 加载动作
+        # 加载动作（[chunk_size, 3]）
         for action_data in df["action"]:
-            if isinstance(action_data, list):
-                if len(action_data) > 0 and isinstance(action_data[0], (list, np.ndarray)):
-                    flat = []
-                    for item in action_data:
-                        if hasattr(item, 'flatten'):
-                            flat.extend(item.flatten().tolist())
-                        else:
-                            flat.extend(list(item))
-                    action_arr = np.array(flat, dtype=np.float32)
-                else:
-                    action_arr = np.array(action_data, dtype=np.float32)
-            elif hasattr(action_data, 'flatten'):
-                action_arr = action_data.flatten()
-            else:
-                action_arr = np.array(action_data, dtype=np.float32)
-
-            action_arr = action_arr.reshape(action_chunk_size, action_dim)
+            # action_data 可能是嵌套列表
+            action_arr = np.array(action_data, dtype=np.float32)
+            # 确保是正确形状 [chunk_size, 3]
+            if action_arr.ndim == 1:
+                action_arr = action_arr.reshape(1, -1)
             action = torch.from_numpy(action_arr).float()
             actions.append(action)
 
@@ -603,23 +620,6 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
         "observation.state": states,
         "action": actions,
     }
-
-
-# 兼容旧接口
-def export_dataset(
-    samples: List[Dict[str, Any]],
-    output_dir: str = None,
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
-    action_chunk_size: int = ACTION_CHUNK_SIZE,
-) -> str:
-    """导出数据集（兼容旧接口）"""
-    return export_episode(
-        samples=samples,
-        episode_id=1,
-        output_dir=output_dir,
-        chunk_size=chunk_size,
-        action_chunk_size=action_chunk_size,
-    )
 
 
 def create_demo_samples(num_samples: int = 100) -> List[Dict[str, Any]]:

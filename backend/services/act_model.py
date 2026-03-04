@@ -35,15 +35,16 @@ def create_act_config() -> "ACTConfig":
     from policies.models.act.modeling_act import ACTConfig as PyACTConfig
 
     return PyACTConfig(
-        state_dim=4,  # 只用 x, y, angle, speed
-        action_dim=5,
-        action_chunk_size=16,
+        state_dim=3,  # [x_vel, y_vel, theta_vel]
+        action_dim=3,  # [x_vel, y_vel, theta_vel]
+        action_chunk_size=8,
         hidden_dim=512,
         num_attention_heads=8,
         num_encoder_layers=4,
         num_decoder_layers=4,
         dim_feedforward=3200,  # LeRobot 使用 3200
-        use_cvae=False,
+        use_cvae=True,  # 启用 CVAE
+        kl_weight=0.1,
         use_temporal_ensembling=False,
         use_spatial_softmax=True,
         latent_dim=32,
@@ -66,9 +67,7 @@ def load_act_model(model_path: str = None) -> "ACTModel":
     model_path = Path(model_path)
 
     if not model_path.exists():
-        logger.warning(f"模型文件不存在: {model_path}")
-        _act_model = None
-        return None
+        raise FileNotFoundError(f"模型文件不存在: {model_path}")
 
     logger.info(f"从 {model_path} 加载模型权重")
 
@@ -98,8 +97,8 @@ def load_act_model(model_path: str = None) -> "ACTModel":
             _state_std = torch.tensor(stats["observation.state"]["std"], dtype=torch.float32)
             logger.info(f"状态归一化: mean={_state_mean}, std={_state_std}")
         else:
-            _state_mean = torch.zeros(7)
-            _state_std = torch.ones(7)
+            _state_mean = torch.zeros(3)
+            _state_std = torch.ones(3)
 
         # 动作归一化统计
         if "action" in stats:
@@ -107,14 +106,14 @@ def load_act_model(model_path: str = None) -> "ACTModel":
             _action_std = torch.tensor(stats["action"]["std"], dtype=torch.float32)
             logger.info(f"动作归一化: mean={_action_mean}, std={_action_std}")
         else:
-            _action_mean = torch.zeros(5)
-            _action_std = torch.ones(5)
+            _action_mean = torch.zeros(3)
+            _action_std = torch.ones(3)
     else:
         logger.warning(f"未找到归一化统计文件: {stats_path}，使用默认归一化")
-        _state_mean = torch.zeros(7)
-        _state_std = torch.ones(7)
-        _action_mean = torch.zeros(5)
-        _action_std = torch.ones(5)
+        _state_mean = torch.zeros(3)
+        _state_std = torch.ones(3)
+        _action_mean = torch.zeros(3)
+        _action_std = torch.ones(3)
 
     logger.info(f"ACT 模型加载完成，使用设备: {_model_device}")
     return _act_model
@@ -179,25 +178,20 @@ def act_inference(state: list, image: Optional[Union[str, Image.Image]] = None) 
     """
     if _act_model is None:
         logger.warning("ACT 模型未加载，返回随机动作")
-        action_dim = 5
-        action_chunk_size = 16
+        action_dim = 3  # [x_vel, y_vel, theta_vel]
+        action_chunk_size = 1
         return [[0.0] * action_dim for _ in range(action_chunk_size)]
 
     with torch.no_grad():
         # 1. 准备状态输入并进行归一化
-        # 只用前 4 维：x, y, angle, speed
-        state = state[:4]
+        state = state[:3]
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(_model_device)
-        logger.info(f"原始 state: {state}")
 
+        # 归一化状态
         if _state_mean is not None and _state_std is not None:
-            # 只用前 4 维的 mean/std
-            state_mean = _state_mean[:4].to(_model_device)
-            state_std = _state_std[:4].to(_model_device)
-            # 确保 std 不为 0
-            state_std = torch.where(state_std > 1e-6, state_std, torch.ones_like(state_std))
-            state_tensor = (state_tensor - state_mean) / state_std
-            logger.info(f"归一化后 state: {state_tensor}")
+            state_tensor = (state_tensor - _state_mean.unsqueeze(0).to(_model_device)) / (_state_std.unsqueeze(0).to(_model_device) + 1e-8)
+
+        logger.info(f"原始 state: {state}")
 
         # 2. 处理图像输入
         image_tensor = _process_image(image)
@@ -210,12 +204,13 @@ def act_inference(state: list, image: Optional[Union[str, Image.Image]] = None) 
             use_temporal_ensembling=False,
         )
 
-        logger.info(f"原始推理结果: {action[0][0].tolist()}")
+        logger.info(f"归一化后的推理结果: {action[0][0].tolist()}")
 
-        # 4. 动作反归一化
+        # 4. 反归一化动作
         if _action_mean is not None and _action_std is not None:
-            action = action * _action_std.to(_model_device) + _action_mean.to(_model_device)
-            logger.info(f"反归一化后: {action[0][0].tolist()}")
+            action = action * _action_std.unsqueeze(0).to(_model_device) + _action_mean.unsqueeze(0).to(_model_device)
+
+        logger.info(f"反归一化后的动作: {action[0][0].tolist()}")
 
         # 5. 转换为 Python 列表
         action_list = action.cpu().numpy()[0].tolist()

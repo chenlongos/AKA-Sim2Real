@@ -4,6 +4,7 @@ AKA-Sim 后端 - Socket.IO 事件处理
 
 import asyncio
 import logging
+import math
 
 from socketio import AsyncNamespace
 
@@ -90,8 +91,6 @@ class SimNamespace(AsyncNamespace):
         # 使用新的 episode buffer 机制
         state.start_episode(episode_id, task_name)
 
-        # 重置车辆状态
-        state.reset_car_state()
         await self.emit("car_state_update", state.car_state)
 
         await self.emit("episode_started", {
@@ -244,24 +243,42 @@ class SimNamespace(AsyncNamespace):
         try:
             # 解析图像数据 (base64)
             image_data = payload.get("image", "")
-            actions = payload.get("actions", [])
 
             # 获取当前车辆状态
             car_state_copy = state.car_state.copy()
 
-            # 只保留有变化的状态：x, y, angle, speed (去掉常量 maxSpeed, acceleration, rotationSpeed)
-            state_4d = {
-                "x": car_state_copy.get("x", 0),
-                "y": car_state_copy.get("y", 0),
-                "angle": car_state_copy.get("angle", 0),
-                "speed": car_state_copy.get("speed", 0),
+            # 计算速度（基于当前 speed 和 angle）
+            speed = car_state_copy.get("speed", 0)
+            angle = car_state_copy.get("angle", 0)
+            rotation_speed = car_state_copy.get("rotationSpeed", 0.05)
+
+            # 车体坐标系下的速度
+            # x.vel: 前向速度 (cos方向)
+            # y.vel: 横向速度 (sin方向)
+            # 当前实际速度（从 car_state 计算）
+            x_vel = speed * math.cos(angle)
+            y_vel = speed * math.sin(angle)
+            # 当前实际转向速度（没有按键时为0）
+            actions = list(current_actions)
+            if "left" in actions:
+                current_theta_vel = rotation_speed  # 当前正在左转
+            elif "right" in actions:
+                current_theta_vel = -rotation_speed  # 当前正在右转
+            else:
+                current_theta_vel = 0
+
+            # 状态: 当前实际速度
+            state_3d = {
+                "x_vel": x_vel,
+                "y_vel": y_vel,
+                "theta_vel": current_theta_vel,
             }
 
             # 保存样本到当前轮次
             sample = {
                 "image": image_data,  # base64编码的JPEG图像
-                "state": state_4d,
-                "actions": actions,
+                "state": state_3d,
+                "actions": actions,  # 离散动作，导出时会转成连续值
             }
 
             # 确保当前轮次的列表存在
@@ -294,10 +311,10 @@ async def game_loop_task(sio_server):
         try:
             # 根据当前按键更新状态
             if current_actions:
-                logger.info(f"游戏循环处理动作: {current_actions}")
+                # logger.info(f"游戏循环处理动作: {current_actions}")
                 for action in current_actions:
                     state.update_car_state(action)
-                logger.info(f"更新后状态: x={state.car_state['x']}, y={state.car_state['y']}, speed={state.car_state['speed']}")
+                # logger.info(f"更新后状态: x={state.car_state['x']}, y={state.car_state['y']}, speed={state.car_state['speed']}")
             else:
                 # 没有按键时应用摩擦力减速
                 state.apply_friction()

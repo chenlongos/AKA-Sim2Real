@@ -99,7 +99,14 @@ export const stopTraining = () => {
 
 // 推理相关
 export const loadTrainedModel = () => {
-    return fetch('/api/act/load_trained', { method: 'POST' }).then(res => res.json());
+    return fetch('/api/act/load_trained', { method: 'POST' }).then(res => {
+        if (!res.ok) {
+            return res.json().then(err => {
+                throw new Error(err.detail || '加载失败')
+            })
+        }
+        return res.json()
+    })
 };
 
 export const runInference = (state: number[], image?: string) => {

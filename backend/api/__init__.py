@@ -11,7 +11,6 @@ from services import act_model as act_model_module, training
 from config import config
 from api.models import ACTInferenceRequest, DatasetPayload
 from models import state
-from services.data_export import export_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -85,20 +84,6 @@ async def clear_dataset():
     }
 
 
-@router.post("/api/act/load")
-async def load_model(path: str):
-    """加载 ACT 模型"""
-    try:
-        config.MODEL_PATH = path
-        act_model_module.load_act_model()
-        return {
-            "success": True,
-            "device": act_model_module.get_model_device(),
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.post("/api/act/infer")
 async def infer_act(request: ACTInferenceRequest):
     """ACT 模型推理 API"""
@@ -113,7 +98,7 @@ async def infer_act(request: ACTInferenceRequest):
 
 
 @router.post("/api/act/load_trained")
-async def load_trained_model(model_path: str = "checkpoints/model.pt"):
+async def load_trained_model(model_path: str = None):
     """加载训练好的ACT模型"""
     try:
         act_model_module.load_act_model(model_path)
@@ -129,7 +114,7 @@ async def load_trained_model(model_path: str = "checkpoints/model.pt"):
 async def run_inference(body: dict = Body(...)):
     """运行推理"""
     try:
-        state = body.get("state", [400, 300, -1.57, 0, 5, 0.2, 0.05])
+        state = body.get("state", [0, 0, 0])
         image = body.get("image", None)
         if not act_model_module.is_model_loaded():
             # 尝试加载训练好的模型
@@ -142,28 +127,6 @@ async def run_inference(body: dict = Body(...)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/api/dataset/export")
-async def export_dataset_api(output_dir: str = None):
-    """导出数据集为ACT训练格式"""
-    try:
-        if not state.dataset_samples:
-            return {
-                "success": False,
-                "message": "没有采集数据可导出",
-            }
-
-        output_path = export_dataset(state.dataset_samples, output_dir)
-        return {
-            "success": True,
-            "output_path": output_path,
-            "samples_count": len(state.dataset_samples),
-        }
-    except Exception as e:
-        logger.error(f"导出数据集失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/api/train")
 async def start_training(
