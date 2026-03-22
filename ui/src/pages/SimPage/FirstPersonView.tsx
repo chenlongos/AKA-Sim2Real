@@ -193,7 +193,8 @@ export const FirstPersonView = forwardRef<FirstPersonViewRef, FirstPersonViewPro
                 <div>X: {carState.x.toFixed(1)}</div>
                 <div>Y: {carState.y.toFixed(1)}</div>
                 <div>角度: {(carState.angle * 180 / Math.PI).toFixed(1)}°</div>
-                <div>速度: {carState.speed.toFixed(2)}</div>
+                <div>左轮: {carState.vel_left.toFixed(3)} m/s</div>
+                <div>右轮: {carState.vel_right.toFixed(3)} m/s</div>
             </div>
         </div>
     )

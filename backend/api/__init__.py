@@ -7,14 +7,14 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Body
 
-from services import act_model as act_model_module, training
-from config import config
-from api.models import ACTInferenceRequest, DatasetPayload
-from models import state
+from backend.services import act_model as act_model_module, training
+from backend.api.models import ACTInferenceRequest, DatasetPayload
+from backend.models import state
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_act_runtime = act_model_module.get_act_runtime()
 
 # 存储sio_server实例
 _sio_server = None
@@ -24,6 +24,11 @@ def set_sio_server(sio):
     """设置Socket.IO服务器实例"""
     global _sio_server
     _sio_server = sio
+
+
+def set_act_runtime(runtime):
+    global _act_runtime
+    _act_runtime = runtime
 
 
 @router.get("/")
@@ -41,7 +46,7 @@ async def health():
     """健康检查"""
     return {
         "status": "healthy",
-        "model_loaded": act_model_module.is_model_loaded(),
+        "model_loaded": _act_runtime.is_model_loaded(),
     }
 
 
@@ -88,7 +93,7 @@ async def clear_dataset():
 async def infer_act(request: ACTInferenceRequest):
     """ACT 模型推理 API"""
     try:
-        action = act_model_module.act_inference(request.state, request.image)
+        action = _act_runtime.infer(request.state, request.image)
         return {
             "success": True,
             "action": action,
@@ -101,7 +106,7 @@ async def infer_act(request: ACTInferenceRequest):
 async def load_trained_model(model_path: str = None):
     """加载训练好的ACT模型"""
     try:
-        act_model_module.load_act_model(model_path)
+        _act_runtime.load_model(model_path)
         return {
             "success": True,
             "message": "模型加载成功",
@@ -116,11 +121,11 @@ async def run_inference(body: dict = Body(...)):
     try:
         state = body.get("state", [0, 0, 0])
         image = body.get("image", None)
-        if not act_model_module.is_model_loaded():
+        if not _act_runtime.is_model_loaded():
             # 尝试加载训练好的模型
-            act_model_module.load_act_model()
+            _act_runtime.load_model()
 
-        action = act_model_module.act_inference(state, image)
+        action = _act_runtime.infer(state, image)
         return {
             "success": True,
             "action": action,

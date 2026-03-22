@@ -16,6 +16,11 @@ export const sendActions = (actions: string[]) => {
     socket.emit('action', actions);
 }
 
+// 直接发送速度命令 [vel_left, vel_right]
+export const sendVelocity = (velocity: [number, number]) => {
+    socket.emit('velocity_action', velocity);
+}
+
 export const resetCar = () => {
     socket.emit('reset_car_state');
 }
@@ -115,6 +120,28 @@ export const runInference = (state: number[], image?: string) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ state, image }),
     }).then(res => res.json());
+};
+
+export const runInferenceWithSocket = (
+    state: number[],
+    image?: string,
+    timeoutMs: number = 10000,
+) => {
+    return new Promise<{ success: boolean; action?: unknown; error?: string }>((resolve, reject) => {
+        const timer = window.setTimeout(() => {
+            socket.off('act_infer_result', handleResult);
+            reject(new Error('推理超时'));
+        }, timeoutMs);
+
+        const handleResult = (data: { success: boolean; action?: unknown; error?: string }) => {
+            window.clearTimeout(timer);
+            socket.off('act_infer_result', handleResult);
+            resolve(data);
+        };
+
+        socket.on('act_infer_result', handleResult);
+        socket.emit('act_infer', { state, image });
+    });
 };
 
 // 监听训练进度

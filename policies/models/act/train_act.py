@@ -26,6 +26,7 @@ sys.path.insert(0, str(project_root))
 
 from policies.models.act.modeling_act import ACTModel, ACTConfig
 from policies.models.act.ACTDataset import ACTDataset
+from policies.models.act.defaults import build_act_config, act_config_to_dict
 
 
 def load_dataset(data_dir: str = "dataset") -> Dict[str, torch.Tensor]:
@@ -44,8 +45,8 @@ def load_dataset(data_dir: str = "dataset") -> Dict[str, torch.Tensor]:
     with open(data_path / "meta" / "stats.json", "r") as f:
         stats = json.load(f)
 
-    state_mean = torch.tensor(stats["state_mean"], dtype=torch.float32)
-    state_std = torch.tensor(stats["state_std"], dtype=torch.float32)
+    state_mean = torch.tensor(stats["observation.state"]["mean"], dtype=torch.float32)
+    state_std = torch.tensor(stats["observation.state"]["std"], dtype=torch.float32)
 
     # 加载所有parquet文件
     import pandas as pd
@@ -106,9 +107,9 @@ def train(
     epochs: int = 50,
     batch_size: int = 8,
     lr: float = 1e-4,
-    state_dim: int = 7,
-    action_dim: int = 5,
-    action_chunk_size: int = 16,
+    state_dim: int = 2,
+    action_dim: int = 2,
+    action_chunk_size: int = 8,
     hidden_dim: int = 512,
 ) -> ACTModel:
     """
@@ -149,20 +150,11 @@ def train(
         print(f"动作归一化: mean={action_mean}, std={action_std}")
 
     # 创建配置
-    config = ACTConfig(
+    config = build_act_config(
         state_dim=state_dim,
         action_dim=action_dim,
         action_chunk_size=action_chunk_size,
         hidden_dim=hidden_dim,
-        num_encoder_layers=4,
-        num_decoder_layers=4,
-        num_attention_heads=8,
-        dim_feedforward=3200,  # 根据 LeRobot
-        use_cvae=True,  # 启用 CVAE
-        kl_weight=0.1,  # KL 损失权重
-        use_temporal_ensembling=False,
-        use_spatial_softmax=True,
-        latent_dim=32,
     )
 
     # 创建模型
@@ -197,6 +189,11 @@ def train(
     model = model.to(device)
     print(f"使用设备: {device}")
 
+    # CVAE latent 统计收集
+    all_mu = []
+    all_log_sigma = []
+    latent_collection_epochs = min(5, epochs // 2)  # 用后半部分的前几个 epoch 收集
+
     for epoch in range(epochs):
         total_loss = 0
         total_l1_loss = 0
@@ -221,6 +218,14 @@ def train(
 
             predicted_actions = output["action"]
             kl_loss = output.get("kl_loss")
+            mu = output.get("mu")
+            log_sigma_x2 = output.get("log_sigma_x2")
+
+            # 收集 latent 统计（仅在指定 epoch 期间）
+            if config.use_cvae and mu is not None and log_sigma_x2 is not None:
+                if epoch >= epochs - latent_collection_epochs:
+                    all_mu.append(mu.detach().cpu())
+                    all_log_sigma.append(log_sigma_x2.detach().cpu())
 
             # 计算 L1 损失
             l1_loss = F.l1_loss(predicted_actions, actions)
@@ -256,10 +261,34 @@ def train(
             torch.save(model.state_dict(), checkpoint_path)
             print(f"  保存检查点: {checkpoint_path}")
 
-    # 保存最终模型
-    final_path = Path(output_dir) / "final_model.pt"
-    torch.save(model.state_dict(), final_path)
-    print(f"\n模型已保存到: {final_path}")
+    # 计算并保存 CVAE latent 统计
+    if config.use_cvae and len(all_mu) > 0:
+        all_mu_tensor = torch.cat(all_mu, dim=0)
+        all_log_sigma_tensor = torch.cat(all_log_sigma, dim=0)
+
+        # 计算均值（这是推理时使用的）
+        latent_mu_mean = all_mu_tensor.mean(dim=0)
+        latent_log_sigma_mean = all_log_sigma_tensor.mean(dim=0)
+
+        print(f"\nCVAE Latent 统计:")
+        print(f"  mu mean: {latent_mu_mean.mean().item():.4f}")
+        print(f"  log_sigma mean: {latent_log_sigma_mean.mean().item():.4f}")
+
+        # 保存模型 + latent 统计
+        final_path = Path(output_dir) / "final_model.pt"
+        checkpoint = {
+            'model_state_dict': model.state_dict(),
+            'inference_latent_mu': latent_mu_mean,
+            'inference_latent_log_sigma': latent_log_sigma_mean,
+            'config': act_config_to_dict(config),
+        }
+        torch.save(checkpoint, final_path)
+        print(f"\n模型已保存到: {final_path}")
+        print(f"  (包含 CVAE inference latent 统计)")
+    else:
+        final_path = Path(output_dir) / "final_model.pt"
+        torch.save(model.state_dict(), final_path)
+        print(f"\n模型已保存到: {final_path}")
 
     return model
 
@@ -423,7 +452,7 @@ def main():
 
     # 导出为HuggingFace格式
     if args.export_hf:
-        config = ACTConfig(
+        config = build_act_config(
             state_dim=7,
             action_dim=5,
             action_chunk_size=16,

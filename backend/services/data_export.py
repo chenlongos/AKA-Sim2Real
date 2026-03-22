@@ -20,25 +20,28 @@ from PIL import Image
 DEFAULT_CHUNK_SIZE = 1000  # 每个 parquet 文件的最大样本数
 DEFAULT_CHUNK_SIZE_BYTES = 100 * 1024 * 1024  # 100MB 基于大小的分块
 ACTION_CHUNK_SIZE = 8  # 预测未来8帧的动作序列
-ACTION_DIM = 3  # [x.vel, y.vel, theta.vel] 每帧3维
+ACTION_DIM = 2  # [pwm_left, pwm_right] 每帧2维
 DEFAULT_FPS = 10
 
-# 状态编码 (3维) - 车辆速度
-STATE_KEYS = ["x_vel", "y_vel", "theta_vel"]  # 当前车辆速度
+# 状态编码 (2维) - 左右轮速度（从 PWM 估计）
+STATE_KEYS = ["vel_left", "vel_right"]  # 当前轮子速度
 STATE_DIM = len(STATE_KEYS)
 
-# 动作到连续值的映射（离散动作 -> 目标速度，归一化到 -100 ~ +100）
+# 动作到连续值的映射（离散动作 -> 轮子速度）
+# 速度单位：m/s，与 STATE 保持一致
 ACTION_TO_CONTINUOUS = {
-    "forward": [100.0, 0.0, 0.0],    # 前进：100
-    "backward": [-100.0, 0.0, 0.0],  # 后退：-100
-    "left": [0.0, 0.0, 1.0],        # 左转：前进50 + 左转1.0
-    "right": [0.0, 0.0, -1.0],     # 右转：前进50 + 右转-1.0
-    "stop": [0.0, 0.0, 0.0],         # 停止
+    "forward": [0.3, 0.3],      # 前进：左右轮同速
+    "backward": [-0.3, -0.3],   # 后退：左右轮同速反转
+    "left": [-0.2, 0.2],        # 左转：左轮后退，右轮前进
+    "right": [0.2, -0.2],      # 右转：左轮前进，右轮后退
+    "stop": [0.0, 0.0],         # 停止
 }
+# 确保所有动作都是 2 维 (ACTION_DIM=2)
+assert all(len(v) == 2 for v in ACTION_TO_CONTINUOUS.values()), "动作必须是2维"
 
-# 动作统计范围
-ACTION_MIN = [-100.0, -100.0, -1.0]
-ACTION_MAX = [100.0, 100.0, 1.0]
+# 动作统计范围 (速度 m/s)
+ACTION_MIN = [-0.5, -0.5]
+ACTION_MAX = [0.5, 0.5]
 
 
 class LeRobotDatasetMetadata:
@@ -98,6 +101,7 @@ class LeRobotDatasetMetadata:
         self._episodes = []
         self._metadata_buffer = []
         self._buffer_lock = threading.Lock()
+        self._stats_accumulators = {}
 
         # 当前写入状态
         self._total_samples = 0
@@ -120,6 +124,7 @@ class LeRobotDatasetMetadata:
         if stats_path.exists():
             with open(stats_path, "r") as f:
                 self._stats = json.load(f)
+            self._load_stats_accumulators()
 
         # 加载已有 episodes
         if self.episodes_dir.exists():
@@ -154,6 +159,69 @@ class LeRobotDatasetMetadata:
                 }
             }
         return self._stats
+
+    def _load_stats_accumulators(self):
+        """从已有 stats.json 反序列化统计累积量。"""
+        self._stats_accumulators = {}
+        for key in ("observation.state", "action"):
+            entry = self._stats.get(key)
+            if not entry:
+                continue
+            if all(acc_key in entry for acc_key in ("count", "sum", "sumsq", "min", "max")):
+                self._stats_accumulators[key] = {
+                    "count": int(entry["count"]),
+                    "sum": np.array(entry["sum"], dtype=np.float64),
+                    "sumsq": np.array(entry["sumsq"], dtype=np.float64),
+                    "min": np.array(entry["min"], dtype=np.float64),
+                    "max": np.array(entry["max"], dtype=np.float64),
+                }
+
+    def _build_stats_entry(self, key: str, values: np.ndarray) -> Dict[str, Any]:
+        """根据 batch 数据更新统计累积量并生成 stats.json 条目。"""
+        if values.ndim == 1:
+            values = values.reshape(-1, 1)
+        elif values.ndim > 2:
+            values = values.reshape(-1, values.shape[-1])
+
+        batch_count = int(values.shape[0])
+        batch_sum = values.sum(axis=0, dtype=np.float64)
+        batch_sumsq = np.square(values, dtype=np.float64).sum(axis=0, dtype=np.float64)
+        batch_min = values.min(axis=0).astype(np.float64)
+        batch_max = values.max(axis=0).astype(np.float64)
+
+        existing = self._stats_accumulators.get(key)
+        if existing is None:
+            accum = {
+                "count": batch_count,
+                "sum": batch_sum,
+                "sumsq": batch_sumsq,
+                "min": batch_min,
+                "max": batch_max,
+            }
+        else:
+            accum = {
+                "count": existing["count"] + batch_count,
+                "sum": existing["sum"] + batch_sum,
+                "sumsq": existing["sumsq"] + batch_sumsq,
+                "min": np.minimum(existing["min"], batch_min),
+                "max": np.maximum(existing["max"], batch_max),
+            }
+
+        self._stats_accumulators[key] = accum
+
+        mean = accum["sum"] / max(accum["count"], 1)
+        variance = np.maximum(accum["sumsq"] / max(accum["count"], 1) - np.square(mean), 0.0)
+        std = np.sqrt(variance) + 1e-6
+
+        return {
+            "count": accum["count"],
+            "sum": accum["sum"].tolist(),
+            "sumsq": accum["sumsq"].tolist(),
+            "min": accum["min"].tolist(),
+            "max": accum["max"].tolist(),
+            "mean": mean.tolist(),
+            "std": std.tolist(),
+        }
 
     def _ensure_dirs(self):
         """确保目录结构存在"""
@@ -224,17 +292,12 @@ class LeRobotDatasetMetadata:
             sample_actions = sample.get("actions", [])
             if sample_actions:
                 last_action = sample_actions[-1]
-                action_values = ACTION_TO_CONTINUOUS.get(last_action, [0.0, 0.0, 0.0])
+                action_values = ACTION_TO_CONTINUOUS.get(last_action, [0.0, 0.0])
             else:
-                action_values = [0.0, 0.0, 0.0]  # 默认停止
+                action_values = [0.0, 0.0]  # 默认停止
             all_actions.append(action_values)
 
-        # 计算状态统计（仅用于保存，不做归一化）
         states_array = np.array(all_states, dtype=np.float32)
-        state_min = states_array.min(axis=0)
-        state_max = states_array.max(axis=0)
-        state_mean = states_array.mean(axis=0)
-        state_std = states_array.std(axis=0) + 1e-6
 
         # 将动作扩展为未来 chunk 帧的序列
         # 每帧的动作重复 ACTION_CHUNK_SIZE 次，形成序列
@@ -246,12 +309,8 @@ class LeRobotDatasetMetadata:
                 chunk_actions.append(all_actions[future_idx])
             actions_expanded.append(chunk_actions)
 
-        # 动作数据：[num_samples, chunk_size, 3]
+        # 动作数据：[num_samples, chunk_size, action_dim]
         actions_array = np.array(actions_expanded, dtype=np.float32)
-
-        # 计算动作统计（从实际数据计算）
-        action_mean = np.mean(actions_array, axis=(0, 1))  # [3]
-        action_std = np.std(actions_array, axis=(0, 1))    # [3]
 
         # 写入数据 parquet
         for chunk_idx in range((episode_start_idx // self.chunk_size), ((self._total_samples + num_frames) // self.chunk_size) + 1):
@@ -303,9 +362,7 @@ class LeRobotDatasetMetadata:
                     sub_df.to_parquet(sub_file, index=False)
 
         # 更新统计
-        action_min = np.array(ACTION_MIN, dtype=np.float32)
-        action_max = np.array(ACTION_MAX, dtype=np.float32)
-        self._update_stats(state_min, state_max, state_mean, state_std, action_min, action_max, action_mean, action_std)
+        self._update_stats(states_array, actions_array)
 
         # 创建 episode 元数据
         episode_meta = {
@@ -331,59 +388,13 @@ class LeRobotDatasetMetadata:
 
         return episode_meta
 
-    def _update_stats(
-        self,
-        state_min: np.ndarray,
-        state_max: np.ndarray,
-        state_mean: np.ndarray,
-        state_std: np.ndarray,
-        action_min: np.ndarray,
-        action_max: np.ndarray,
-        action_mean: np.ndarray,
-        action_std: np.ndarray,
-    ):
+    def _update_stats(self, states_array: np.ndarray, actions_array: np.ndarray):
         """更新统计信息"""
         if self._stats is None:
-            self._stats = {
-                "observation.state": {
-                    "min": state_min.tolist(),
-                    "max": state_max.tolist(),
-                    "mean": state_mean.tolist(),
-                    "std": state_std.tolist(),
-                },
-                "action": {
-                    "min": action_min.tolist(),
-                    "max": action_max.tolist(),
-                    "mean": action_mean.tolist(),
-                    "std": action_std.tolist(),
-                },
-            }
-        else:
-            # 合并统计
-            old_min = np.array(self._stats.get("observation.state", {}).get("min", STATE_DIM * [0]), dtype=np.float32)
-            old_max = np.array(self._stats.get("observation.state", {}).get("max", STATE_DIM * [1]), dtype=np.float32)
+            self._stats = {}
 
-            combined_min = np.minimum(old_min, state_min)
-            combined_max = np.maximum(old_max, state_max)
-
-            self._stats["observation.state"] = {
-                "min": combined_min.tolist(),
-                "max": combined_max.tolist(),
-                "mean": ((combined_min + combined_max) / 2).tolist(),
-                "std": (combined_max - combined_min).tolist(),
-            }
-
-            # 合并动作统计（连续值）
-            old_action_min = np.array(self._stats.get("action", {}).get("min", ACTION_MIN), dtype=np.float32)
-            old_action_max = np.array(self._stats.get("action", {}).get("max", ACTION_MAX), dtype=np.float32)
-            combined_action_min = np.minimum(old_action_min, action_min)
-            combined_action_max = np.maximum(old_action_max, action_max)
-            self._stats["action"] = {
-                "min": combined_action_min.tolist(),
-                "max": combined_action_max.tolist(),
-                "mean": ((combined_action_min + combined_action_max) / 2).tolist(),
-                "std": (combined_action_max - combined_action_min).tolist(),
-            }
+        self._stats["observation.state"] = self._build_stats_entry("observation.state", states_array)
+        self._stats["action"] = self._build_stats_entry("action", actions_array)
 
     def _save_episode_metadata(self, episode_meta: Dict[str, Any]):
         """保存单个 episode 元数据到 parquet"""
@@ -645,7 +656,7 @@ def create_demo_samples(num_samples: int = 100) -> List[Dict[str, Any]]:
 
 if __name__ == "__main__":
     # 测试导出功能
-    from models import state as sim_state
+    from backend.models import state as sim_state
 
     if sim_state.dataset_samples:
         print(f"使用已采集的 {len(sim_state.dataset_samples)} 个样本导出")

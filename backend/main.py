@@ -11,19 +11,23 @@ from pathlib import Path
 from fastapi import FastAPI
 from socketio import AsyncServer
 
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+# 添加仓库根目录到路径，兼容 `python backend/main.py`
+repo_root = Path(__file__).resolve().parents[1]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
-from services import act_model
-import api
-from api import router as api_router
-from config import config
-from sio_handlers import SimNamespace, start_game_loop
+from backend.services import act_model
+from backend import api
+from backend.api import router as api_router
+from backend.config import config
+from backend.sio_handlers import SimNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+runtime = act_model.get_act_runtime()
+api.set_act_runtime(runtime)
+set_sio_act_runtime(runtime)
 
 
 @asynccontextmanager
@@ -36,7 +40,7 @@ async def lifespan(app: FastAPI):
     # 尝试加载模型
     # TODO 没必要
     try:
-        act_model.load_act_model()
+        runtime.load_model()
     except Exception as e:
         logger.warning(f"模型加载失败: {e}")
         logger.warning("将以无模型模式运行")

@@ -3,7 +3,8 @@ export interface CarState {
     x: number;
     y: number;
     angle: number;
-    speed: number;
+    vel_left: number;
+    vel_right: number;
 }
 
 // 障碍物类型

@@ -10,7 +10,7 @@ import {
     startTraining,
     stopTraining,
     loadTrainedModel,
-    runInference,
+    runInferenceWithSocket,
     startEpisode,
     endEpisode,
     finalizeEpisode,
@@ -32,7 +32,8 @@ const SimPage = () => {
         x: 400,
         y: 300,
         angle: -Math.PI / 2,
-        speed: 0,
+        vel_left: 0,
+        vel_right: 0,
     })
     const [obstacles, setObstacles] = useState<Obstacle[]>([
         {x: 300, y: 200, width: 80, height: 80},
@@ -48,8 +49,8 @@ const SimPage = () => {
     const [inferenceResult, setInferenceResult] = useState<string[]>([])
     const [isInferring, setIsInferring] = useState(false)
     const [autoInference, setAutoInference] = useState(false)
+    const autoInferenceRef = useRef(false)  // ref 版本用于动画循环，避免闭包竞争
     const inferenceTimerRef = useRef<number | null>(null)
-    const lastInferredActionRef = useRef<string[]>([])
 
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
@@ -187,14 +188,17 @@ const SimPage = () => {
     const sendCommand = (cmd: string[]) => {
         // 发送动作到后端
         if (cmd.length === 0) {
-            sendActions(['stop'])
-            return
+            return  // 空动作不发任何命令
         }
         sendActions(cmd)
     }
 
     const handleSetEpisode = (episodeId: number) => {
         if (episodeId < 1) return
+
+        // 保存当前轮次（因为 handleEndEpisode 会修改 currentEpisode）
+        const episodeToDelete = currentEpisode
+
         if (isRecording) {
             if (!confirm('正在录制中，切换轮次将结束当前录制。是否继续?')) {
                 return
@@ -205,16 +209,16 @@ const SimPage = () => {
         // 重置帧数
         setCollectedCount(0)
 
-        // 如果是回退到之前的轮次，删除当前轮次的数据
-        if (episodeId < currentEpisode) {
-            deleteEpisode(currentEpisode)
-            setCurrentEpisode(episodeId)
+        // 先设置目标轮次（后端会清空该轮次的数据）
+        setEpisode(episodeId)
+
+        // 如果是回退到之前的轮次，删除之前轮次的数据
+        if (episodeId < episodeToDelete) {
+            deleteEpisode(episodeToDelete)
             // 刷新轮次列表
             getEpisodes()
-        } else {
-            setCurrentEpisode(episodeId)
         }
-        setEpisode(episodeId)
+        setCurrentEpisode(episodeId)
     }
 
     const handleStartEpisode = () => {
@@ -282,40 +286,34 @@ const SimPage = () => {
     }
 
     const doInference = async () => {
-        // 计算车体速度作为状态输入
-        const speed = carState.speed
-        const angle = carState.angle
-        const xVel = speed * Math.cos(angle)
-        const yVel = speed * Math.sin(angle)
-        // thetaVel 暂时设为0（后续可以从后端获取或使用默认值）
-        const thetaVel = 0
-
-        const state = [xVel, yVel, thetaVel]
+        // 真实小车模式：状态输入是左右轮速度 [vel_left, vel_right]
+        const state: [number, number] = [carState.vel_left, carState.vel_right]
         const imageBase64 = firstPersonViewRef.current?.getImageData()
-        const result = await runInference(state, imageBase64)
-        if (result.success) {
-            // 推理结果是 [x_vel, y_vel, theta_vel]
-            result.action.forEach((action: [any, any, any]) => {
-                sendCommand([])
-                const [xVelTarget, yVelTarget, _thetaVelTarget] = action
-                const next_speed = Math.sqrt(xVelTarget ** 2 + yVelTarget ** 2)
-                const next_angle = Math.atan2(yVelTarget, xVelTarget)
+        const result = await runInferenceWithSocket(state, imageBase64)
+        if (result.success && result.action) {
+            const actionChunks = Array.isArray(result.action) ? result.action : [result.action]
+            if (actionChunks.length === 0 || !Array.isArray(actionChunks[0])) {
+                console.error("Invalid action shape:", result.action)
+                return
+            }
 
-                if (angle > next_angle) {
-                    sendCommand(["right"])
-                    setInferenceResult(["right"])
-                } else if (angle > next_angle) {
-                    sendCommand(["left"])
-                    setInferenceResult(["left"])
-                }
-                if (speed < next_speed) {
-                    sendCommand(["forward"])
-                    setInferenceResult(prev => [...prev, "forward"])
-                } else if (speed > next_angle) {
-                    sendCommand(["backward"])
-                    setInferenceResult(prev => [...prev, "backward"])
-                }
-            })
+            // 兼容 [chunk, dim] 和 [batch, chunk, dim] 两种返回格式
+            const firstChunk = Array.isArray(actionChunks[0][0])
+                ? actionChunks[0][0]
+                : actionChunks[0]
+
+            const velLeftTarget = firstChunk[0]
+            const velRightTarget = firstChunk[1]
+
+            if (typeof velLeftTarget !== 'number' || typeof velRightTarget !== 'number') {
+                console.error("Invalid velocity values:", { velLeftTarget, velRightTarget, firstChunk })
+                return
+            }
+
+            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}]`
+            setInferenceResult([velStr])
+        } else if (!result.success) {
+            throw new Error(result.error || '推理失败')
         }
     }
 
@@ -340,12 +338,14 @@ const SimPage = () => {
         }
         if (autoInference) {
             setAutoInference(false)
+            autoInferenceRef.current = false  // 同步更新 ref
             if (inferenceTimerRef.current) {
                 clearInterval(inferenceTimerRef.current)
                 inferenceTimerRef.current = null
             }
         } else {
             setAutoInference(true)
+            autoInferenceRef.current = true  // 同步更新 ref
             await doInference()
             inferenceTimerRef.current = window.setInterval(async () => {
                 await doInference()
@@ -416,19 +416,29 @@ const SimPage = () => {
     // 定时发送动作
     useEffect(() => {
         let lastSendTime = 0;
+        let rafId: number
 
         const loop = (currentTime: number) => {
+            // 自动推理模式下完全跳过，不发任何命令
+            if (autoInferenceRef.current) {
+                rafId = window.requestAnimationFrame(loop)
+                return
+            }
+
             if (currentTime - lastSendTime >= SEND_INTERVAL) {
-                const actions = autoInference ? lastInferredActionRef.current : getCurrentActions()
-                sendCommand(actions)
+                const actions = getCurrentActions()
+                // 只有有实际动作时才发送，停止时什么都不发
+                if (actions.length > 0) {
+                    sendCommand(actions)
+                }
                 lastSendTime = currentTime
             }
-            window.requestAnimationFrame(loop)
+            rafId = window.requestAnimationFrame(loop)
         }
 
-        const animationId = window.requestAnimationFrame(loop)
-        return () => window.cancelAnimationFrame(animationId)
-    }, [autoInference, getCurrentActions])
+        rafId = window.requestAnimationFrame(loop)
+        return () => window.cancelAnimationFrame(rafId)
+    }, [getCurrentActions])
 
     return (
         <div className="flex flex-col gap-3 p-4 h-screen overflow-hidden">

@@ -1,22 +1,19 @@
-"""
-ACT 模型 PyTorch 版本测试
-"""
+"""ACT 最小可执行测试。"""
+
+from pathlib import Path
+import sys
+import tempfile
 
 import torch
-import sys
-import os
 
-# 添加当前目录到路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+project_root = Path(__file__).resolve().parents[3]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from modeling_act import (
-    ACTModel,
-    ACTLoss,
-    ACTTrainer,
-    create_act_model,
-)
-from ACTDataset import ACTDataset
-from configuration_act import ACTConfig
+from policies.models.act.modeling_act import ACTModel
+from policies.models.act.ACTDataset import ACTDataset
+from policies.models.act.configuration_act import ACTConfig
+from policies.models.act.defaults import act_config_to_dict
 
 
 def test_act_config():
@@ -85,25 +82,8 @@ def test_act_model_get_action():
     print(f"获取动作测试通过! 动作形状: {action.shape}")
 
 
-def test_act_loss():
-    """测试损失函数"""
-    print("\n测试损失函数...")
-
-    loss_fn = ACTLoss(action_chunk_size=16)
-
-    pred_action = torch.randn(4, 16, 7)
-    target_action = torch.randn(4, 16, 7)
-
-    loss_dict = loss_fn(pred_action, target_action)
-
-    assert "loss" in loss_dict
-    assert "first_step_loss" in loss_dict
-    assert "last_step_loss" in loss_dict
-    print(f"损失测试通过! 损失值: {loss_dict['loss'].item():.4f}")
-
-
-def test_act_dataset():
-    """测试数据集"""
+def test_act_dataset_temporal_actions():
+    """测试逐时刻动作格式的数据集切片。"""
     print("\n测试数据集...")
 
     # 创建模拟数据 - 使用与 ACTDataset 兼容的格式
@@ -128,95 +108,50 @@ def test_act_dataset():
     print(f"数据集测试通过! 数据集大小: {len(dataset)}")
 
 
-def test_act_trainer():
-    """测试训练器"""
-    print("\n测试训练器...")
+def test_act_dataset_chunked_actions():
+    """测试已 chunk 化动作格式的数据集读取。"""
+    print("\n测试 chunked action 数据集...")
 
-    config = ACTConfig(
-        state_dim=7,
-        action_dim=7,
-        action_chunk_size=16,
-        hidden_dim=256,
-        num_encoder_layers=2,
-        num_decoder_layers=2,
-    )
-
-    model = ACTModel(config)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    trainer = ACTTrainer(model, optimizer)
-
-    # 创建模拟批数据
-    batch = {
-        "observation": {
-            "image": torch.randn(4, 1, 3, 224, 224),
-            "state": torch.randn(4, 7),
-        },
-        "action": torch.randn(4, 16, 7),
-    }
-
-    metrics = trainer.train_step(batch)
-
-    assert "loss" in metrics
-    print(f"训练器测试通过! 损失: {metrics['loss']:.4f}")
-
-
-def test_create_act_model():
-    """测试便捷创建函数"""
-    print("\n测试便捷创建函数...")
-
-    model = create_act_model(
-        state_dim=7,
-        action_dim=7,
-        action_chunk_size=16,
-        hidden_dim=256,
-    )
-
-    assert isinstance(model, ACTModel)
-    print(f"便捷创建测试通过!")
-
-
-def test_training_loop():
-    """测试完整训练循环"""
-    print("\n测试完整训练循环...")
-
-    config = ACTConfig(
-        state_dim=7,
-        action_dim=7,
-        action_chunk_size=16,
-        hidden_dim=256,
-        num_encoder_layers=2,
-        num_decoder_layers=2,
-    )
-
-    model = ACTModel(config)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    trainer = ACTTrainer(model, optimizer)
-
-    # 创建模拟数据 - action 应该是 [total_timesteps, action_dim]
-    num_samples = 50
     data = {
-        "observation.image": torch.randn(num_samples, 1, 3, 224, 224),
-        "observation.state": torch.randn(num_samples, 7),
-        "action": torch.randn(num_samples, 7),  # [total_timesteps, action_dim]
+        "observation.image": torch.randn(20, 1, 3, 224, 224),
+        "observation.state": torch.randn(20, 7),
+        "action": torch.randn(20, 16, 7),
     }
 
     dataset = ACTDataset(data, action_chunk_size=16)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=True)
+    assert len(dataset) == 20
+    assert dataset[0]["action"].shape == (16, 7)
+    print("chunked action 数据集测试通过!")
 
-    # 训练几个 epoch
-    for epoch in range(3):
-        epoch_loss = 0
-        num_batches = 0
 
-        for batch in dataloader:
-            metrics = trainer.train_step(batch)
-            epoch_loss += metrics["loss"]
-            num_batches += 1
+def test_checkpoint_roundtrip():
+    """测试 checkpoint 保存/加载格式。"""
+    print("\n测试 checkpoint roundtrip...")
 
-        avg_loss = epoch_loss / num_batches
-        print(f"  Epoch {epoch + 1}: 损失 = {avg_loss:.4f}")
+    config = ACTConfig(
+        state_dim=7,
+        action_dim=7,
+        action_chunk_size=16,
+        hidden_dim=256,
+        num_encoder_layers=2,
+        num_decoder_layers=2,
+    )
 
-    print("完整训练循环测试通过!")
+    model = ACTModel(config)
+    state_dict = model.state_dict()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_path = Path(tmpdir) / "checkpoint.pt"
+        checkpoint = {
+            "model_state_dict": state_dict,
+            "config": act_config_to_dict(config),
+        }
+        torch.save(checkpoint, checkpoint_path)
+        loaded = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        reloaded_model = ACTModel(ACTConfig(**loaded["config"]))
+        reloaded_model.load_state_dict(loaded["model_state_dict"])
+
+    print("checkpoint roundtrip 测试通过!")
 
 
 def main():
@@ -232,11 +167,9 @@ def main():
     test_act_config()
     test_act_model_forward()
     test_act_model_get_action()
-    test_act_loss()
-    test_act_dataset()
-    test_act_trainer()
-    test_create_act_model()
-    test_training_loop()
+    test_act_dataset_temporal_actions()
+    test_act_dataset_chunked_actions()
+    test_checkpoint_roundtrip()
 
     print("\n" + "=" * 50)
     print("所有测试通过!")

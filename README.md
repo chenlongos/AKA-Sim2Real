@@ -60,14 +60,48 @@ npm run dev
 1. 点击"加载模型"加载训练好的模型
 2. 点击"自动推理"让小车自主行动
 
+## ACT 结构
+
+当前 ACT 相关代码已经按职责拆分为几层：
+
+- `policies/models/act/`
+  - 纯模型定义、配置、默认参数与训练脚本
+- `backend/services/act_checkpoint.py`
+  - checkpoint 解析、模型实例化、stats 加载
+- `backend/services/act_preprocess.py`
+  - 图像预处理、状态归一化、动作反归一化
+- `backend/services/act_execution.py`
+  - 在线 temporal ensembling / action chunk 融合策略
+- `backend/services/act_model.py`
+  - `ACTInferenceRuntime` 运行时装配层
+- `backend/api/__init__.py` 与 `backend/sio_handlers/__init__.py`
+  - 通过显式 runtime 接口调用推理，不再直接依赖隐式模块状态
+
+## ACT 检查
+
+统一检查入口：
+
+```bash
+python3 backend/run_act_checks.py
+```
+
+当前会顺序运行：
+
+- 模型与数据集最小测试
+- backend runtime 与 temporal blending 测试
+- 数据导出统计聚合测试
+- 导出 -> 训练 -> 加载 -> 推理 端到端 smoke test
+
+如果这一入口通过，说明当前 ACT 主链路至少在最小工作流上是闭合的。
+
 ## 目录结构
 
 ```
 ├── backend/           # 后端代码
-│   ├── main.py       # 入口
-│   ├── api.py        # API接口
-│   ├── training.py   # 训练模块
-│   └── data_export.py # 数据导出
+│   ├── main.py        # 入口
+│   ├── api/           # REST API
+│   ├── sio_handlers/  # Socket.IO 事件处理
+│   └── services/      # ACT runtime / 训练 / 导出
 ├── ui/               # 前端代码
 ├── output/           # 输出目录
 │   ├── dataset/     # 采集的数据

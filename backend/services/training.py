@@ -17,6 +17,7 @@ from PIL import Image
 import pandas as pd
 
 from policies.models.act.modeling_act import ACTModel, ACTConfig
+from policies.models.act.defaults import build_act_config, act_config_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,12 @@ training_state = {
     "loss": 0.0,
     "progress": 0.0,
 }
+
+def _extract_checkpoint_payload(checkpoint):
+    """兼容旧格式 state_dict 和新格式 checkpoint dict。"""
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        return checkpoint["model_state_dict"], checkpoint.get("config", {})
+    return checkpoint, {}
 
 
 class TrainingCallbacks:
@@ -109,10 +116,14 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
         for img_path in df["observation.image"]:
             full_path = data_path / img_path
             if full_path.exists():
-                img = Image.open(full_path).convert("RGB")
-                img = img.resize((224, 224))
-                img_tensor = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
-                images.append(img_tensor)
+                try:
+                    img = Image.open(full_path).convert("RGB")
+                    img = img.resize((224, 224))
+                    img_tensor = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
+                    images.append(img_tensor)
+                except Exception as exc:
+                    logger.warning(f"读取图像失败，使用零图像替代: {full_path} ({exc})")
+                    images.append(torch.zeros(3, 224, 224))
             else:
                 images.append(torch.zeros(3, 224, 224))
 
@@ -166,18 +177,18 @@ class SimpleDataset(torch.utils.data.Dataset):
 
         # 状态和动作归一化参数
         if stats:
-            self.state_mean = torch.tensor(stats.get("observation.state", {}).get("mean", [0, 0, 0]), dtype=torch.float32)
-            self.state_std = torch.tensor(stats.get("observation.state", {}).get("std", [1, 1, 1]), dtype=torch.float32)
-            self.action_mean = torch.tensor(stats.get("action", {}).get("mean", [0, 0, 0]), dtype=torch.float32)
-            self.action_std = torch.tensor(stats.get("action", {}).get("std", [1, 1, 1]), dtype=torch.float32)
+            self.state_mean = torch.tensor(stats.get("observation.state", {}).get("mean", [0, 0]), dtype=torch.float32)
+            self.state_std = torch.tensor(stats.get("observation.state", {}).get("std", [1, 1]), dtype=torch.float32)
+            self.action_mean = torch.tensor(stats.get("action", {}).get("mean", [0, 0]), dtype=torch.float32)
+            self.action_std = torch.tensor(stats.get("action", {}).get("std", [1, 1]), dtype=torch.float32)
             # 避免除零
             self.state_std = torch.where(self.state_std > 1e-6, self.state_std, torch.ones_like(self.state_std))
             self.action_std = torch.where(self.action_std > 1e-6, self.action_std, torch.ones_like(self.action_std))
         else:
-            self.state_mean = torch.zeros(3)
-            self.state_std = torch.ones(3)
-            self.action_mean = torch.zeros(3)
-            self.action_std = torch.ones(3)
+            self.state_mean = torch.zeros(2)
+            self.state_std = torch.ones(2)
+            self.action_mean = torch.zeros(2)
+            self.action_std = torch.ones(2)
 
     def __len__(self):
         return self.num_samples
@@ -191,9 +202,9 @@ class SimpleDataset(torch.utils.data.Dataset):
         # 归一化图像
         images = (images.unsqueeze(0) - self.image_mean) / self.image_std
 
-        # 归一化状态 (只取前3维)
+        # 归一化状态 (使用全部2维: vel_left, vel_right)
         if self.stats:
-            state = (state[:3] - self.state_mean) / self.state_std
+            state = (state - self.state_mean) / self.state_std
 
         # 归一化动作
         if self.stats:
@@ -256,26 +267,16 @@ async def train_model(
         action_dim = data["action"].shape[-1]  # 现在是 2
         raw_state_dim = data["observation.state"].shape[-1]
 
-        # 使用 3 维速度：x_vel, y_vel, theta_vel
-        state_dim = 3
+        # 使用 2 维轮子速度：vel_left, vel_right
+        state_dim = 2
 
         logger.info(f"action_dim: {action_dim}, state_dim: {state_dim} (原始: {raw_state_dim})")
 
         # 创建配置 - 与推理配置一致
-        config = ACTConfig(
-            state_dim=3,  # [x_vel, y_vel, theta_vel]
+        config = build_act_config(
+            state_dim=2,
             action_dim=action_dim,
-            action_chunk_size=8,  # 预测未来8帧
-            hidden_dim=512,
-            num_encoder_layers=4,
-            num_decoder_layers=4,
-            num_attention_heads=8,
-            dim_feedforward=3200,
-            use_cvae=True,  # 启用 CVAE
-            kl_weight=0.1,
-            use_temporal_ensembling=False,
-            use_spatial_softmax=True,
-            latent_dim=32,
+            action_chunk_size=8,
         )
 
         # 创建模型
@@ -285,7 +286,11 @@ async def train_model(
         if resume_from:
             resume_path = Path(resume_from)
             if resume_path.exists():
-                model.load_state_dict(torch.load(resume_path, map_location='cpu'))
+                checkpoint = torch.load(resume_path, map_location="cpu", weights_only=False)
+                state_dict, checkpoint_config = _extract_checkpoint_payload(checkpoint)
+                if checkpoint_config:
+                    logger.info(f"检测到 checkpoint 配置: {checkpoint_config}")
+                model.load_state_dict(state_dict)
                 logger.info(f"已加载已有模型: {resume_path}")
             else:
                 logger.warning(f"指定的可模型文件不存在: {resume_path}，从头开始训练")
@@ -315,6 +320,11 @@ async def train_model(
         model.train()
         total_batches = len(dataloader)
 
+        # CVAE latent 统计收集
+        all_mu = []
+        all_log_sigma = []
+        latent_collection_epochs = min(5, epochs // 2)  # 用后半部分的前几个 epoch 收集
+
         for epoch in range(epochs):
             callbacks.on_epoch_start(epoch, epochs)
 
@@ -326,11 +336,19 @@ async def train_model(
 
                 optimizer.zero_grad()
 
-                # actions 已经是 [batch, chunk_size, action_dim] = [batch, 8, 3]
+                # actions 已经是 [batch, chunk_size, action_dim] = [batch, 8, 2]
                 # 使用forward进行训练
                 output = model(images, states, action_target=actions, infer_cvae=False)
                 predicted_actions = output["action"]
                 kl_loss = output.get("kl_loss")
+                mu = output.get("mu")
+                log_sigma_x2 = output.get("log_sigma_x2")
+
+                # 收集 latent 统计（仅在指定 epoch 期间）
+                if config.use_cvae and mu is not None and log_sigma_x2 is not None:
+                    if epoch >= epochs - latent_collection_epochs:
+                        all_mu.append(mu.detach().cpu())
+                        all_log_sigma.append(log_sigma_x2.detach().cpu())
 
                 # 计算 L1 损失
                 l1_loss = criterion(predicted_actions, actions)
@@ -358,9 +376,31 @@ async def train_model(
         else:
             output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        final_path = output_path / "model.pt"
-        torch.save(model.state_dict(), final_path)
-        logger.info(f"模型已保存到: {final_path}")
+
+        # 计算并保存 CVAE latent 统计
+        if config.use_cvae and len(all_mu) > 0:
+            all_mu_tensor = torch.cat(all_mu, dim=0)
+            all_log_sigma_tensor = torch.cat(all_log_sigma, dim=0)
+            latent_mu_mean = all_mu_tensor.mean(dim=0)
+            latent_log_sigma_mean = all_log_sigma_tensor.mean(dim=0)
+
+            logger.info(f"CVAE Latent: mu={latent_mu_mean.mean().item():.4f}, log_sigma={latent_log_sigma_mean.mean().item():.4f}")
+
+            # 保存为新格式（包含 latent 统计）
+            final_path = output_path / "final_model.pt"
+            checkpoint = {
+                'model_state_dict': model.state_dict(),
+                'inference_latent_mu': latent_mu_mean,
+                'inference_latent_log_sigma': latent_log_sigma_mean,
+                'config': act_config_to_dict(config),
+            }
+            torch.save(checkpoint, final_path)
+            logger.info(f"模型已保存到: {final_path} (包含 CVAE latent 统计)")
+        else:
+            # 旧格式
+            final_path = output_path / "model.pt"
+            torch.save(model.state_dict(), final_path)
+            logger.info(f"模型已保存到: {final_path}")
 
         callbacks.on_train_end(str(final_path))
 

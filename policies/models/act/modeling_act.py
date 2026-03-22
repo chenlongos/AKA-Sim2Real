@@ -4,11 +4,14 @@ ACT (Action Chunking Transformer) Model - 完全对齐 LeRobot
 """
 
 import math
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict, Tuple, List
 from .configuration_act import ACTConfig
+
+logger = logging.getLogger(__name__)
 
 
 def create_sinusoidal_pos_embedding(num_positions: int, dimension: int) -> torch.Tensor:
@@ -63,21 +66,25 @@ class RGBEncoder(nn.Module):
         self.feature_dim = 512
 
         from torchvision.models import resnet18, ResNet18_Weights
-        weights = ResNet18_Weights.DEFAULT
-        resnet = resnet18(weights=weights)
+        try:
+            weights = ResNet18_Weights.DEFAULT
+            resnet = resnet18(weights=weights)
+        except Exception as exc:
+            logger.warning("Failed to load pretrained ResNet18 weights, falling back to random init: %s", exc)
+            resnet = resnet18(weights=None)
 
-        self.backbone = nn.Sequential(*list(resnet.children())[:-1])
+        # 保留卷积特征图，避免全局池化后丢失空间信息。
+        self.backbone = nn.Sequential(*list(resnet.children())[:-2])
         self.encoder_img_feat_input_proj = nn.Conv2d(self.feature_dim, hidden_dim, kernel_size=1)
         self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(hidden_dim // 2)
 
-    def forward(self, images: torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
         """
         Args:
             images: [batch_size, num_cameras, channels, height, width] 或 [B, C, H, W]
 
         Returns:
-            features: list of [batch_size, H*W, hidden_dim] (每相机)
-            shape_2d: (batch_size, hidden_dim, H, W)
+            features: [batch_size, num_tokens, hidden_dim]
         """
         batch_size = images.shape[0]
 
@@ -87,21 +94,13 @@ class RGBEncoder(nn.Module):
         else:
             num_cameras = 1
 
-        features = self.backbone(images)
+        features = self.backbone(images)  # [B*num_cameras, 512, H', W']
 
         cam_pos_embed = self.encoder_cam_feat_pos_embed(features)
-        cam_pos_embed = cam_pos_embed.flatten(2).transpose(1, 2)
-
-        features_flat = features.flatten(2).transpose(1, 2)  # [B*num, H*W, 512]
-
-        features = features_flat + cam_pos_embed
-
-        # 投影到 hidden_dim
-        proj = nn.Linear(self.feature_dim, self.hidden_dim).to(features.device)
-        features = proj(features)
-
+        features = self.encoder_img_feat_input_proj(features) + cam_pos_embed
+        features = features.flatten(2).transpose(1, 2)  # [B*num, H*W, hidden_dim]
         features = features.view(batch_size, num_cameras, -1, self.hidden_dim)
-        features = features.squeeze(1)
+        features = features.reshape(batch_size, -1, self.hidden_dim)
 
         return features
 
@@ -246,6 +245,7 @@ class ACTDecoder(nn.Module):
 class ACTModel(nn.Module):
     """
     ACT 模型 - 完全对齐 LeRobot
+    支持 CVAE、改进的位置编码、更稳定的推理
     """
 
     def __init__(self, config: ACTConfig):
@@ -282,12 +282,11 @@ class ACTModel(nn.Module):
         # 动作预测头
         self.action_head = nn.Linear(config.hidden_dim, config.action_dim)
 
-        # 位置编码
-        # Encoder 1D 位置编码: [latent, state]
-        self.encoder_1d_feature_pos_embed = nn.Embedding(2, config.hidden_dim)
-
         # 图像 2D 位置编码
         self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(config.hidden_dim // 2)
+
+        # Encoder 1D 位置编码 (使用可学习的 embedding)
+        self.encoder_pos_embed = nn.Embedding(128, config.hidden_dim)  # 最大 128 个位置
 
         # Decoder 位置编码
         self.decoder_pos_embed = nn.Embedding(config.action_chunk_size, config.hidden_dim)
@@ -295,13 +294,64 @@ class ACTModel(nn.Module):
         # Latent 投影
         self.latent_proj = nn.Linear(config.latent_dim, config.hidden_dim)
 
+        # CVAE 推理时使用的 latent 统计（训练后设置）
+        self.register_buffer('_inference_latent_mu', torch.zeros(1, config.latent_dim))
+        self.register_buffer('_inference_latent_log_sigma', torch.zeros(1, config.latent_dim))
+        self._has_inference_latent = False
+
         self._reset_parameters()
 
     def _reset_parameters(self):
-        """Xavier-uniform initialization"""
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+        """只初始化新增层，保留视觉 backbone 的预训练权重。"""
+        modules = [
+            self.state_encoder,
+            self.encoder,
+            self.decoder,
+            self.action_head,
+            self.encoder_pos_embed,
+            self.decoder_pos_embed,
+            self.latent_proj,
+            self.vision_encoder.encoder_img_feat_input_proj,
+        ]
+        if self.config.use_cvae:
+            modules.extend([
+                self.action_encoder,
+                self.vae_output_proj,
+                self.latent_query,
+            ])
+
+        for module in modules:
+            for name, p in module.named_parameters():
+                if p.dim() > 1:
+                    nn.init.xavier_uniform_(p)
+                elif "bias" in name:
+                    nn.init.zeros_(p)
+                elif "weight" in name:
+                    nn.init.ones_(p)
+
+    def set_inference_latent(self, mu: torch.Tensor, log_sigma: torch.Tensor):
+        """
+        设置 CVAE 推理时使用的 latent 分布参数
+        应在加载模型后、推理前调用
+
+        Args:
+            mu: latent 均值 [latent_dim] 或 [batch, latent_dim]
+            log_sigma: latent log 方差 [latent_dim] 或 [batch, latent_dim]
+        """
+        if mu.ndim == 1:
+            mu = mu.unsqueeze(0)
+        if log_sigma.ndim == 1:
+            log_sigma = log_sigma.unsqueeze(0)
+        self.register_buffer('_inference_latent_mu', mu)
+        self.register_buffer('_inference_latent_log_sigma', log_sigma)
+        self._has_inference_latent = True
+        print(f"已设置推理 latent: mu={mu.mean().item():.4f}, log_sigma={log_sigma.mean().item():.4f}")
+
+    def clear_inference_latent(self):
+        """清除推理 latent，恢复到零向量"""
+        self._has_inference_latent = False
+        self.register_buffer('_inference_latent_mu', torch.zeros(1, self.config.latent_dim))
+        self.register_buffer('_inference_latent_log_sigma', torch.zeros(1, self.config.latent_dim))
 
     def _encode_action(self, action_target: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """VAE 编码器"""
@@ -334,6 +384,12 @@ class ACTModel(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         """
         前向传播 - 与 LeRobot 一致
+
+        Args:
+            images: 图像张量 [batch, channels, height, width] 或 [batch, num_cameras, channels, height, width]
+            state: 状态张量 [batch, state_dim]
+            action_target: 目标动作（训练时使用）[batch, chunk_size, action_dim]
+            infer_cvae: 是否使用 CVAE 推理
         """
         batch_size = images.shape[0]
 
@@ -342,10 +398,21 @@ class ACTModel(nn.Module):
         log_sigma_x2 = None
 
         if self.config.use_cvae and action_target is not None and self.training:
+            # 训练模式：从 action target 编码获取 latent
             mu, log_sigma_x2 = self._encode_action(action_target)
             latent = self._sample_latent(mu, log_sigma_x2)
+        elif self.config.use_cvae and infer_cvae and self._has_inference_latent:
+            # 推理模式（已设置 latent 分布）：从存储的分布采样
+            inf_mu = self._inference_latent_mu.to(images.device)
+            inf_log_sig = self._inference_latent_log_sigma.to(images.device)
+            # 如果 batch > 1，扩展维度
+            if batch_size > 1:
+                inf_mu = inf_mu.expand(batch_size, -1)
+                inf_log_sig = inf_log_sig.expand(batch_size, -1)
+            latent = self._sample_latent(inf_mu, inf_log_sig)
         elif self.config.use_cvae and infer_cvae:
-            latent = torch.zeros(batch_size, self.config.latent_dim, device=images.device)
+            # 推理模式（未设置 latent 分布）：使用零向量并添加噪声
+            latent = torch.randn(batch_size, self.config.latent_dim, device=images.device) * 0.1
         else:
             latent = torch.zeros(batch_size, self.config.latent_dim, device=images.device)
 
@@ -361,15 +428,18 @@ class ACTModel(nn.Module):
         # 5. 构建 Encoder 输入 - [latent, state, image_features]
         encoder_in = torch.cat([latent_features, state_features, vision_features], dim=1)  # [B, 2+H*W, hidden_dim]
 
-        # 简单位置编码
+        # 6. 使用可学习的位置编码
         seq_len = encoder_in.shape[1]
-        pos_embed = torch.arange(seq_len, device=images.device).unsqueeze(0).unsqueeze(-1).float() / float(seq_len)
-        pos_embed = pos_embed.expand(-1, -1, self.config.hidden_dim) * 0.01
+        if seq_len <= self.encoder_pos_embed.num_embeddings:
+            pos_embed = self.encoder_pos_embed.weight[:seq_len].unsqueeze(0)
+        else:
+            # 如果序列长度超过 embedding 大小，使用循环
+            pos_embed = self.encoder_pos_embed.weight.repeat(1, (seq_len // self.encoder_pos_embed.num_embeddings) + 1, 1)[:, :seq_len]
 
-        # 6. Transformer Encoder
+        # 7. Transformer Encoder
         encoder_out = self.encoder(encoder_in, pos_embed=pos_embed)
 
-        # 7. Transformer Decoder
+        # 8. Transformer Decoder
         decoder_pos_embed = self.decoder_pos_embed.weight.unsqueeze(0).expand(batch_size, -1, -1)
 
         decoder_in = torch.zeros(
@@ -384,7 +454,7 @@ class ACTModel(nn.Module):
             encoder_pos_embed=pos_embed,
         )
 
-        # 8. 预测动作
+        # 9. 预测动作
         action_pred = self.action_head(decoder_out)
 
         # 计算 KL 损失
@@ -406,18 +476,44 @@ class ACTModel(nn.Module):
         use_temporal_ensembling: bool = False,
         noise: float = 0.0,
     ) -> torch.Tensor:
-        """推理时获取动作"""
+        """
+        推理时获取动作
+
+        Args:
+            images: 图像张量
+            state: 状态张量
+            use_temporal_ensembling: 是否使用时序集成（多次推理取平均）
+            noise: 添加到动作的噪声水平
+
+        Returns:
+            预测的动作序列 [action_chunk_size, action_dim]
+        """
         self.eval()
+
+        # 收集多次推理结果用于时序集成
+        all_actions = []
+
         with torch.no_grad():
-            output = self.forward(
-                images,
-                state,
-                action_target=None,
-                infer_cvae=True
-            )
-            action = output["action"]
+            num_ensembles = 3 if use_temporal_ensembling else 1
 
-            if noise > 0:
-                action = action + torch.randn_like(action) * noise
+            for _ in range(num_ensembles):
+                output = self.forward(
+                    images,
+                    state,
+                    action_target=None,
+                    infer_cvae=True
+                )
+                action = output["action"]
 
-        return action
+                if noise > 0:
+                    action = action + torch.randn_like(action) * noise
+
+                all_actions.append(action)
+
+        # 时序集成：取平均
+        if use_temporal_ensembling and len(all_actions) > 1:
+            final_action = torch.stack(all_actions).mean(dim=0)
+        else:
+            final_action = all_actions[0]
+
+        return final_action

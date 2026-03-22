@@ -14,8 +14,8 @@ class Config:
 
     # 模型配置
     MODEL_PATH = os.getenv("MODEL_PATH", None)
-    STATE_DIM = int(os.getenv("STATE_DIM", "3"))  # [x_vel, y_vel, theta_vel]
-    ACTION_DIM = int(os.getenv("ACTION_DIM", "3"))  # [x_vel, y_vel, theta_vel]
+    STATE_DIM = int(os.getenv("STATE_DIM", "2"))  # [vel_left, vel_right] 轮子速度
+    ACTION_DIM = int(os.getenv("ACTION_DIM", "2"))  # [vel_left, vel_right] 轮子速度
     ACTION_CHUNK_SIZE = int(os.getenv("ACTION_CHUNK_SIZE", "8"))
     HIDDEN_DIM = int(os.getenv("HIDDEN_DIM", "512"))
 

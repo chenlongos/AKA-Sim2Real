@@ -41,9 +41,31 @@ class ACTDataset(torch.utils.data.Dataset):
         self.action_mean = action_mean
         self.action_std = action_std
 
-        # 计算数据集大小
-        # 动作序列长度
-        self.num_samples = data["action"].shape[0] - action_chunk_size + 1
+        action_tensor = data["action"]
+        if action_tensor.ndim not in (2, 3):
+            raise ValueError(
+                f"Unsupported action tensor shape {tuple(action_tensor.shape)}; "
+                "expected [T, action_dim] or [N, chunk_size, action_dim]."
+            )
+
+        # 支持两种动作数据格式：
+        # 1. [T, action_dim]：按时间滑窗构造未来 action chunk
+        # 2. [N, chunk_size, action_dim]：每条记录已经是完整 chunk
+        self.actions_are_chunked = action_tensor.ndim == 3
+        if self.actions_are_chunked:
+            self.num_samples = action_tensor.shape[0]
+            if action_tensor.shape[1] != action_chunk_size:
+                raise ValueError(
+                    f"Configured action_chunk_size={action_chunk_size}, "
+                    f"but action data has chunk size {action_tensor.shape[1]}."
+                )
+        else:
+            self.num_samples = action_tensor.shape[0] - action_chunk_size + 1
+            if self.num_samples <= 0:
+                raise ValueError(
+                    f"Not enough timesteps ({action_tensor.shape[0]}) for "
+                    f"action_chunk_size={action_chunk_size}."
+                )
 
     def __len__(self) -> int:
         return self.num_samples
@@ -69,8 +91,11 @@ class ACTDataset(torch.utils.data.Dataset):
             images = self.data["observation"]["image"][current_idx]
             state = self.data["observation"]["state"][current_idx]
 
-        # 动作是从当前时刻开始的未来 chunk_size 步
-        action = self.data["action"][idx:idx + self.action_chunk_size]
+        if self.actions_are_chunked:
+            action = self.data["action"][idx]
+        else:
+            # 动作是从当前时刻开始的未来 chunk_size 步
+            action = self.data["action"][idx:idx + self.action_chunk_size]
 
         # 归一化图像
         if self.normalize_images:
