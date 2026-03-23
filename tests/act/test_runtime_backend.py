@@ -1,13 +1,6 @@
-"""Minimal backend ACT service tests."""
-
-from pathlib import Path
-import sys
+"""Minimal backend ACT runtime tests."""
 
 import torch
-
-repo_root = Path(__file__).resolve().parents[1]
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
 
 from backend.services import act_model
 from backend.services.act_execution import TemporalEnsemblingPolicy
@@ -33,7 +26,7 @@ def test_temporal_blending():
 
     assert torch.allclose(out1[0, 0], torch.tensor([1.0, 1.0]))
     expected = torch.tensor([7.3333335, 7.3333335])
-    assert torch.allclose(out2[0, 0], expected, atol=1e-5), out2[0, 0]
+    assert torch.allclose(out2[0, 0], expected, atol=1e-5)
     assert runtime.execution_policy.step == 2
     print("temporal_blending 测试通过!")
 
@@ -45,14 +38,3 @@ def test_execution_policy_in_isolation():
     assert torch.allclose(out1[0, 0], torch.tensor([1.0, 1.0]))
     assert torch.allclose(out2[0, 0], torch.tensor([4.0, 4.0]))
     print("execution policy 单测通过!")
-
-
-def main():
-    test_reset_inference_context()
-    test_temporal_blending()
-    test_execution_policy_in_isolation()
-    print("backend ACT service 测试通过!")
-
-
-if __name__ == "__main__":
-    main()

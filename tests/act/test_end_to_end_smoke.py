@@ -1,15 +1,8 @@
 """End-to-end smoke test for ACT export/train/load/infer pipeline."""
 
 import base64
-from pathlib import Path
 import asyncio
 import io
-import sys
-import tempfile
-
-repo_root = Path(__file__).resolve().parents[1]
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
 
 from PIL import Image
 
@@ -32,9 +25,8 @@ def _sample(vel_left: float, vel_right: float, actions):
     }
 
 
-async def _run_smoke_test():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_path = Path(tmpdir)
+def test_end_to_end_smoke(tmp_path):
+    async def _run():
         dataset_dir = tmp_path / "dataset"
         train_dir = tmp_path / "train"
 
@@ -60,7 +52,7 @@ async def _run_smoke_test():
         checkpoint_path = train_dir / "final_model.pt"
         if not checkpoint_path.exists():
             checkpoint_path = train_dir / "model.pt"
-        assert checkpoint_path.exists(), checkpoint_path
+        assert checkpoint_path.exists()
 
         act_model.load_act_model(str(checkpoint_path), stats_dir=str(dataset_dir))
         action = act_model.act_inference([0.1, 0.1], _sample_image())
@@ -72,10 +64,4 @@ async def _run_smoke_test():
         assert len(first) == 2
         print("ACT end-to-end smoke test 通过!")
 
-
-def main():
-    asyncio.run(_run_smoke_test())
-
-
-if __name__ == "__main__":
-    main()
+    asyncio.run(_run())

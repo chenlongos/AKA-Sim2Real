@@ -6,23 +6,13 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-
-CHECKS = [
-    ["python3", "-m", "policies.models.act.test_act_pytorch"],
-    ["python3", "backend/test_act_model_backend.py"],
-    ["python3", "backend/test_data_export_stats.py"],
-    ["python3", "backend/test_act_end_to_end_smoke.py"],
-]
+PYTEST_CMD = ["python3", "-m", "pytest", "tests/act", "-q"]
 
 
 def main() -> int:
-    for cmd in CHECKS:
-        print(f"$ {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=REPO_ROOT)
-        if result.returncode != 0:
-            return result.returncode
-    print("All ACT checks passed.")
-    return 0
+    print(f"$ {' '.join(PYTEST_CMD)}")
+    result = subprocess.run(PYTEST_CMD, cwd=REPO_ROOT)
+    return result.returncode
 
 
 if __name__ == "__main__":

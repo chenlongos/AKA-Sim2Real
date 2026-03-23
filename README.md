@@ -85,12 +85,18 @@ npm run dev
 python3 backend/run_act_checks.py
 ```
 
+该入口当前会执行：
+
+```bash
+python3 -m pytest tests/act -q
+```
+
 当前会顺序运行：
 
-- 模型与数据集最小测试
-- backend runtime 与 temporal blending 测试
-- 数据导出统计聚合测试
-- 导出 -> 训练 -> 加载 -> 推理 端到端 smoke test
+- `tests/act/test_model_minimal.py`
+- `tests/act/test_runtime_backend.py`
+- `tests/act/test_data_export_stats.py`
+- `tests/act/test_end_to_end_smoke.py`
 
 如果这一入口通过，说明当前 ACT 主链路至少在最小工作流上是闭合的。
 
@@ -102,6 +108,8 @@ python3 backend/run_act_checks.py
 │   ├── api/           # REST API
 │   ├── sio_handlers/  # Socket.IO 事件处理
 │   └── services/      # ACT runtime / 训练 / 导出
+├── tests/
+│   └── act/           # ACT 最小回归与 smoke tests
 ├── ui/               # 前端代码
 ├── output/           # 输出目录
 │   ├── dataset/     # 采集的数据

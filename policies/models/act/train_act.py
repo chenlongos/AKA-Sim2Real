@@ -311,8 +311,6 @@ def export_to_huggingface(
     Returns:
         输出目录路径
     """
-    from huggingface_hub import HfApi, create_repo
-
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 

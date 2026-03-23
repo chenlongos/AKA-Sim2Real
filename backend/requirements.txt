@@ -16,11 +16,9 @@ pandas>=2.0.0
 pyarrow>=12.0.0
 pillow>=9.0.0
 
-# HuggingFace
-huggingface_hub>=0.16.0
-
 # Development
 httpx>=0.24.0
+pytest>=8.0.0
 
 python-multipart
 einops
