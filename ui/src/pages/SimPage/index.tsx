@@ -27,6 +27,7 @@ const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
+    const lastSentActionsRef = useRef<string[]>([])
     const firstPersonViewRef = useRef<FirstPersonViewRef>(null)
     const [carState, setCarState] = useState<CarState>({
         x: 400,
@@ -186,10 +187,6 @@ const SimPage = () => {
     }, [])
 
     const sendCommand = (cmd: string[]) => {
-        // 发送动作到后端
-        if (cmd.length === 0) {
-            return  // 空动作不发任何命令
-        }
         sendActions(cmd)
     }
 
@@ -257,7 +254,7 @@ const SimPage = () => {
             if (!result.success) {
                 alert(result.message)
             }
-        } catch (e) {
+        } catch {
             alert('启动训练失败')
         }
     }
@@ -265,7 +262,7 @@ const SimPage = () => {
     const handleStopTraining = async () => {
         try {
             await stopTraining()
-        } catch (e) {
+        } catch {
             alert('停止训练失败')
         }
     }
@@ -325,7 +322,7 @@ const SimPage = () => {
         setIsInferring(true)
         try {
             await doInference()
-        } catch (e) {
+        } catch {
             alert('推理失败')
         }
         setIsInferring(false)
@@ -377,6 +374,12 @@ const SimPage = () => {
 
     // 键盘事件处理
     useEffect(() => {
+        const clearKeysAndStop = () => {
+            keys.current = {}
+            lastSentActionsRef.current = []
+            sendActions([])
+        }
+
         const handleKeyDown = (e: KeyboardEvent) => {
             const active = document.activeElement as HTMLElement | null
             if (active) {
@@ -403,13 +406,25 @@ const SimPage = () => {
             }
             keys.current[e.code] = false
         }
+        const handleWindowBlur = () => {
+            clearKeysAndStop()
+        }
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                clearKeysAndStop()
+            }
+        }
 
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
+        window.addEventListener('blur', handleWindowBlur)
+        document.addEventListener('visibilitychange', handleVisibilityChange)
 
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
+            window.removeEventListener('blur', handleWindowBlur)
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
         }
     }, [])
 
@@ -427,9 +442,13 @@ const SimPage = () => {
 
             if (currentTime - lastSendTime >= SEND_INTERVAL) {
                 const actions = getCurrentActions()
-                // 只有有实际动作时才发送，停止时什么都不发
-                if (actions.length > 0) {
+                const lastActions = lastSentActionsRef.current
+                const changed = actions.length !== lastActions.length
+                    || actions.some((action, index) => action !== lastActions[index])
+
+                if (changed || actions.length > 0) {
                     sendCommand(actions)
+                    lastSentActionsRef.current = actions
                 }
                 lastSendTime = currentTime
             }
