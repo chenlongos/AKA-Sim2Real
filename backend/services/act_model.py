@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Optional, Union
 import torch
 from PIL import Image
 
+from backend.config import config
 from backend.services.act_checkpoint import (
     ACTNormalizationStats,
     get_default_device,
@@ -101,6 +102,7 @@ class ACTInferenceRuntime:
             )
             action = self.blend_current_action(action)
             action = self.preprocessor.denormalize_action(action, self.stats, self.device)
+            action = action * config.INFERENCE_SPEED_SCALE
             return action.cpu().numpy().tolist()
 
     def is_model_loaded(self) -> bool:
