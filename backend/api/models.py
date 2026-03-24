@@ -2,7 +2,7 @@
 AKA-Sim 后端 - Pydantic 模型
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 
 
@@ -40,3 +40,14 @@ class ACTInferenceResponse(BaseModel):
     success: bool
     action: Optional[list] = None
     error: Optional[str] = None
+
+
+class TrainRequest(BaseModel):
+    """训练请求"""
+    data_dir: str = "output/dataset"
+    output_dir: Optional[str] = None
+    epochs: int = 50
+    batch_size: int = 8
+    lr: float = 1e-4
+    resume_from: Optional[str] = None
+    episode_ids: Optional[List[int]] = None

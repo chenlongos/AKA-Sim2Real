@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Body
 
 from backend.services import act_model as act_model_module, training
-from backend.api.models import ACTInferenceRequest, DatasetPayload
+from backend.api.models import ACTInferenceRequest, DatasetPayload, TrainRequest
 from backend.models import state
 
 logger = logging.getLogger(__name__)
@@ -134,14 +134,7 @@ async def run_inference(body: dict = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/api/train")
-async def start_training(
-    data_dir: str = "output/dataset",
-    output_dir: str = None,
-    epochs: int = 50,
-    batch_size: int = 8,
-    lr: float = 1e-4,
-    resume_from: str = None,  # 从已有模型继续训练
-):
+async def start_training(request: TrainRequest):
     """启动训练
 
     Args:
@@ -153,6 +146,13 @@ async def start_training(
         resume_from: 从已有模型文件继续训练，None表示从头训练
     """
     try:
+        data_dir = request.data_dir
+        output_dir = request.output_dir
+        epochs = request.epochs
+        batch_size = request.batch_size
+        lr = request.lr
+        resume_from = request.resume_from
+
         if training.training_state["is_running"]:
             return {
                 "success": False,

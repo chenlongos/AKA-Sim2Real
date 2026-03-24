@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # 当前按下的按键集合
 current_actions = set()
+connected_clients = set()
 
 # 推理模式标志 - 推理时直接使用设置的速度，不应用摩擦力
 inference_mode = False
@@ -57,6 +58,8 @@ class SimNamespace(AsyncNamespace):
 
     async def on_connect(self, sid: str, environ: dict):
         """客户端连接"""
+        global connected_clients
+        connected_clients.add(sid)
         logger.info(f"客户端连接: {sid}")
         await self.emit("connected", {"sid": sid})
         # 发送当前车辆状态
@@ -64,6 +67,10 @@ class SimNamespace(AsyncNamespace):
 
     async def on_disconnect(self, sid: str):
         """客户端断开"""
+        global connected_clients, current_actions
+        connected_clients.discard(sid)
+        if not connected_clients:
+            current_actions = set()
         logger.info(f"客户端断开: {sid}")
 
     async def on_action(self, sid: str, actions: list):
@@ -371,9 +378,10 @@ class SimNamespace(AsyncNamespace):
 # 游戏循环任务
 async def game_loop_task(sio_server):
     """游戏循环 - 处理物理更新和状态广播"""
-    global current_actions, inference_mode
+    global current_actions, inference_mode, connected_clients
     logger.info("[游戏循环] 任务已启动")
     _frame_count = 0
+    last_emitted_state = dict(state.car_state)
 
     while True:
         try:
@@ -407,20 +415,32 @@ async def game_loop_task(sio_server):
                 # 推理模式：使用之前设置的速度，只更新位置（不应用摩擦力）
                 vel = [state.car_state["vel_left"], state.car_state["vel_right"]]
                 state.update_car_state(vel)
-                global _debug_game_loop_inference_count
-                _debug_game_loop_inference_count += 1
-                logger.info(f"[游戏循环#{_debug_game_loop_inference_count}] inference_mode=True, vel={vel}, current_actions={current_actions}")
+                if _frame_count % 30 == 0:
+                    global _debug_game_loop_inference_count
+                    _debug_game_loop_inference_count += 1
+                    logger.info(
+                        f"[游戏循环#{_debug_game_loop_inference_count}] inference_mode=True, vel={vel}, current_actions={current_actions}"
+                    )
             else:
                 # 没有按键且非推理模式时应用摩擦力减速
                 state.apply_friction()
 
-            # 广播状态
-            await sio_server.emit("car_state_update", state.car_state)
+            # 仅在有客户端且状态变化时广播，避免空闲时持续占用 CPU/网络。
+            if connected_clients and state.car_state != last_emitted_state:
+                await sio_server.emit("car_state_update", state.car_state)
+                last_emitted_state = dict(state.car_state)
         except Exception as e:
             logger.error(f"游戏循环错误: {e}")
 
-        # 30 FPS
-        await asyncio.sleep(1 / 30)
+        is_moving = abs(state.car_state["vel_left"]) > 1e-3 or abs(state.car_state["vel_right"]) > 1e-3
+        if not connected_clients:
+            sleep_interval = 0.2
+        elif current_actions or inference_mode or is_moving:
+            sleep_interval = 1 / 30
+        else:
+            sleep_interval = 0.1
+
+        await asyncio.sleep(sleep_interval)
 
 
 def start_game_loop(sio_server):
