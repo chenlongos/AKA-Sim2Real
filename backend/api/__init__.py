@@ -164,6 +164,7 @@ async def start_training(request: TrainRequest):
         from pathlib import Path
         project_root = Path(__file__).parent.parent.parent
         data_path = project_root / data_dir
+        output_dir = project_root / output_dir
 
         if not data_path.exists():
             return {
@@ -173,6 +174,7 @@ async def start_training(request: TrainRequest):
 
         # 转换为绝对路径
         data_dir = str(data_dir)
+        output_dir = str(output_dir)
 
         # 处理 resume_from 路径
         resume_path = None

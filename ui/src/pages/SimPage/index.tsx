@@ -244,8 +244,8 @@ const SimPage = () => {
     const handleStartTraining = async () => {
         try {
             const result = await startTraining({
-                data_dir: 'dataset',
-                output_dir: 'checkpoints',
+                data_dir: 'output/dataset',
+                output_dir: 'output/train',
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
