@@ -660,8 +660,6 @@ if __name__ == "__main__":
 
     if sim_state.dataset_samples:
         print(f"使用已采集的 {len(sim_state.dataset_samples)} 个样本导出")
-        export_dataset(sim_state.dataset_samples, "dataset")
     else:
         print("没有采集数据，使用演示样本测试导出")
         demo_samples = create_demo_samples(100)
-        export_dataset(demo_samples, "dataset")
