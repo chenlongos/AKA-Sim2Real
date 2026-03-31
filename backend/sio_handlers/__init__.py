@@ -19,6 +19,9 @@ connected_clients = set()
 # 推理模式标志 - 推理时直接使用设置的速度，不应用摩擦力
 inference_mode = False
 
+# 摄像头是否激活
+camera_active = False
+
 # 调试计数器
 _debug_inference_set_count = 0
 _debug_game_loop_inference_count = 0
@@ -64,6 +67,9 @@ class SimNamespace(AsyncNamespace):
         await self.emit("connected", {"sid": sid})
         # 发送当前车辆状态
         await self.emit("car_state_update", state.car_state)
+        # 发送当前摄像头图像（如果有）
+        if state.camera_image:
+            await self.emit("camera_image", {"image": state.camera_image})
 
     async def on_disconnect(self, sid: str):
         """客户端断开"""
@@ -321,6 +327,19 @@ class SimNamespace(AsyncNamespace):
             "task_name": state.episode_buffer.get(episode_id, {}).get("task_name", "default"),
         })
 
+    async def on_start_camera(self, sid: str):
+        """启动摄像头捕获"""
+        global camera_active
+        camera_active = True
+        logger.info(f"[摄像头] 已启动, sid={sid}")
+
+    async def on_stop_camera(self, sid: str):
+        """停止摄像头捕获"""
+        global camera_active
+        camera_active = False
+        logger.info(f"[摄像头] 已停止, sid={sid}")
+
+
     async def on_collect_data(self, sid: str, payload: dict):
         """接收前端发送的图像数据进行保存"""
         # 检查是否正在录制 episode
@@ -443,6 +462,66 @@ async def game_loop_task(sio_server):
         await asyncio.sleep(sleep_interval)
 
 
+# 摄像头捕获任务
+async def camera_loop_task(sio_server):
+    """摄像头循环 - 定期捕获摄像头画面并广播"""
+    global camera_active
+    import cv2
+    import base64
+
+    logger.info("[摄像头] 任务已启动")
+    _last_frame_time = 0
+    _cap = None
+
+    while True:
+        try:
+            if not camera_active:
+                # 摄像头未激活时释放资源并等待
+                if _cap is not None:
+                    _cap.release()
+                    _cap = None
+                    logger.info("[摄像头] 资源已释放")
+                await asyncio.sleep(0.2)
+                continue
+
+            # 每隔约10帧捕获一次（约10fps）
+            current_time = asyncio.get_event_loop().time()
+            if current_time - _last_frame_time < 0.01:  # 10ms
+                await asyncio.sleep(0.01)
+                continue
+            _last_frame_time = current_time
+
+            # 打开摄像头（如果尚未打开）
+            if _cap is None or not _cap.isOpened():
+                _cap = cv2.VideoCapture(0)
+                if not _cap.isOpened():
+                    logger.warning("[摄像头] 无法打开摄像头")
+                    await asyncio.sleep(1)
+                    continue
+
+            ret, frame = _cap.read()
+            if not ret:
+                logger.warning("[摄像头] 无法读取画面")
+                _cap.release()
+                _cap = None
+                await asyncio.sleep(0.5)
+                continue
+
+            # 压缩为 JPEG
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 85]
+            _, img_encoded = cv2.imencode('.jpg', frame, encode_param)
+            image_bytes = img_encoded.tobytes()
+
+            await sio_server.emit("camera_image", image_bytes)
+
+        except Exception as e:
+            logger.error(f"[摄像头] 捕获失败: {e}")
+            if _cap is not None:
+                _cap.release()
+                _cap = None
+            await asyncio.sleep(1)
+
 def start_game_loop(sio_server):
     """启动游戏循环"""
     asyncio.create_task(game_loop_task(sio_server))
+    asyncio.create_task(camera_loop_task(sio_server))

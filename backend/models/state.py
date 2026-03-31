@@ -56,6 +56,9 @@ episode_metadata: Dict[int, Dict[str, Any]] = {}
 # 当前是否正在录制
 is_recording: bool = False
 
+# 摄像头图像数据 (base64编码的JPEG)
+camera_image: str = ""
+
 
 def reset_car_state():
     """重置车辆状态"""
