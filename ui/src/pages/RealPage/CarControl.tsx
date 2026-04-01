@@ -6,6 +6,9 @@ interface CarControlProps {
     isRecording: boolean;
     getCurrentActions: () => string[];
     onCollect?: (imageData: string, actions: string[]) => void;
+    carIP: string;
+    onCarIPChange: (ip: string) => void;
+    carConnected: boolean;
 }
 
 export const CarControl = ({
@@ -13,6 +16,9 @@ export const CarControl = ({
     isRecording,
     getCurrentActions,
     onCollect,
+    carIP,
+    onCarIPChange,
+    carConnected,
 }: CarControlProps) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
     const lastCollectTimeRef = useRef(0)
@@ -49,6 +55,23 @@ export const CarControl = ({
     return (
         <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-3 h-full text-gray-800 overflow-y-auto min-h-0">
             <div className="font-semibold">小车控制 & 状态</div>
+
+            {/* 小车IP输入 */}
+            <div className="border border-gray-300 rounded p-2">
+                <div className="text-xs font-semibold mb-2">小车IP地址</div>
+                <input
+                    type="text"
+                    value={carIP}
+                    onChange={(e) => onCarIPChange(e.target.value)}
+                    placeholder="例如: 192.168.1.100"
+                    className="w-full px-2 py-1 border border-gray-300 rounded text-xs font-mono"
+                />
+                {carIP && (
+                    <div className={`text-xs mt-1 ${carConnected ? 'text-green-600' : 'text-red-500'}`}>
+                        {carConnected ? `已连接: http://${carIP}` : `连接中... (http://${carIP})`}
+                    </div>
+                )}
+            </div>
 
             {/* 摄像头画面占位 */}
             <canvas

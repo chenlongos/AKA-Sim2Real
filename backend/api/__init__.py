@@ -218,3 +218,33 @@ async def stop_training():
         "success": True,
         "message": "训练已停止",
     }
+
+
+@router.post("/api/car/heartbeat")
+async def car_heartbeat(car_ip: str):
+    """代理心跳请求到小车"""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(f"http://{car_ip}/heartbeat")
+            if res.status_code != 200:
+                return {"ok": False, "status": res.status_code}
+            else:
+                print('status_code',res.status_code)
+                print('mac',res)
+                return {"ok": True, 'res': res.json()}
+                return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/car/control")
+async def car_control(car_ip: str, action: str, speed: int = 50):
+    """代理控制请求到小车"""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(f"http://{car_ip}/api/control?action={action}&speed={speed}")
+            return {"ok": True, "status": res.status_code}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

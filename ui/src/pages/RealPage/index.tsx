@@ -52,6 +52,8 @@ const RealPage = () => {
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
+    const [carIP, setCarIP] = useState("")
+    const [carConnected, setCarConnected] = useState(false)
 
     // 监听后端车辆状态更新
     useEffect(() => {
@@ -160,6 +162,31 @@ const RealPage = () => {
 
     const sendCommand = (cmd: string[]) => {
         sendActions(cmd)
+    }
+
+    const heartbeatIPRef = useRef("")
+    const checkCarHeartbeat = async (ip: string) => {
+        if (!ip) {
+            setCarConnected(false)
+            heartbeatIPRef.current = ""
+            return
+        }
+        heartbeatIPRef.current = ip
+        // 通过后端代理发送心跳
+        const res = await fetch(`/api/car/heartbeat?car_ip=${encodeURIComponent(ip)}`, {
+            method: 'POST',
+        })
+        const data = await res.json()
+        if (data.ok && heartbeatIPRef.current === ip) {
+            setCarConnected(true)
+            return
+        }
+    }
+
+    const handleCarIPChange = (ip: string) => {
+        setCarIP(ip)
+        setCarConnected(false)
+        checkCarHeartbeat(ip)
     }
 
     const handleSetEpisode = (episodeId: number) => {
@@ -328,10 +355,15 @@ const RealPage = () => {
 
     // 键盘事件处理
     useEffect(() => {
-        const clearKeysAndStop = () => {
-            keys.current = {}
-            lastSentActionsRef.current = []
-            sendActions([])
+        const keyActionMap: Record<string, string> = {
+            'ArrowUp': 'up',
+            'KeyW': 'up',
+            'ArrowDown': 'down',
+            'KeyS': 'down',
+            'ArrowLeft': 'left',
+            'KeyA': 'left',
+            'ArrowRight': 'right',
+            'KeyD': 'right',
         }
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -345,8 +377,14 @@ const RealPage = () => {
             if (e.code.startsWith("Arrow")) {
                 e.preventDefault()
             }
-            keys.current[e.code] = true
+            const action = keyActionMap[e.code]
+            if (action && carConnected) {
+                keys.current[e.code] = true
+                fetch(`http://${carIP}/api/control?action=${action}&speed=50`).catch(() => {
+                })
+            }
         }
+
         const handleKeyUp = (e: KeyboardEvent) => {
             const active = document.activeElement as HTMLElement | null
             if (active) {
@@ -359,28 +397,33 @@ const RealPage = () => {
                 e.preventDefault()
             }
             keys.current[e.code] = false
+            // 检查是否所有方向键都松开了
+            const directionKeys = ['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS', 'ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD']
+            const anyPressed = directionKeys.some(k => keys.current[k])
+            if (!anyPressed && carIP) {
+                fetch(`http://${carIP}/api/control?action=stop`).catch(() => {
+                })
+            }
         }
+
         const handleWindowBlur = () => {
-            clearKeysAndStop()
-        }
-        const handleVisibilityChange = () => {
-            if (document.hidden) {
-                clearKeysAndStop()
+            keys.current = {}
+            if (carIP) {
+                fetch(`http://${carIP}/api/control?action=stop`).catch(() => {
+                })
             }
         }
 
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
         window.addEventListener('blur', handleWindowBlur)
-        document.addEventListener('visibilitychange', handleVisibilityChange)
 
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('blur', handleWindowBlur)
-            document.removeEventListener('visibilitychange', handleVisibilityChange)
         }
-    }, [])
+    }, [carConnected, carIP])
 
     // 定时发送动作
     useEffect(() => {
@@ -448,7 +491,7 @@ const RealPage = () => {
                 </div>
 
                 <div className="flex-1 flex flex-col h-full">
-                    <RealCameraView isRecording={isRecording} />
+                    <RealCameraView isRecording={isRecording}/>
                 </div>
 
                 <div className="w-90 flex flex-col h-full">
@@ -457,7 +500,9 @@ const RealPage = () => {
                         isRecording={isRecording}
                         getCurrentActions={getCurrentActions}
                         onCollect={(imageData, actions) => sendImageData(imageData, actions)}
-                    />
+                        carIP={carIP}
+                        onCarIPChange={handleCarIPChange}
+                        carConnected={carConnected}/>
                 </div>
             </div>
         </div>
