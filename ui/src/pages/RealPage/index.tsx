@@ -378,10 +378,11 @@ const RealPage = () => {
                 e.preventDefault()
             }
             const action = keyActionMap[e.code]
-            if (action && carConnected) {
+            if (action && carConnected && carIP && !keys.current[e.code]) {
                 keys.current[e.code] = true
-                fetch(`http://${carIP}/api/control?action=${action}&speed=50`).catch(() => {
-                })
+                fetch(`/api/car/control?car_ip=${encodeURIComponent(carIP)}&action=${action}&speed=50`, {
+                    method: 'POST',
+                }).catch(() => {})
             }
         }
 
@@ -400,17 +401,19 @@ const RealPage = () => {
             // 检查是否所有方向键都松开了
             const directionKeys = ['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS', 'ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD']
             const anyPressed = directionKeys.some(k => keys.current[k])
-            if (!anyPressed && carIP) {
-                fetch(`http://${carIP}/api/control?action=stop`).catch(() => {
-                })
+            if (!anyPressed && carIP && carConnected) {
+                fetch(`/api/car/control?car_ip=${encodeURIComponent(carIP)}&action=stop&speed=50`, {
+                    method: 'POST',
+                }).catch(() => {})
             }
         }
 
         const handleWindowBlur = () => {
             keys.current = {}
-            if (carIP) {
-                fetch(`http://${carIP}/api/control?action=stop`).catch(() => {
-                })
+            if (carIP && carConnected) {
+                fetch(`/api/car/control?car_ip=${encodeURIComponent(carIP)}&action=stop&speed=50`, {
+                    method: 'POST',
+                }).catch(() => {})
             }
         }
 

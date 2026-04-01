@@ -230,9 +230,6 @@ async def car_heartbeat(car_ip: str):
             if res.status_code != 200:
                 return {"ok": False, "status": res.status_code}
             else:
-                print('status_code',res.status_code)
-                print('mac',res)
-                return {"ok": True, 'res': res.json()}
                 return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
