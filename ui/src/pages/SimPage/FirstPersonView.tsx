@@ -147,7 +147,7 @@ export const FirstPersonView = forwardRef<FirstPersonViewRef, FirstPersonViewPro
         ctx.imageSmoothingEnabled = false;
 
         let animationFrameId: number
-        const COLLECT_INTERVAL = 1000 / 30; // 采集间隔(ms)，10fps
+        const COLLECT_INTERVAL = 1000 / 30; // 采集间隔(ms)，30fps
         const FPS = 30;
         const frameInterval = 1000 / FPS;
         let lastTime = 0;

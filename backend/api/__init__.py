@@ -114,25 +114,6 @@ async def load_trained_model(model_path: str = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.post("/api/act/run_inference")
-async def run_inference(body: dict = Body(...)):
-    """运行推理"""
-    try:
-        state = body.get("state", [0, 0, 0])
-        image = body.get("image", None)
-        if not _act_runtime.is_model_loaded():
-            # 尝试加载训练好的模型
-            _act_runtime.load_model()
-
-        action = _act_runtime.infer(state, image)
-        return {
-            "success": True,
-            "action": action,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.post("/api/train")
 async def start_training(request: TrainRequest):
     """启动训练

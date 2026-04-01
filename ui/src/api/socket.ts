@@ -16,11 +16,6 @@ export const sendActions = (actions: string[]) => {
     socket.emit('action', actions);
 }
 
-// 直接发送速度命令 [vel_left, vel_right]
-export const sendVelocity = (velocity: [number, number]) => {
-    socket.emit('velocity_action', velocity);
-}
-
 export const resetCar = () => {
     socket.emit('reset_car_state');
 }
@@ -72,11 +67,6 @@ export const getEpisodeStatus = () => {
     socket.emit('get_episode_status');
 }
 
-// 暂停数据采集
-export const pauseCollection = () => {
-    socket.emit('pause_collection');
-}
-
 // 训练相关
 export const startTraining = (params: {
     data_dir?: string;
@@ -94,10 +84,6 @@ export const startTraining = (params: {
     }).then(res => res.json());
 };
 
-export const getTrainingStatus = () => {
-    return fetch('/api/train/status').then(res => res.json());
-};
-
 export const stopTraining = () => {
     return fetch('/api/train/stop', { method: 'POST' }).then(res => res.json());
 };
@@ -112,14 +98,6 @@ export const loadTrainedModel = () => {
         }
         return res.json()
     })
-};
-
-export const runInference = (state: number[], image?: string) => {
-    return fetch('/api/act/run_inference', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state, image }),
-    }).then(res => res.json());
 };
 
 export const runInferenceWithSocket = (

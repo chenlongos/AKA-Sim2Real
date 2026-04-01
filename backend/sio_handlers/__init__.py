@@ -98,24 +98,6 @@ class SimNamespace(AsyncNamespace):
             state.car_state["vel_left"] = 0
             state.car_state["vel_right"] = 0
 
-    async def on_velocity_action(self, sid: str, velocity: list):
-        """处理连续速度命令 - 直接接收 [vel_left, vel_right]"""
-        global inference_mode
-        # 防御性检查：确保 velocity 是 [number, number] 格式
-        if not isinstance(velocity, (list, tuple)) or len(velocity) != 2:
-            logger.warning(f"无效的速度数据格式: {velocity}, type: {type(velocity)}")
-            return
-        vel_left, vel_right = velocity
-        if not isinstance(vel_left, (int, float)) or not isinstance(vel_right, (int, float)):
-            logger.warning(f"速度值不是数字类型: vel_left={vel_left}, vel_right={vel_right}")
-            return
-        state.car_state["vel_left"] = vel_left
-        state.car_state["vel_right"] = vel_right
-        inference_mode = True
-        global _debug_inference_set_count
-        _debug_inference_set_count += 1
-        logger.info(f"[推理#{_debug_inference_set_count}] 设置速度: vel_left={vel_left:.4f}, vel_right={vel_right:.4f}")
-
     async def on_reset_car_state(self, sid: str):
         """重置车辆状态"""
         logger.info("重置车辆状态")
