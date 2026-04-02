@@ -2,8 +2,9 @@
 AKA-Sim 后端 - 控制域 API
 """
 
-import httpx
 from fastapi import APIRouter
+
+from backend.services.gateways import car_gateway
 
 router = APIRouter(prefix="/api/car", tags=["control"])
 
@@ -12,11 +13,7 @@ router = APIRouter(prefix="/api/car", tags=["control"])
 async def car_heartbeat(car_ip: str):
     """代理心跳请求到小车"""
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.get(f"http://{car_ip}/heartbeat")
-            if res.status_code != 200:
-                return {"ok": False, "status": res.status_code}
-            return {"ok": True}
+        return await car_gateway.heartbeat(car_ip)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -25,24 +22,15 @@ async def car_heartbeat(car_ip: str):
 async def car_control(car_ip: str, action: str, speed: int = 50):
     """代理控制请求到小车"""
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.get(f"http://{car_ip}/api/control?action={action}&speed={speed}")
-            return {"ok": True, "status": res.status_code}
+        return await car_gateway.control(car_ip, action, speed)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 
 @router.get("/motor_status")
 async def car_snapshot(car_ip: str, timestamp: int):
-    """从真实小车请求指定时间戳的图像数据。"""
+    """从真实小车请求指定时间戳的电机状态。"""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.get(
-                f"http://{car_ip}/api/motor_status",
-                params={"timestamp": timestamp},
-            )
-            if res.status_code == 200:
-                return res.json()
-            return {"ok": False, "status": res.status_code}
+        return await car_gateway.get_motor_status(car_ip, timestamp)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
