@@ -74,7 +74,7 @@ class LeRobotDatasetMetadata:
         features: dict = None,
     ):
         if output_dir is None:
-            output_dir = Path(__file__).parent.parent.parent / "output" / "dataset"
+            output_dir = Path(__file__).resolve().parents[3] / "output" / "dataset"
         self.output_dir = Path(output_dir)
 
         self.data_dir = self.output_dir / "data"

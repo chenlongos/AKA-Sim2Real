@@ -10,7 +10,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from backend.services.act_checkpoint import ACTNormalizationStats
+from backend.services.inference.checkpoint import ACTNormalizationStats
 
 
 class ACTPreprocessor:
@@ -24,7 +24,6 @@ class ACTPreprocessor:
         ])
 
     def process_image(self, image_input: Union[str, Image.Image, None], device: str) -> torch.Tensor:
-        """Convert user image input into `[1, 1, 3, 224, 224]` model tensor."""
         if image_input is None:
             return torch.randn(1, 1, 3, 224, 224).to(device)
 
@@ -43,12 +42,8 @@ class ACTPreprocessor:
             return torch.randn(1, 1, 3, 224, 224).to(device)
 
     def normalize_state(self, state: list, stats: ACTNormalizationStats, device: str) -> torch.Tensor:
-        """Normalize wheel-speed state input for model inference."""
         state_tensor = torch.tensor(state[:2], dtype=torch.float32).unsqueeze(0).to(device)
-        return (
-            state_tensor - stats.state_mean.unsqueeze(0).to(device)
-        ) / (stats.state_std.unsqueeze(0).to(device) + 1e-8)
+        return (state_tensor - stats.state_mean.unsqueeze(0).to(device)) / (stats.state_std.unsqueeze(0).to(device) + 1e-8)
 
     def denormalize_action(self, action: torch.Tensor, stats: ACTNormalizationStats, device: str) -> torch.Tensor:
-        """Map normalized model output back to environment action scale."""
         return action * stats.action_std.unsqueeze(0).to(device) + stats.action_mean.unsqueeze(0).to(device)

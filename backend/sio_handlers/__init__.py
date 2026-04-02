@@ -12,9 +12,8 @@ from backend.sio_handlers.core.runtime import SioRuntimeState
 from backend.sio_handlers.core.tasks import game_loop_task
 
 if TYPE_CHECKING:
-    from backend.services.camera_service import CameraService
-    from backend.services.episode_service import EpisodeService
-    from backend.services.sim_controller import SimController
+    from backend.services.episode import EpisodeService
+    from backend.services.simulator import CameraService, SimController
 
 _runtime_state = SioRuntimeState()
 _sim_controller = None
@@ -25,7 +24,7 @@ _camera_service = None
 def _get_sim_controller():
     global _sim_controller
     if _sim_controller is None:
-        from backend.services.sim_controller import SimController
+        from backend.services.simulator import SimController
 
         _sim_controller = SimController(_runtime_state)
     return _sim_controller
@@ -34,7 +33,7 @@ def _get_sim_controller():
 def _get_episode_service():
     global _episode_service
     if _episode_service is None:
-        from backend.services.episode_service import EpisodeService
+        from backend.services.episode import EpisodeService
 
         _episode_service = EpisodeService()
     return _episode_service
@@ -43,7 +42,7 @@ def _get_episode_service():
 def _get_camera_service():
     global _camera_service
     if _camera_service is None:
-        from backend.services.camera_service import CameraService
+        from backend.services.simulator import CameraService
 
         _camera_service = CameraService(_runtime_state)
     return _camera_service

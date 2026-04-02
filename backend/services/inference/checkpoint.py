@@ -32,7 +32,6 @@ class ACTCheckpointBundle:
 
 
 def get_default_device() -> str:
-    """Select the preferred inference/training device for the current machine."""
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -41,8 +40,7 @@ def get_default_device() -> str:
 
 
 def resolve_default_model_path() -> Path:
-    """Resolve the default training artifact path used by backend inference."""
-    project_root = Path(__file__).parent.parent.parent
+    project_root = Path(__file__).resolve().parents[3]
     model_path = project_root / "output" / "train" / "final_model.pt"
     if not model_path.exists():
         model_path = project_root / "output" / "train" / "model.pt"
@@ -50,7 +48,6 @@ def resolve_default_model_path() -> Path:
 
 
 def load_checkpoint_bundle(model_path: Optional[str], device: str) -> ACTCheckpointBundle:
-    """Load raw checkpoint payload and normalize it into one bundle object."""
     path = Path(model_path) if model_path is not None else resolve_default_model_path()
     if not path.exists():
         raise FileNotFoundError(f"模型文件不存在: {path}")
@@ -76,8 +73,7 @@ def load_checkpoint_bundle(model_path: Optional[str], device: str) -> ACTCheckpo
 
 
 def load_stats(stats_dir: Optional[str]) -> ACTNormalizationStats:
-    """Load normalization stats from dataset metadata or return defaults."""
-    project_root = Path(__file__).parent.parent.parent
+    project_root = Path(__file__).resolve().parents[3]
     data_dir = Path(stats_dir) if stats_dir is not None else project_root / "output" / "dataset"
     stats_path = data_dir / "meta" / "stats.json"
     if not stats_path.exists():
@@ -95,7 +91,6 @@ def load_stats(stats_dir: Optional[str]) -> ACTNormalizationStats:
 
 
 def instantiate_model(bundle: ACTCheckpointBundle, device: str) -> "ACTModel":
-    """Instantiate an ACT model from a normalized checkpoint bundle."""
     from policies.models.act.modeling_act import ACTModel as PyACTModel
 
     model = PyACTModel(bundle.model_config)

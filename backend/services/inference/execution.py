@@ -18,21 +18,13 @@ class TemporalEnsemblingPolicy:
     predictions: Deque[dict] = field(default_factory=deque)
 
     def reset(self):
-        """Reset online step counter and cached overlapping predictions."""
         self.step = 0
         self.predictions.clear()
 
     def update_decay(self, decay: float):
-        """Update blend decay while keeping it in a safe numeric range."""
         self.decay = min(max(float(decay), 1e-3), 1.0)
 
     def blend(self, action_chunk: torch.Tensor) -> torch.Tensor:
-        """
-        Blend the current-timestep action using overlapping predicted chunks.
-
-        Args:
-            action_chunk: [1, chunk_size, action_dim]
-        """
         if action_chunk.ndim != 3 or action_chunk.shape[0] != 1:
             return action_chunk
 

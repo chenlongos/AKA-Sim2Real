@@ -7,7 +7,7 @@ import logging
 
 from fastapi import APIRouter
 
-from backend.services import act_model as act_model_module
+from backend.services import inference as inference_service
 from backend.api.domains import control, episode, inference, training
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ACT runtime 需要在启动时传递进来
-_act_runtime = act_model_module.get_act_runtime()
+_act_runtime = inference_service.get_act_runtime()
 
 
 def get_act_runtime():

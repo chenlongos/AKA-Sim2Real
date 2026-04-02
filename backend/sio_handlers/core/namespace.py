@@ -10,9 +10,8 @@ from backend.sio_handlers.domains.episode import EpisodeEventsMixin
 from backend.sio_handlers.domains.inference import InferenceEventsMixin
 
 if TYPE_CHECKING:
-    from backend.services.camera_service import CameraService
-    from backend.services.episode_service import EpisodeService
-    from backend.services.sim_controller import SimController
+    from backend.services.episode import EpisodeService
+    from backend.services.simulator import CameraService, SimController
 
 
 class SimNamespace(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.services.act_model import get_act_runtime
+from backend.services.inference import get_act_runtime
 
 
 @dataclass

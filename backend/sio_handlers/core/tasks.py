@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from backend.models import state
-from backend.services.sim_controller import SimController
+from backend.services.simulator.controller import SimController
 from backend.sio_handlers.core.runtime import SioRuntimeState
 
 logger = logging.getLogger(__name__)

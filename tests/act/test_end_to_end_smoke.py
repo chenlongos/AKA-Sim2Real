@@ -6,7 +6,8 @@ import io
 
 from PIL import Image
 
-from backend.services import act_model, data_export, training
+from backend.services import inference, training
+from backend.services.episode import export_episode, reset_metadata
 
 
 def _sample_image() -> str:
@@ -30,14 +31,14 @@ def test_end_to_end_smoke(tmp_path):
         dataset_dir = tmp_path / "dataset"
         train_dir = tmp_path / "train"
 
-        data_export.reset_metadata()
+        reset_metadata()
         samples = [
             _sample(0.10, 0.10, ["forward"]),
             _sample(0.12, 0.11, ["forward"]),
             _sample(0.08, 0.20, ["left"]),
             _sample(0.20, 0.09, ["right"]),
         ]
-        data_export.export_episode(samples, episode_id=1, output_dir=str(dataset_dir), chunk_size=10)
+        export_episode(samples, episode_id=1, output_dir=str(dataset_dir), chunk_size=10)
 
         model = await training.train_model(
             sio_server=None,
@@ -54,8 +55,8 @@ def test_end_to_end_smoke(tmp_path):
             checkpoint_path = train_dir / "model.pt"
         assert checkpoint_path.exists()
 
-        act_model.load_act_model(str(checkpoint_path), stats_dir=str(dataset_dir))
-        action = act_model.act_inference([0.1, 0.1], _sample_image())
+        inference.load_act_model(str(checkpoint_path), stats_dir=str(dataset_dir))
+        action = inference.act_inference([0.1, 0.1], _sample_image())
 
         assert isinstance(action, list) and len(action) > 0
         first = action[0]

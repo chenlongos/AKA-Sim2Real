@@ -16,20 +16,19 @@ repo_root = Path(__file__).resolve().parents[1]
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from backend.services import act_model
+from backend.services import inference
 from backend import api
 from backend.api import router as api_router
 from backend.config import config
-from backend.services.camera_service import CameraService
-from backend.services.episode_service import EpisodeService
-from backend.services.sim_controller import SimController
+from backend.services.episode import EpisodeService
+from backend.services.simulator import CameraService, SimController
 from backend.sio_handlers import SimNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime
 from backend.sio_handlers.core.runtime import SioRuntimeState
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-runtime = act_model.get_act_runtime()
+runtime = inference.get_act_runtime()
 api.set_act_runtime(runtime)
 set_sio_act_runtime(runtime)
 sio_runtime = SioRuntimeState(act_runtime=runtime)

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from backend.services.data_export import LeRobotDatasetMetadata
+from backend.services.episode import LeRobotDatasetMetadata
 
 
 SAMPLE_IMAGE = (

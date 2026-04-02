@@ -2,12 +2,12 @@
 
 import torch
 
-from backend.services import act_model
-from backend.services.act_execution import TemporalEnsemblingPolicy
+from backend.services import inference
+from backend.services.inference import TemporalEnsemblingPolicy
 
 
 def test_reset_inference_context():
-    runtime = act_model.get_act_runtime()
+    runtime = inference.get_act_runtime()
     runtime.reset_inference_context()
     assert runtime.execution_policy.step == 0
     assert len(runtime.execution_policy.predictions) == 0
@@ -15,7 +15,7 @@ def test_reset_inference_context():
 
 
 def test_temporal_blending():
-    runtime = act_model.get_act_runtime()
+    runtime = inference.get_act_runtime()
     runtime.reset_inference_context()
 
     first = torch.tensor([[[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]])

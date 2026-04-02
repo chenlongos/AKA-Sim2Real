@@ -34,6 +34,7 @@ async def start_training(request: TrainRequest):
 
         project_root = Path(__file__).resolve().parents[4]
         data_path = project_root / request.data_dir
+        output_path = project_root / request.output_dir
         if not data_path.exists():
             return {
                 "success": False,
@@ -47,8 +48,8 @@ async def start_training(request: TrainRequest):
         asyncio.create_task(
             training.train_model(
                 _sio_server,
-                data_dir=str(request.data_dir),
-                output_dir=request.output_dir,
+                data_dir=str(data_path),
+                output_dir=str(output_path),
                 epochs=request.epochs,
                 batch_size=request.batch_size,
                 lr=request.lr,

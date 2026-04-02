@@ -1,8 +1,7 @@
-"""AKA-Sim 后端 - ACT 模型运行时."""
+"""AKA-Sim backend ACT inference runtime."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, Optional, Union
 
@@ -10,15 +9,15 @@ import torch
 from PIL import Image
 
 from backend.config import config
-from backend.services.act_checkpoint import (
+from backend.services.inference.checkpoint import (
     ACTNormalizationStats,
     get_default_device,
     instantiate_model,
     load_checkpoint_bundle,
     load_stats,
 )
-from backend.services.act_execution import TemporalEnsemblingPolicy
-from backend.services.act_preprocess import ACTPreprocessor
+from backend.services.inference.execution import TemporalEnsemblingPolicy
+from backend.services.inference.preprocess import ACTPreprocessor
 from policies.models.act.defaults import build_act_config
 
 if TYPE_CHECKING:
@@ -28,16 +27,6 @@ logger = logging.getLogger(__name__)
 
 
 class ACTInferenceRuntime:
-    """
-    Thin runtime facade for online ACT inference.
-
-    Responsibilities:
-    - own the loaded model instance
-    - own normalization stats
-    - own preprocessing and execution policy objects
-    - expose stable `load_model` / `infer` methods to API and Socket layers
-    """
-
     def __init__(self):
         self.model: Optional["ACTModel"] = None
         self.device = get_default_device()
@@ -46,11 +35,9 @@ class ACTInferenceRuntime:
         self.execution_policy = TemporalEnsemblingPolicy()
 
     def create_config(self, config_dict: Optional[dict] = None) -> "ACTConfig":
-        """Build an ACT config using shared defaults plus overrides."""
         return build_act_config(**(config_dict or {}))
 
     def reset_inference_context(self):
-        """Clear execution-time temporal state without touching model weights."""
         self.execution_policy.reset()
         logger.info("已重置 ACT 推理时序上下文")
 
@@ -61,18 +48,15 @@ class ACTInferenceRuntime:
         return min(max(decay, 1e-3), 1.0)
 
     def blend_current_action(self, action_chunk: torch.Tensor) -> torch.Tensor:
-        """Blend the current step with overlapping action chunks."""
         self.execution_policy.update_decay(self._temporal_decay())
         return self.execution_policy.blend(action_chunk)
 
     def _load_stats(self, stats_dir: Optional[str]):
-        """Load state/action normalization statistics for inference."""
         self.stats = load_stats(stats_dir)
         logger.info("状态归一化: mean=%s, std=%s", self.stats.state_mean, self.stats.state_std)
         logger.info("动作归一化: mean=%s, std=%s", self.stats.action_mean, self.stats.action_std)
 
     def load_model(self, model_path: str = None, stats_dir: str = None) -> "ACTModel":
-        """Load checkpoint, initialize runtime state, and attach stats."""
         logger.info("加载 ACT 模型...")
         self.device = get_default_device()
         bundle = load_checkpoint_bundle(model_path, self.device)
@@ -83,11 +67,9 @@ class ACTInferenceRuntime:
         return self.model
 
     def process_image(self, image_input: Union[str, Image.Image, None]) -> torch.Tensor:
-        """Preprocess a runtime image input into model tensor format."""
         return self.preprocessor.process_image(image_input, self.device)
 
     def infer(self, state: list, image: Optional[Union[str, Image.Image]] = None) -> list:
-        """Run one online inference step and return an action chunk."""
         if self.model is None:
             logger.warning("ACT 模型未加载，返回随机动作")
             return [[0.0, 0.0]]
@@ -113,7 +95,6 @@ _runtime = ACTInferenceRuntime()
 
 
 def get_act_runtime() -> ACTInferenceRuntime:
-    """Return the process-wide ACT runtime instance used by backend services."""
     return _runtime
 
 

@@ -30,7 +30,7 @@ class EpisodeService:
 
         logger.info(f"导出 episode {episode_id} 的 {len(samples)} 个样本...")
         try:
-            from backend.services.data_export import export_episode
+            from backend.services.episode.exporter import export_episode
 
             output_path = export_episode(
                 samples,
@@ -63,7 +63,7 @@ class EpisodeService:
             return None
 
         try:
-            from backend.services.data_export import export_episode
+            from backend.services.episode.exporter import export_episode
 
             output_path = export_episode(
                 samples,

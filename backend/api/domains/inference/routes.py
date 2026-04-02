@@ -5,11 +5,11 @@ AKA-Sim 后端 - 推理域 API
 from fastapi import APIRouter, HTTPException
 
 from backend.api.domains.inference.models import ACTInferenceRequest
-from backend.services import act_model as act_model_module
+from backend.services import inference as inference_service
 
 router = APIRouter(prefix="/api/act", tags=["inference"])
 
-_act_runtime = act_model_module.get_act_runtime()
+_act_runtime = inference_service.get_act_runtime()
 
 
 def set_act_runtime(runtime):
