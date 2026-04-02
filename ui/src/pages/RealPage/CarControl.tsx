@@ -1,4 +1,5 @@
 import {useEffect, useRef} from "react";
+import {socket} from "../../api/socket.ts";
 import type {CarState} from "../../models/types.ts";
 
 interface CarControlProps {
@@ -110,6 +111,26 @@ export const CarControl = ({
                         当前动作: {getCurrentActions().join(', ') || '无'}
                     </div>
                 </div>
+                <button
+                    onClick={async () => {
+                        if (!carIP) {
+                            alert('请先输入小车IP')
+                            return
+                        }
+                        try {
+                            const timestamp = Date.now()
+                            const res = await fetch(`/api/car/motor_status?car_ip=${encodeURIComponent(carIP)}&timestamp=${timestamp}`)
+                            const data = await res.json()
+                            console.log('motor_status:', data)
+                            // 如果需要更新状态，可以通过 props 回调或其他方式
+                        } catch (e) {
+                            console.error('获取电机状态失败:', e)
+                        }
+                    }}
+                    className="mt-2 w-full px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                >
+                    获取小车状态
+                </button>
             </div>
 
             {/* 录制状态 */}

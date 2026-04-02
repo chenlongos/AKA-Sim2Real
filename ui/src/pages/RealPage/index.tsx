@@ -408,23 +408,12 @@ const RealPage = () => {
             }
         }
 
-        const handleWindowBlur = () => {
-            keys.current = {}
-            if (carIP && carConnected) {
-                fetch(`/api/car/control?car_ip=${encodeURIComponent(carIP)}&action=stop&speed=50`, {
-                    method: 'POST',
-                }).catch(() => {})
-            }
-        }
-
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
-        window.addEventListener('blur', handleWindowBlur)
 
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
-            window.removeEventListener('blur', handleWindowBlur)
         }
     }, [carConnected, carIP])
 
