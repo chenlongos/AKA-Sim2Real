@@ -20,7 +20,11 @@ from backend.services import act_model
 from backend import api
 from backend.api import router as api_router
 from backend.config import config
+from backend.services.camera_service import CameraService
+from backend.services.episode_service import EpisodeService
+from backend.services.sim_controller import SimController
 from backend.sio_handlers import SimNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime
+from backend.sio_handlers.core.runtime import SioRuntimeState
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +32,10 @@ logger = logging.getLogger(__name__)
 runtime = act_model.get_act_runtime()
 api.set_act_runtime(runtime)
 set_sio_act_runtime(runtime)
+sio_runtime = SioRuntimeState(act_runtime=runtime)
+sim_controller = SimController(sio_runtime)
+episode_service = EpisodeService()
+camera_service = CameraService(sio_runtime)
 
 
 @asynccontextmanager
@@ -46,7 +54,7 @@ async def lifespan(app: FastAPI):
         logger.warning("将以无模型模式运行")
 
     # 启动状态广播
-    start_game_loop(sio)
+    start_game_loop(sio, runtime=sio_runtime, sim_controller=sim_controller, camera_service=camera_service)
 
     yield
 
@@ -68,7 +76,15 @@ sio = AsyncServer(
     ping_timeout=60,
     ping_interval=25,
 )
-sio.register_namespace(SimNamespace("/"))
+sio.register_namespace(
+    SimNamespace(
+        "/",
+        runtime=sio_runtime,
+        sim_controller=sim_controller,
+        episode_service=episode_service,
+        camera_service=camera_service,
+    )
+)
 
 # 设置sio_server到api模块
 api.set_sio_server(sio)

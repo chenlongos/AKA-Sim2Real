@@ -1,13 +1,13 @@
 """
-AKA-Sim 后端 - ACT 推理 API
+AKA-Sim 后端 - 推理域 API
 """
 
 from fastapi import APIRouter, HTTPException
 
-from backend.api.models import ACTInferenceRequest
+from backend.api.domains.inference.models import ACTInferenceRequest
 from backend.services import act_model as act_model_module
 
-router = APIRouter(prefix="/api/act", tags=["act"])
+router = APIRouter(prefix="/api/act", tags=["inference"])
 
 _act_runtime = act_model_module.get_act_runtime()
 
@@ -26,18 +26,18 @@ async def infer_act(request: ACTInferenceRequest):
             "success": True,
             "action": action,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/load_trained")
 async def load_trained_model(model_path: str = None):
-    """加载训练好的ACT模型"""
+    """加载训练好的 ACT 模型"""
     try:
         _act_runtime.load_model(model_path)
         return {
             "success": True,
             "message": "模型加载成功",
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

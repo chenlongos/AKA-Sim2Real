@@ -1,5 +1,5 @@
 """
-AKA-Sim 后端 - 训练 API
+AKA-Sim 后端 - 训练域 API
 """
 
 import asyncio
@@ -8,13 +8,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from backend.api.models import TrainRequest
+from backend.api.domains.training.models import TrainRequest
 from backend.services import training
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/train", tags=["train"])
+router = APIRouter(prefix="/api/train", tags=["training"])
 
-# 存储 sio_server 实例
 _sio_server = None
 
 
@@ -25,16 +24,7 @@ def set_sio_server(sio):
 
 @router.post("")
 async def start_training(request: TrainRequest):
-    """启动训练
-
-    Args:
-        data_dir: 数据集目录
-        output_dir: 模型输出目录
-        epochs: 训练轮数
-        batch_size: 批次大小
-        lr: 学习率
-        resume_from: 从已有模型文件继续训练，None表示从头训练
-    """
+    """启动训练。"""
     try:
         if training.training_state["is_running"]:
             return {
@@ -42,28 +32,23 @@ async def start_training(request: TrainRequest):
                 "message": "训练正在进行中",
             }
 
-        # 使用项目根目录
-        project_root = Path(__file__).parent.parent.parent
+        project_root = Path(__file__).resolve().parents[4]
         data_path = project_root / request.data_dir
-        output_dir = project_root / request.output_dir
-
         if not data_path.exists():
             return {
                 "success": False,
                 "message": f"数据集目录不存在: {data_path}",
             }
 
-        # 处理 resume_from 路径
         resume_path = None
         if request.resume_from:
             resume_path = str(project_root / request.resume_from)
 
-        # 异步启动训练
         asyncio.create_task(
             training.train_model(
                 _sio_server,
                 data_dir=str(request.data_dir),
-                output_dir=str(output_dir),
+                output_dir=request.output_dir,
                 epochs=request.epochs,
                 batch_size=request.batch_size,
                 lr=request.lr,
@@ -76,9 +61,9 @@ async def start_training(request: TrainRequest):
             "success": True,
             "message": f"训练已启动{resume_msg}",
         }
-    except Exception as e:
-        logger.error(f"启动训练失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error(f"启动训练失败: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/status")
