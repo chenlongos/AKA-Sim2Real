@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react"
 import {
-    socket,
+    simSocket,
     sendActions,
     resetCar,
     getCarState,
@@ -16,6 +16,7 @@ import {
     finalizeEpisode,
     getEpisodeStatus,
     sendImageData,
+    onTrainingProgress,
 } from "../../api/socket.ts";
 import type {CarState, Obstacle} from "../../models/types.ts";
 import {TopDownView} from "./TopDownView.tsx";
@@ -59,23 +60,20 @@ const SimPage = () => {
 
     // 监听后端车辆状态更新
     useEffect(() => {
-        // 连接 Socket.IO
-        socket.connect()
-
         // 监听连接
-        socket.on("connected", (data) => {
+        simSocket.on("connected", (data) => {
             console.log("Connected:", data)
             // 连接后获取初始状态
-            getCarState()
+            getCarState(simSocket)
         })
 
         // 监听车辆状态更新
-        socket.on("car_state_update", (state: CarState) => {
+        simSocket.on("car_state_update", (state: CarState) => {
             setCarState(state)
         })
 
         // 监听采集计数更新
-        socket.on("collection_count", (data: {
+        simSocket.on("collection_count", (data: {
             count: number;
             exported?: boolean;
             output_path?: string;
@@ -90,7 +88,7 @@ const SimPage = () => {
         })
 
         // 监听轮次信息（只同步各轮次的数据量，不同步轮次号，由前端控制）
-        socket.on("episode_info", (data: {
+        simSocket.on("episode_info", (data: {
             current_episode: number;
             episodes: Record<number, number>;
             buffer_size?: number
@@ -99,7 +97,7 @@ const SimPage = () => {
         })
 
         // 监听 episode 状态
-        socket.on("episode_status", (data: {
+        simSocket.on("episode_status", (data: {
             episode_id: number;
             is_recording: boolean;
             frame_count: number;
@@ -111,14 +109,14 @@ const SimPage = () => {
         })
 
         // 监听 episode 开始
-        socket.on("episode_started", (data: { episode_id: number; task_name: string; frame_count: number }) => {
+        simSocket.on("episode_started", (data: { episode_id: number; task_name: string; frame_count: number }) => {
             setIsRecording(true)
             setCollectedCount(0)
             setEpisodeTaskName(data.task_name)
         })
 
         // 监听 episode 结束
-        socket.on("episode_ended", (data: {
+        simSocket.on("episode_ended", (data: {
             episode_id: number;
             frame_count: number;
             exported?: boolean;
@@ -135,7 +133,7 @@ const SimPage = () => {
         })
 
         // 监听 episode 完成
-        socket.on("episode_finalized", (data: {
+        simSocket.on("episode_finalized", (data: {
             episode_id: number;
             frame_count: number;
             output_path?: string;
@@ -149,12 +147,12 @@ const SimPage = () => {
         })
 
         // 监听训练进度
-        socket.on("training_progress", (data: {
+        const unsubscribeTrainingProgress = onTrainingProgress(simSocket, (data: {
             is_running: boolean;
             epoch: number;
             total_epochs: number;
             loss: number;
-            progress: number
+            progress: number;
         }) => {
             setIsTraining(data.is_running)
             setTrainingProgress({
@@ -166,28 +164,28 @@ const SimPage = () => {
         })
 
         // 获取初始轮次信息
-        getEpisodes()
+        getEpisodes(simSocket)
         // 获取初始 episode 状态
-        getEpisodeStatus()
+        getEpisodeStatus(simSocket)
 
         return () => {
-            socket.off("connected")
-            socket.off("car_state_update")
-            socket.off("collection_count")
-            socket.off("training_progress")
-            socket.off("episode_info")
-            socket.off("episode_status")
-            socket.off("episode_started")
-            socket.off("episode_ended")
-            socket.off("episode_finalized")
-            socket.off("collection_paused")
-            socket.off("collection_resumed")
-            socket.disconnect()
+            simSocket.off("connected")
+            simSocket.off("car_state_update")
+            simSocket.off("collection_count")
+            simSocket.off("training_progress")
+            simSocket.off("episode_info")
+            simSocket.off("episode_status")
+            simSocket.off("episode_started")
+            simSocket.off("episode_ended")
+            simSocket.off("episode_finalized")
+            simSocket.off("collection_paused")
+            simSocket.off("collection_resumed")
+            unsubscribeTrainingProgress()
         }
     }, [])
 
     const sendCommand = (cmd: string[]) => {
-        sendActions(cmd)
+        sendActions(simSocket, cmd)
     }
 
     const handleSetEpisode = (episodeId: number) => {
@@ -207,13 +205,13 @@ const SimPage = () => {
         setCollectedCount(0)
 
         // 先设置目标轮次（后端会清空该轮次的数据）
-        setEpisode(episodeId)
+        setEpisode(simSocket, episodeId)
 
         // 如果是回退到之前的轮次，删除之前轮次的数据
         if (episodeId < episodeToDelete) {
-            deleteEpisode(episodeToDelete)
+            deleteEpisode(simSocket, episodeToDelete)
             // 刷新轮次列表
-            getEpisodes()
+            getEpisodes(simSocket)
         }
         setCurrentEpisode(episodeId)
     }
@@ -221,24 +219,24 @@ const SimPage = () => {
     const handleStartEpisode = () => {
         // 检查是否有上一轮的数据需要保存
         if (episodeCounts[currentEpisode] && episodeCounts[currentEpisode] > 0) {
-            finalizeEpisode(currentEpisode)
+            finalizeEpisode(simSocket, currentEpisode)
             // 刷新轮次列表
-            getEpisodes()
+            getEpisodes(simSocket)
         }
 
         // 开始新录制（使用当前轮次，不改变轮次）
-        startEpisode(currentEpisode, episodeTaskName)
+        startEpisode(simSocket, currentEpisode, episodeTaskName)
     }
 
     const handleEndEpisode = () => {
         // 结束录制并自动保存数据（endEpisode会自动导出，所以不需要再调用finalizeEpisode）
-        endEpisode(currentEpisode)
+        endEpisode(simSocket, currentEpisode)
         // 轮次自动+1
         setCurrentEpisode(currentEpisode + 1)
         // 重置帧数
         setCollectedCount(0)
         // 刷新轮次列表
-        getEpisodes()
+        getEpisodes(simSocket)
     }
 
     const handleStartTraining = async () => {
@@ -286,7 +284,7 @@ const SimPage = () => {
         // 真实小车模式：状态输入是左右轮速度 [vel_left, vel_right]
         const state: [number, number] = [carState.vel_left, carState.vel_right]
         const imageBase64 = firstPersonViewRef.current?.getImageData()
-        const result = await runInferenceWithSocket(state, imageBase64)
+        const result = await runInferenceWithSocket(simSocket, state, imageBase64)
         if (result.success && result.action) {
             const actionChunks = Array.isArray(result.action) ? result.action : [result.action]
             if (actionChunks.length === 0 || !Array.isArray(actionChunks[0])) {
@@ -377,7 +375,7 @@ const SimPage = () => {
         const clearKeysAndStop = () => {
             keys.current = {}
             lastSentActionsRef.current = []
-            sendActions([])
+            sendActions(simSocket, [])
         }
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -460,10 +458,31 @@ const SimPage = () => {
     }, [getCurrentActions])
 
     return (
-        <div className="flex flex-col gap-3 p-4 h-screen overflow-hidden">
-            <h1 className="text-center font-bold">AKA-Sim 模拟器</h1>
-            <div className="flex gap-5 flex-1 items-stretch">
-                <div className="w-64 flex flex-col h-[88vh]">
+        <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
+            {/* 顶部标题栏 */}
+            <div className="flex items-center justify-between px-6 py-2 bg-slate-900/50 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-linear-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-900/20">
+                        <span className="text-white font-bold text-sm">SIM</span>
+                    </div>
+                    <div>
+                        <h2 className="text-base font-bold text-slate-100">AKA ACT 小车模拟器</h2>
+                        <p className="text-xs text-slate-500">Action Chunking with Transformers - Educational Edition</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/50 border border-slate-700">
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"/>
+                        <span className="text-xs text-slate-300">Simulation Active</span>
+                    </div>
+                    <span className="text-xs text-slate-500 font-mono">60 FPS</span>
+                </div>
+            </div>
+
+            {/* 主内容区 */}
+            <div className="flex flex-1 overflow-hidden p-4 gap-4">
+                {/* 左侧面板 - 训练和推理控制 */}
+                <div className="w-72 flex flex-col gap-3 min-w-0">
                     <TrainingControl
                         collectedCount={collectedCount}
                         isTraining={isTraining}
@@ -480,7 +499,7 @@ const SimPage = () => {
                         onSetEpisode={handleSetEpisode}
                         onEndEpisode={handleEndEpisode}
                         onStartEpisode={handleStartEpisode}
-                        onResetCar={resetCar}
+                        onResetCar={() => resetCar(simSocket)}
                     />
 
                     <InferenceControl
@@ -493,24 +512,27 @@ const SimPage = () => {
                         onAutoInference={handleAutoInference}
                     />
                 </div>
-                <div className="flex-1 flex flex-col h-full">
+
+                {/* 中间 - 俯视图 */}
+                <div className="flex-1 min-w-0 flex flex-col">
                     <TopDownView
                         carState={carState}
                         obstacles={obstacles}
                         onObstaclesChange={setObstacles}
                         collectedCount={collectedCount}
-                        resetCar={resetCar}
+                        resetCar={() => resetCar(simSocket)}
                         sendCommand={sendCommand}
                     />
                 </div>
-                <div className="w-90 flex flex-col h-full">
-                    {/* 第一视角 + 日志 - 同一卡片 */}
+
+                {/* 右侧 - 第一视角 + 日志 */}
+                <div className="w-96 flex flex-col min-w-0">
                     <RightPanel
                         ref={firstPersonViewRef}
                         carState={carState}
                         obstacles={obstacles}
                         isRecording={isRecording}
-                        onCollect={(imageData, actions) => sendImageData(imageData, actions)}
+                        onCollect={(imageData, actions) => sendImageData(simSocket, imageData, actions)}
                         getCurrentActions={getCurrentActions}
                     />
                 </div>

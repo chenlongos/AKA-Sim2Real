@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react"
 import {
-    socket,
+    realSocket,
     sendActions,
     resetCar,
     getCarState,
@@ -16,12 +16,13 @@ import {
     finalizeEpisode,
     getEpisodeStatus,
     collectImageData,
+    onTrainingProgress,
 } from "../../api/socket.ts";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
-import {CarControl} from "./CarControl.tsx";
+import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 
@@ -49,7 +50,7 @@ const RealPage = () => {
     const autoInferenceRef = useRef(false)
     const inferenceTimerRef = useRef<number | null>(null)
     const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
-    const fpvCameraViewRef = useRef<RealCameraViewRef | null>(null)
+    const fpvCameraViewRef = useRef<RealRightPanelRef | null>(null)
     const collectTimerRef = useRef<number | null>(null)
     const collectInFlightRef = useRef(false)
     const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
@@ -65,18 +66,16 @@ const RealPage = () => {
 
     // 监听后端车辆状态更新
     useEffect(() => {
-        socket.connect()
-
-        socket.on("connected", (data) => {
+        realSocket.on("connected", (data) => {
             console.log("Connected:", data)
-            getCarState()
+            getCarState(realSocket)
         })
 
-        socket.on("car_state_update", (state: CarState) => {
+        realSocket.on("car_state_update", (state: CarState) => {
             setCarState(state)
         })
 
-        socket.on("collection_count", (data: {
+        realSocket.on("collection_count", (data: {
             count: number;
             exported?: boolean;
             output_path?: string;
@@ -85,7 +84,7 @@ const RealPage = () => {
             setCollectedCount(data.count)
         })
 
-        socket.on("episode_info", (data: {
+        realSocket.on("episode_info", (data: {
             current_episode: number;
             episodes: Record<number, number>;
             buffer_size?: number
@@ -93,7 +92,7 @@ const RealPage = () => {
             setEpisodeCounts(data.episodes)
         })
 
-        socket.on("episode_status", (data: {
+        realSocket.on("episode_status", (data: {
             episode_id: number;
             is_recording: boolean;
             frame_count: number;
@@ -104,13 +103,13 @@ const RealPage = () => {
             setEpisodeTaskName(data.task_name)
         })
 
-        socket.on("episode_started", (data: { episode_id: number; task_name: string; frame_count: number }) => {
+        realSocket.on("episode_started", (data: { episode_id: number; task_name: string; frame_count: number }) => {
             setIsRecording(true)
             setCollectedCount(0)
             setEpisodeTaskName(data.task_name)
         })
 
-        socket.on("episode_ended", (data: {
+        realSocket.on("episode_ended", (data: {
             episode_id: number;
             frame_count: number;
             exported?: boolean;
@@ -121,13 +120,12 @@ const RealPage = () => {
             setCollectedCount(data.frame_count)
         })
 
-        socket.on("episode_finalized", (data: {
+        realSocket.on("episode_finalized", (data: {
             episode_id: number;
             frame_count: number;
             output_path?: string;
             error?: string
         }) => {
-            // 数据保存完成
             if (data.output_path) {
                 // alert(`Episode ${data.episode_id} 已保存到: ${data.output_path}`)
             } else if (data.error) {
@@ -135,12 +133,13 @@ const RealPage = () => {
             }
         })
 
-        socket.on("training_progress", (data: {
+        // 监听训练进度
+        const unsubscribeTrainingProgress = onTrainingProgress(realSocket, (data: {
             is_running: boolean;
             epoch: number;
             total_epochs: number;
             loss: number;
-            progress: number
+            progress: number;
         }) => {
             setIsTraining(data.is_running)
             setTrainingProgress({
@@ -151,25 +150,26 @@ const RealPage = () => {
             })
         })
 
-        getEpisodes()
-        getEpisodeStatus()
+        getEpisodes(realSocket)
+        getEpisodeStatus(realSocket)
 
         return () => {
-            socket.off("connected")
-            socket.off("car_state_update")
-            socket.off("collection_count")
-            socket.off("training_progress")
-            socket.off("episode_info")
-            socket.off("episode_status")
-            socket.off("episode_started")
-            socket.off("episode_ended")
-            socket.off("episode_finalized")
-            socket.disconnect()
+            realSocket.off("connected")
+            realSocket.off("car_state_update")
+            realSocket.off("collection_count")
+            realSocket.off("training_progress")
+            realSocket.off("episode_info")
+            realSocket.off("episode_status")
+            realSocket.off("episode_started")
+            realSocket.off("episode_ended")
+            realSocket.off("episode_finalized")
+            unsubscribeTrainingProgress()
         }
     }, [])
 
     useEffect(() => {
         if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCameraPermissionError("当前浏览器不支持摄像头访问")
             return
         }
@@ -230,7 +230,7 @@ const RealPage = () => {
     }, [])
 
     const sendCommand = (cmd: string[]) => {
-        sendActions(cmd)
+        sendActions(realSocket, cmd)
     }
 
     const heartbeatIPRef = useRef("")
@@ -241,7 +241,6 @@ const RealPage = () => {
             return
         }
         heartbeatIPRef.current = ip
-        // 通过后端代理发送心跳
         const res = await fetch(`/api/car/heartbeat?car_ip=${encodeURIComponent(ip)}`, {
             method: 'POST',
         })
@@ -271,28 +270,28 @@ const RealPage = () => {
         }
 
         setCollectedCount(0)
-        setEpisode(episodeId)
+        setEpisode(realSocket, episodeId)
 
         if (episodeId < episodeToDelete) {
-            deleteEpisode(episodeToDelete)
-            getEpisodes()
+            deleteEpisode(realSocket, episodeToDelete)
+            getEpisodes(realSocket)
         }
         setCurrentEpisode(episodeId)
     }
 
     const handleStartEpisode = () => {
         if (episodeCounts[currentEpisode] && episodeCounts[currentEpisode] > 0) {
-            finalizeEpisode(currentEpisode)
-            getEpisodes()
+            finalizeEpisode(realSocket, currentEpisode)
+            getEpisodes(realSocket)
         }
-        startEpisode(currentEpisode, episodeTaskName)
+        startEpisode(realSocket, currentEpisode, episodeTaskName)
     }
 
     const handleEndEpisode = () => {
-        endEpisode(currentEpisode)
+        endEpisode(realSocket, currentEpisode)
         setCurrentEpisode(currentEpisode + 1)
         setCollectedCount(0)
-        getEpisodes()
+        getEpisodes(realSocket)
     }
 
     const handleStartTraining = async () => {
@@ -338,7 +337,7 @@ const RealPage = () => {
 
     const doInference = async () => {
         const state: [number, number] = [carState.vel_left, carState.vel_right]
-        const result = await runInferenceWithSocket(state, undefined)
+        const result = await runInferenceWithSocket(realSocket, state, undefined)
         if (result.success && result.action) {
             const actionChunks = Array.isArray(result.action) ? result.action : [result.action]
             if (actionChunks.length === 0 || !Array.isArray(actionChunks[0])) {
@@ -467,7 +466,6 @@ const RealPage = () => {
                 e.preventDefault()
             }
             keys.current[e.code] = false
-            // 检查是否所有方向键都松开了
             const directionKeys = ['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS', 'ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD']
             const anyPressed = directionKeys.some(k => keys.current[k])
             if (!anyPressed && carIP && carConnected) {
@@ -558,10 +556,32 @@ const RealPage = () => {
     }, [carIP, getCurrentActions, isRecording])
 
     return (
-        <div className="flex min-h-screen w-full flex-col gap-4 bg-gray-50 p-4 text-gray-900 xl:h-screen xl:overflow-hidden">
-            <h1 className="text-center text-2xl font-bold">AKA-Sim Real 真实小车</h1>
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_380px] xl:overflow-hidden">
-                <div className="flex min-h-0 flex-col gap-3">
+        <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
+            {/* 顶部标题栏 */}
+            <div className="flex items-center justify-between px-6 py-2 bg-slate-900/50 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-linear-to-br from-red-600 to-orange-600 flex items-center justify-center shadow-lg shadow-red-900/20">
+                        <span className="text-white font-bold text-sm">REAL</span>
+                    </div>
+                    <div>
+                        <h2 className="text-base font-bold text-slate-100">AKA ACT 小车训练平台</h2>
+                        <p className="text-xs text-slate-500">Action Chunking with Transformers - Physical Robot Edition</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/50 border border-slate-700">
+                        <span className={`w-2 h-2 rounded-full ${carConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}/>
+                        <span className="text-xs text-slate-300">
+                            {carConnected ? 'Robot Connected' : 'Connecting...'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            {/* 主内容区 */}
+            <div className="flex flex-1 overflow-hidden p-4 gap-4">
+                {/* 左侧面板 - 训练和推理控制 */}
+                <div className="w-72 flex flex-col gap-3 min-w-0">
                     <TrainingControl
                         collectedCount={collectedCount}
                         isTraining={isTraining}
@@ -578,7 +598,7 @@ const RealPage = () => {
                         onSetEpisode={handleSetEpisode}
                         onEndEpisode={handleEndEpisode}
                         onStartEpisode={handleStartEpisode}
-                        onResetCar={resetCar}
+                        onResetCar={() => resetCar(realSocket)}
                     />
 
                     <InferenceControl
@@ -592,31 +612,37 @@ const RealPage = () => {
                     />
                 </div>
 
-                <div className="min-h-[420px] xl:min-h-0">
-                    <RealCameraView
-                        ref={topdownCameraViewRef}
-                        title="前方摄像头 / 俯视视角"
-                        description="预留给前置摄像头，作为环境俯视观察。"
-                        devices={cameraDevices}
-                        selectedDeviceId={topdownCameraId}
-                        onDeviceChange={setTopdownCameraId}
-                        cameraError={cameraPermissionError}
-                        isRecording={isRecording}
-                    />
+                {/* 中间 - 前方摄像头 */}
+                <div className="flex-1 min-w-0 flex flex-col">
+                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 h-full">
+                        <RealCameraView
+                            ref={topdownCameraViewRef}
+                            title="前方摄像头 / 俯视视角"
+                            description="预留给前置摄像头，作为环境俯视观察。"
+                            devices={cameraDevices}
+                            selectedDeviceId={topdownCameraId}
+                            onDeviceChange={setTopdownCameraId}
+                            cameraError={cameraPermissionError}
+                            isRecording={isRecording}
+                        />
+                    </div>
                 </div>
-                <div className="min-h-0 xl:overflow-hidden">
-                    <CarControl
+
+                {/* 右侧 - 小车控制 + 日志 */}
+                <div className="w-96 flex flex-col min-w-0">
+                    <RealRightPanel
+                        ref={fpvCameraViewRef}
                         carState={carState}
                         isRecording={isRecording}
                         getCurrentActions={getCurrentActions}
                         carIP={carIP}
                         onCarIPChange={handleCarIPChange}
                         carConnected={carConnected}
-                        fpvCameraRef={fpvCameraViewRef}
                         cameraDevices={cameraDevices}
                         fpvCameraId={fpvCameraId}
                         onFpvCameraChange={setFpvCameraId}
-                        fpvCameraError={cameraPermissionError}/>
+                        fpvCameraError={cameraPermissionError}
+                    />
                 </div>
             </div>
         </div>

@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 
 from backend.services.training.state import training_state
+from backend.utils import log_broadcast
 
 
 class TrainingCallbacks:
     """训练回调 - 用于推送进度"""
 
-    def __init__(self, sio_server=None):
+    def __init__(self, sio_server=None, loop=None, namespace=None):
         self.sio_server = sio_server
+        self.loop = loop
+        self.namespace = namespace or "/"
 
     def on_epoch_start(self, epoch: int, total_epochs: int):
         training_state["epoch"] = epoch + 1
@@ -35,6 +38,35 @@ class TrainingCallbacks:
     def _emit_progress(self):
         if self.sio_server:
             try:
-                asyncio.create_task(self.sio_server.emit("training_progress", training_state))
+                if self.loop and self.loop.is_running():
+                    # 在线程池中运行时，通过call_soon_threadsafe回到主线程
+                    async def emit():
+                        # 给每个连接单独发送
+                        for sid in log_broadcast._connected_sids:
+                            try:
+                                await self.sio_server.emit(
+                                    "training_progress",
+                                    training_state,
+                                    room=sid,
+                                    namespace=self.namespace
+                                )
+                            except Exception:
+                                pass
+                    asyncio.run_coroutine_threadsafe(emit(), self.loop)
+                else:
+                    # 在主线程运行时直接create_task
+                    async def emit():
+                        # 给每个连接单独发送
+                        for sid in log_broadcast._connected_sids:
+                            try:
+                                await self.sio_server.emit(
+                                    "training_progress",
+                                    training_state,
+                                    room=sid,
+                                    namespace=self.namespace
+                                )
+                            except Exception:
+                                pass
+                    asyncio.create_task(emit())
             except Exception:
                 pass

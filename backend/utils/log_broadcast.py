@@ -1,5 +1,6 @@
 """
 日志广播系统 - 将日志通过 Socket.IO 发送到前端
+支持按命名空间隔离
 """
 from __future__ import annotations
 
@@ -10,14 +11,32 @@ from typing import Any
 
 # 全局 Socket.IO 服务器引用
 _sio_server = None
-_namespace = None
+# 按命名空间跟踪状态: { namespace: { sids: set(), ... } }
+_namespace_states: dict[str, dict[str, Any]] = {}
 
 
-def set_broadcast_sio(sio_server, namespace: str = "/sim"):
+def set_broadcast_sio(sio_server, namespace: str = "/"):
     """设置 Socket.IO 服务器用于广播日志"""
-    global _sio_server, _namespace
+    global _sio_server
     _sio_server = sio_server
-    _namespace = namespace
+    # 初始化命名空间状态
+    if namespace not in _namespace_states:
+        _namespace_states[namespace] = {
+            "sids": set(),
+        }
+
+
+def add_connected_sid(sid: str, namespace: str = "/"):
+    """添加连接的sid"""
+    if namespace not in _namespace_states:
+        _namespace_states[namespace] = {"sids": set()}
+    _namespace_states[namespace]["sids"].add(sid)
+
+
+def remove_connected_sid(sid: str, namespace: str = "/"):
+    """移除连接的sid"""
+    if namespace in _namespace_states:
+        _namespace_states[namespace]["sids"].discard(sid)
 
 
 class SocketIOHandler(logging.Handler):
@@ -47,14 +66,22 @@ class SocketIOHandler(logging.Handler):
                     return
 
             log_entry = self.format_log(record)
-            # 使用 asyncio.create_task 发送（参考 training/progress.py 的做法）
-            asyncio.create_task(
-                _sio_server.emit(
-                    "log_message",
-                    log_entry,
-                    namespace=_namespace,
-                )
-            )
+
+            # 给每个命名空间的每个连接单独发送日志
+            for namespace, ns_state in _namespace_states.items():
+                sids = ns_state.get("sids", set())
+                for sid in sids:
+                    try:
+                        asyncio.create_task(
+                            _sio_server.emit(
+                                "log_message",
+                                log_entry,
+                                room=sid,
+                                namespace=namespace,
+                            )
+                        )
+                    except Exception:
+                        pass
         except Exception:
             # 避免日志处理失败影响主程序
             pass

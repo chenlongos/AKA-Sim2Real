@@ -86,10 +86,10 @@ const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState, obst
     const h = ctx.canvas.height;
     const {x, y, angle} = carState;
 
-    // 天空和地面
-    ctx.fillStyle = '#87CEEB'; // 天空蓝
+    // 天空和地面 - 更亮的色调
+    ctx.fillStyle = '#4a90d9'; // 天空 - 蓝色
     ctx.fillRect(0, 0, w, h / 2);
-    ctx.fillStyle = '#7f8c8d'; // 地面灰
+    ctx.fillStyle = '#5d6d7e'; // 地面 - 浅灰
     ctx.fillRect(0, h / 2, w, h / 2);
 
     // 参数
@@ -180,26 +180,47 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
     }, [carState, obstacles, isRecording, onCollect, getCurrentActions]);
 
     return (
-        <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-2.5 flex flex-col gap-2 h-[88vh] text-gray-800 min-h-0">
-            {/* 第一视角部分 */}
-            <div className="font-semibold">车载摄像头</div>
-            <canvas ref={canvasRef} width={320} height={240}
-                    className="bg-black border-2 border-gray-800 rounded self-center"/>
-            <div className="text-xs text-gray-600">
-                说明：右侧画面是根据左侧地图实时计算生成的伪3D视角。<br/>
-                状态来源：后端实时同步
-            </div>
-            <div className="text-xs mt-2">
-                <div className="font-semibold">当前状态:</div>
-                <div>X: {carState.x.toFixed(1)}</div>
-                <div>Y: {carState.y.toFixed(1)}</div>
-                <div>角度: {(carState.angle * 180 / Math.PI).toFixed(1)}°</div>
-                <div>左轮: {carState.vel_left.toFixed(3)} m/s</div>
-                <div>右轮: {carState.vel_right.toFixed(3)} m/s</div>
-            </div>
+        <div className="flex flex-col h-full gap-3">
+            {/* 第一视角卡片 */}
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                        <span className="w-2 h-2 bg-blue-500 rounded-full"/>
+                        车载摄像头
+                    </h3>
+                    {isRecording && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/20 text-red-400 border border-red-500/30">
+                            <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"/>
+                            <span className="text-xs font-medium">REC</span>
+                        </div>
+                    )}
+                </div>
 
-            {/* 分隔线 */}
-            <div className="border-t border-gray-400 my-1"/>
+                <canvas
+                    ref={canvasRef}
+                    width={320}
+                    height={240}
+                    className="w-full bg-black border border-slate-700 rounded-lg shadow-lg"
+                />
+
+                {/* 状态信息 */}
+                <div className="mt-3 pt-3 border-t border-slate-700/50">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                        <div className="text-slate-500">位置</div>
+                        <div className="text-slate-300 font-mono">
+                            X: {carState.x.toFixed(1)}, Y: {carState.y.toFixed(1)}
+                        </div>
+                        <div className="text-slate-500">角度</div>
+                        <div className="text-slate-300 font-mono">
+                            {(carState.angle * 180 / Math.PI).toFixed(1)}°
+                        </div>
+                        <div className="text-slate-500">轮速</div>
+                        <div className="text-slate-300 font-mono">
+                            L: {carState.vel_left.toFixed(3)}, R: {carState.vel_right.toFixed(3)}
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {/* 日志控制台 */}
             <div className="flex-1 min-h-0">

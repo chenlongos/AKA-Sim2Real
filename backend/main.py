@@ -20,10 +20,7 @@ from backend.services import inference
 from backend import api
 from backend.api import router as api_router
 from backend.config import config
-from backend.services.episode import EpisodeService
-from backend.services.simulator import CameraService, SimController
-from backend.sio_handlers import SimNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime
-from backend.sio_handlers.core.runtime import SioRuntimeState
+from backend.sio_handlers import SimNamespace, RealNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime
 from backend.utils import set_broadcast_sio, setup_socket_logging
 
 # 配置日志
@@ -32,10 +29,6 @@ logger = logging.getLogger(__name__)
 runtime = inference.get_act_runtime()
 api.set_act_runtime(runtime)
 set_sio_act_runtime(runtime)
-sio_runtime = SioRuntimeState(act_runtime=runtime)
-sim_controller = SimController(sio_runtime)
-episode_service = EpisodeService()
-camera_service = CameraService(sio_runtime)
 
 
 @asynccontextmanager
@@ -53,8 +46,9 @@ async def lifespan(app: FastAPI):
         logger.warning(f"模型加载失败: {e}")
         logger.warning("将以无模型模式运行")
 
-    # 启动状态广播
-    start_game_loop(sio, runtime=sio_runtime, sim_controller=sim_controller, camera_service=camera_service)
+    # 启动两个命名空间的状态广播
+    start_game_loop(sio, namespace="/sim")
+    start_game_loop(sio, namespace="/real")
 
     yield
 
@@ -76,21 +70,17 @@ sio = AsyncServer(
     ping_timeout=60,
     ping_interval=25,
 )
-sio.register_namespace(
-    SimNamespace(
-        "/",
-        runtime=sio_runtime,
-        sim_controller=sim_controller,
-        episode_service=episode_service,
-        camera_service=camera_service,
-    )
-)
+
+# 注册两个独立的命名空间
+sio.register_namespace(SimNamespace("/sim"))
+sio.register_namespace(RealNamespace("/real"))
 
 # 设置sio_server到api模块
 api.set_sio_server(sio)
 
-# 设置日志广播
-set_broadcast_sio(sio, namespace="/")
+# 设置日志广播 - 初始化两个命名空间
+set_broadcast_sio(sio, namespace="/sim")
+set_broadcast_sio(sio, namespace="/real")
 setup_socket_logging(level=logging.INFO)
 
 # 测试日志

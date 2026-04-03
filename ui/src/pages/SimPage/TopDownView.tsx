@@ -194,19 +194,19 @@ export const TopDownView = ({
             </div>
             <div className="flex gap-2.5 flex-wrap justify-center items-center">
                 <button onClick={() => sendCommand(['forward'])}
-                        className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 前进
+                        className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 前进
                 </button>
                 <button onClick={() => sendCommand(['left'])}
-                        className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 左转
+                        className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 左转
                 </button>
                 <button onClick={() => sendCommand(['right'])}
-                        className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 右转
+                        className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 右转
                 </button>
                 <button onClick={() => sendCommand(['backward'])}
-                        className="px-3 py-1 bg-blue-500 text-black rounded hover:bg-blue-600">指令: 后退
+                        className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 后退
                 </button>
                 <button onClick={() => resetCar()}
-                        className="px-3 py-1 bg-green-500 text-black rounded hover:bg-green-600">复位
+                        className="px-3 py-1 bg-green-500 text-sm text-white rounded hover:bg-green-600">复位
                 </button>
                 <span className="text-xs text-gray-600 ml-2">帧数: {collectedCount}</span>
             </div>

@@ -63,14 +63,6 @@ export const CarControl = ({
                     collectTarget
                 />
             </div>
-
-            <div className="border border-gray-300 rounded p-2">
-                <div className="text-xs font-semibold mb-2">数据集采集源</div>
-                <div className="rounded border border-blue-200 bg-blue-50 px-2 py-2 text-xs text-blue-800">
-                    固定为右侧摄像头 / 第一人称视角。
-                </div>
-            </div>
-
             {/* 速度显示 */}
             <div className="border border-gray-300 rounded p-2">
                 <div className="text-xs font-semibold mb-2">实时速度</div>

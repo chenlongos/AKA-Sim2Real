@@ -20,10 +20,10 @@ class CameraService:
         self.runtime.camera_active = False
         logger.info(f"[摄像头] 已停止, sid={sid}")
 
-    async def run_loop(self, sio_server) -> None:
+    async def run_loop(self, sio_server, namespace: str = "/") -> None:
         import cv2
 
-        logger.info("[摄像头] 任务已启动")
+        logger.info(f"[摄像头] 任务已启动, namespace={namespace}")
         last_frame_time = 0.0
         capture = None
 
@@ -62,7 +62,12 @@ class CameraService:
                 _, img_encoded = cv2.imencode(".jpg", frame, encode_param)
                 image_bytes = img_encoded.tobytes()
 
-                await sio_server.emit("camera_image", image_bytes)
+                # 给每个连接单独发送，而不是广播
+                for sid in self.runtime.connected_clients:
+                    try:
+                        await sio_server.emit("camera_image", image_bytes, room=sid, namespace=namespace)
+                    except Exception:
+                        pass
             except Exception as exc:
                 logger.error(f"[摄像头] 捕获失败: {exc}")
                 if capture is not None:

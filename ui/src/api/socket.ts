@@ -1,31 +1,53 @@
-import {io} from "socket.io-client";
+import {io, Socket} from "socket.io-client";
 
-// 连接到后端服务器（使用相对路径，通过 Vite 代理）
-export const socket = io("", {
-    path: "/socket.io",
-    transports: ["polling", "websocket"],
-    upgrade: true,
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 500,
-    timeout: 20000
-});
+// 生成随机clientId
+function generateClientId(): string {
+    return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Socket 工厂函数 - 为不同命名空间创建独立的 socket 实例
+export function createSocket(namespace: string = "/"): Socket {
+    const clientId = generateClientId();
+    return io(namespace, {
+        path: "/socket.io",
+        transports: ["polling", "websocket"],
+        upgrade: true,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 500,
+        timeout: 20000,
+        auth: {
+            clientId: clientId
+        }
+    });
+}
+
+// 创建 Sim 和 Real 页面专用的 socket 实例
+export const simSocket = createSocket("/sim");
+export const realSocket = createSocket("/real");
+
+// 为了向后兼容，保留默认的全局 socket（使用 /sim 命名空间）
+export const socket = simSocket;
+export const clientId = generateClientId();
+
+// ============ 通用 Socket 函数（接受 socket 参数） ============
 
 // 发送当前按下的按键列表
-export const sendActions = (actions: string[]) => {
+export const sendActions = (socket: Socket, actions: string[]) => {
     socket.emit('action', actions);
 }
 
-export const resetCar = () => {
+export const resetCar = (socket: Socket) => {
     socket.emit('reset_car_state');
 }
 
-export const getCarState = () => {
+export const getCarState = (socket: Socket) => {
     socket.emit('get_car_state');
 }
 
-// 发送图像数据用于训练数据采集
+// 发送图像数据用于训练数据采集（Socket方式 - Sim页面使用）
 export const sendImageData = (
+    socket: Socket,
     imageData: string,
     actions: string[],
     options?: { carIP?: string; timestamp?: number },
@@ -62,37 +84,37 @@ export const collectImageData = (
 }
 
 // 设置当前采集轮次
-export const setEpisode = (episodeId: number) => {
+export const setEpisode = (socket: Socket, episodeId: number) => {
     socket.emit('set_episode', episodeId);
 }
 
 // 获取所有轮次信息
-export const getEpisodes = () => {
+export const getEpisodes = (socket: Socket) => {
     socket.emit('get_episodes');
 }
 
 // 删除指定轮次的数据
-export const deleteEpisode = (episodeId: number) => {
+export const deleteEpisode = (socket: Socket, episodeId: number) => {
     socket.emit('delete_episode', { episode_id: episodeId });
 }
 
 // 开始新的 episode
-export const startEpisode = (episodeId: number, taskName: string = "default") => {
+export const startEpisode = (socket: Socket, episodeId: number, taskName: string = "default") => {
     socket.emit('start_episode', { episode_id: episodeId, task_name: taskName });
 }
 
 // 结束当前 episode
-export const endEpisode = (episodeId?: number) => {
+export const endEpisode = (socket: Socket, episodeId?: number) => {
     socket.emit('end_episode', { episode_id: episodeId });
 }
 
 // 完成 episode 并保存到磁盘
-export const finalizeEpisode = (episodeId?: number) => {
+export const finalizeEpisode = (socket: Socket, episodeId?: number) => {
     socket.emit('finalize_episode', { episode_id: episodeId });
 }
 
 // 获取当前 episode 状态
-export const getEpisodeStatus = () => {
+export const getEpisodeStatus = (socket: Socket) => {
     socket.emit('get_episode_status');
 }
 
@@ -103,8 +125,8 @@ export const startTraining = (params: {
     epochs?: number;
     batch_size?: number;
     lr?: number;
-    episode_ids?: number[];  // 指定使用哪些轮次
-    resume_from?: string;   // 从已有模型继续训练
+    episode_ids?: number[];
+    resume_from?: string;
 }) => {
     return fetch('/api/train', {
         method: 'POST',
@@ -130,6 +152,7 @@ export const loadTrainedModel = () => {
 };
 
 export const runInferenceWithSocket = (
+    socket: Socket,
     state: number[],
     image?: string,
     timeoutMs: number = 10000,
@@ -152,7 +175,7 @@ export const runInferenceWithSocket = (
 };
 
 // 监听训练进度
-export const onTrainingProgress = (callback: (data: {
+export const onTrainingProgress = (socket: Socket, callback: (data: {
     is_running: boolean;
     epoch: number;
     total_epochs: number;
@@ -160,5 +183,27 @@ export const onTrainingProgress = (callback: (data: {
     progress: number;
 }) => void) => {
     socket.on('training_progress', callback);
-    return () => socket.off('training_progress');
+    return () => socket.off('training_progress', callback);
 };
+
+// ============ 向后兼容的函数（使用默认 socket） ============
+
+export const sendActionsLegacy = (actions: string[]) => sendActions(socket, actions);
+export const resetCarLegacy = () => resetCar(socket);
+export const getCarStateLegacy = () => getCarState(socket);
+export const sendImageDataLegacy = (imageData: string, actions: string[], options?: { carIP?: string; timestamp?: number }) => sendImageData(socket, imageData, actions, options);
+export const setEpisodeLegacy = (episodeId: number) => setEpisode(socket, episodeId);
+export const getEpisodesLegacy = () => getEpisodes(socket);
+export const deleteEpisodeLegacy = (episodeId: number) => deleteEpisode(socket, episodeId);
+export const startEpisodeLegacy = (episodeId: number, taskName: string = "default") => startEpisode(socket, episodeId, taskName);
+export const endEpisodeLegacy = (episodeId?: number) => endEpisode(socket, episodeId);
+export const finalizeEpisodeLegacy = (episodeId?: number) => finalizeEpisode(socket, episodeId);
+export const getEpisodeStatusLegacy = () => getEpisodeStatus(socket);
+export const runInferenceWithSocketLegacy = (state: number[], image?: string, timeoutMs: number = 10000) => runInferenceWithSocket(socket, state, image, timeoutMs);
+export const onTrainingProgressLegacy = (callback: (data: {
+    is_running: boolean;
+    epoch: number;
+    total_epochs: number;
+    loss: number;
+    progress: number;
+}) => void) => onTrainingProgress(socket, callback);

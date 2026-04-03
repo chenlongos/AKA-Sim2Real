@@ -3,14 +3,16 @@ from __future__ import annotations
 import logging
 
 from backend.models import state
+from backend.utils import log_broadcast
 
 logger = logging.getLogger(__name__)
 
 
 class ControlEventsMixin:
-    async def on_connect(self, sid: str, environ: dict):
+    async def on_connect(self, sid: str, environ: dict, auth: dict | None = None):
         self.runtime.connected_clients.add(sid)
-        logger.info(f"客户端连接: {sid}")
+        log_broadcast.add_connected_sid(sid, namespace=self.namespace)
+        logger.info(f"客户端连接: {sid}, namespace={self.namespace}, auth={auth}")
         await self.emit("connected", {"sid": sid})
         await self.emit("car_state_update", self.sim_controller.get_car_state())
         if state.camera_image:
@@ -18,9 +20,10 @@ class ControlEventsMixin:
 
     async def on_disconnect(self, sid: str):
         self.runtime.connected_clients.discard(sid)
+        log_broadcast.remove_connected_sid(sid, namespace=self.namespace)
         if not self.runtime.connected_clients:
             self.runtime.current_actions.clear()
-        logger.info(f"客户端断开: {sid}")
+        logger.info(f"客户端断开: {sid}, namespace={self.namespace}")
 
     async def on_action(self, sid: str, actions: list):
         logger.info(f"收到控制动作: actions={actions}")

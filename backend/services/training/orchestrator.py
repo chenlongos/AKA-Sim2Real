@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
@@ -29,8 +30,9 @@ def _extract_checkpoint_payload(checkpoint):
     return checkpoint, {}
 
 
-async def train_model(
+def _train_model_sync(
     sio_server,
+    loop,
     data_dir: str = "output/dataset",
     output_dir: str = None,
     epochs: int = 50,
@@ -45,7 +47,7 @@ async def train_model(
     training_state["loss"] = 0.0
     training_state["progress"] = 0.0
 
-    callbacks = TrainingCallbacks(sio_server)
+    callbacks = TrainingCallbacks(sio_server, loop=loop, namespace="/")
 
     try:
         logger.info("=" * 50)
@@ -173,3 +175,33 @@ async def train_model(
         logger.error(f"训练失败: {exc}")
         training_state["is_running"] = False
         raise
+
+
+async def train_model(
+    sio_server,
+    data_dir: str = "output/dataset",
+    output_dir: str = None,
+    epochs: int = 50,
+    batch_size: int = 8,
+    lr: float = 1e-4,
+    resume_from: str = None,
+) -> Optional[ACTModel]:
+    """训练 ACT 模型（异步包装器，在线程池中运行以避免阻塞事件循环）"""
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+
+    # 在线程池中运行同步训练函数
+    return await loop.run_in_executor(
+        None,
+        lambda: _train_model_sync(
+            sio_server,
+            loop,
+            data_dir=data_dir,
+            output_dir=output_dir,
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=lr,
+            resume_from=resume_from,
+        )
+    )
