@@ -26,6 +26,25 @@ class CarGateway:
             )
             return {"ok": True, "status": res.status_code}
 
+    async def motor_direct(self, car_ip: str, left: int, right: int) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            res = await client.get(
+                f"http://{car_ip}/api/motor_direct",
+                params={"left": left, "right": right},
+            )
+            payload: Any
+            try:
+                payload = res.json()
+            except ValueError:
+                payload = {"raw": res.text}
+            return {
+                "ok": res.status_code == 200,
+                "status": res.status_code,
+                "left": left,
+                "right": right,
+                "payload": payload,
+            }
+
     async def get_motor_status(self, car_ip: str, timestamp: int) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=max(self.timeout, 10.0)) as client:
             res = await client.get(
