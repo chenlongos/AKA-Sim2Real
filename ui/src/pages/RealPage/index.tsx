@@ -25,6 +25,8 @@ import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from ".
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
+const MOTOR_DEADBAND = 200
+const MOTOR_MAX = 255
 
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -294,10 +296,21 @@ const RealPage = () => {
             throw new Error("请先输入小车IP")
         }
 
-        const leftCommand = Math.round(left)
-        const rightCommand = Math.round(right)
+        const mapVelocityToMotorCommand = (value: number) => {
+            if (Math.abs(value) < 1e-3) {
+                return 0
+            }
+
+            const sign = value >= 0 ? 1 : -1
+            const magnitude = Math.min(1, Math.abs(value))
+            const command = MOTOR_DEADBAND + magnitude * (MOTOR_MAX - MOTOR_DEADBAND)
+            return sign * Math.round(command)
+        }
+
+        const leftCommand = mapVelocityToMotorCommand(left)
+        const rightCommand = mapVelocityToMotorCommand(right)
         const res = await fetch(
-            `/api/car/motor_direct?car_ip=${encodeURIComponent(carIP)}&left=${leftCommand * 200}&right=${rightCommand* 200}`,
+            `/api/car/motor_direct?car_ip=${encodeURIComponent(carIP)}&left=${leftCommand}&right=${rightCommand}`,
             {method: "POST"}
         )
         const data = await res.json()
