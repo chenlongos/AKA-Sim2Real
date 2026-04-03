@@ -21,7 +21,7 @@ import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
-import {CarControl, type CameraSource} from "./CarControl.tsx";
+import {CarControl} from "./CarControl.tsx";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 
@@ -52,7 +52,6 @@ const RealPage = () => {
     const fpvCameraViewRef = useRef<RealCameraViewRef | null>(null)
     const collectTimerRef = useRef<number | null>(null)
     const collectInFlightRef = useRef(false)
-    const [selectedCameraSource, setSelectedCameraSource] = useState<CameraSource>("fpv")
     const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
     const [topdownCameraId, setTopdownCameraId] = useState("")
     const [fpvCameraId, setFpvCameraId] = useState("")
@@ -530,9 +529,7 @@ const RealPage = () => {
         collectTimerRef.current = window.setInterval(() => {
             if (collectInFlightRef.current) return
 
-            const imageData = selectedCameraSource === "topdown"
-                ? topdownCameraViewRef.current?.getImageData()
-                : fpvCameraViewRef.current?.getImageData()
+            const imageData = fpvCameraViewRef.current?.getImageData()
             if (!imageData) return
 
             const actions = getCurrentActions()
@@ -605,7 +602,6 @@ const RealPage = () => {
                         onDeviceChange={setTopdownCameraId}
                         cameraError={cameraPermissionError}
                         isRecording={isRecording}
-                        collectTarget={selectedCameraSource === "topdown"}
                     />
                 </div>
                 <div className="min-h-0 xl:overflow-hidden">
@@ -617,8 +613,6 @@ const RealPage = () => {
                         onCarIPChange={handleCarIPChange}
                         carConnected={carConnected}
                         fpvCameraRef={fpvCameraViewRef}
-                        selectedCameraSource={selectedCameraSource}
-                        onCameraSourceChange={setSelectedCameraSource}
                         cameraDevices={cameraDevices}
                         fpvCameraId={fpvCameraId}
                         onFpvCameraChange={setFpvCameraId}

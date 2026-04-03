@@ -2,8 +2,6 @@ import type {RefObject} from "react";
 import type {CarState} from "../../models/types.ts";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 
-export type CameraSource = "topdown" | "fpv";
-
 interface CarControlProps {
     carState: CarState;
     isRecording: boolean;
@@ -12,8 +10,6 @@ interface CarControlProps {
     onCarIPChange: (ip: string) => void;
     carConnected: boolean;
     fpvCameraRef?: RefObject<RealCameraViewRef | null>;
-    selectedCameraSource: CameraSource;
-    onCameraSourceChange: (source: CameraSource) => void;
     cameraDevices: CameraDeviceOption[];
     fpvCameraId: string;
     onFpvCameraChange: (deviceId: string) => void;
@@ -28,8 +24,6 @@ export const CarControl = ({
     onCarIPChange,
     carConnected,
     fpvCameraRef,
-    selectedCameraSource,
-    onCameraSourceChange,
     cameraDevices,
     fpvCameraId,
     onFpvCameraChange,
@@ -66,22 +60,14 @@ export const CarControl = ({
                     onDeviceChange={onFpvCameraChange}
                     cameraError={fpvCameraError}
                     isRecording={isRecording}
-                    collectTarget={selectedCameraSource === "fpv"}
+                    collectTarget
                 />
             </div>
 
             <div className="border border-gray-300 rounded p-2">
-                <div className="text-xs font-semibold mb-2">数据来源</div>
-                <select
-                    value={selectedCameraSource}
-                    onChange={(e) => onCameraSourceChange(e.target.value as CameraSource)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white"
-                >
-                    <option value="fpv">右侧摄像头 / 第一人称</option>
-                    <option value="topdown">前方摄像头 / 俯视视角</option>
-                </select>
-                <div className="text-[11px] text-gray-500 mt-2">
-                    当前录制会使用这里选中的摄像头画面。
+                <div className="text-xs font-semibold mb-2">数据集采集源</div>
+                <div className="rounded border border-blue-200 bg-blue-50 px-2 py-2 text-xs text-blue-800">
+                    固定为右侧摄像头 / 第一人称视角。
                 </div>
             </div>
 
