@@ -84,7 +84,6 @@ class ACTInferenceRuntime:
             )
             action = self.blend_current_action(action)
             action = self.preprocessor.denormalize_action(action, self.stats, self.device)
-            action = action * config.INFERENCE_SPEED_SCALE
             return action.cpu().numpy().tolist()
 
     def is_model_loaded(self) -> bool:

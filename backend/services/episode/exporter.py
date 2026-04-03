@@ -28,20 +28,21 @@ STATE_KEYS = ["vel_left", "vel_right"]  # 当前轮子速度
 STATE_DIM = len(STATE_KEYS)
 
 # 动作到连续值的映射（离散动作 -> 轮子速度）
-# 速度单位：m/s，与 STATE 保持一致
+# 速度单位：m/s，基于轮胎直径65mm、额定60RPM
+# 轮胎周长：π × 0.065m ≈ 0.204m，单轮最大线速度 ≈ 0.2 m/s
 ACTION_TO_CONTINUOUS = {
-    "forward": [0.3, 0.3],      # 前进：左右轮同速
-    "backward": [-0.3, -0.3],   # 后退：左右轮同速反转
-    "left": [-0.2, 0.2],        # 左转：左轮后退，右轮前进
-    "right": [0.2, -0.2],      # 右转：左轮前进，右轮后退
-    "stop": [0.0, 0.0],         # 停止
+    "forward": [0.2, 0.2],      # 前进：左右轮同速 (m/s)
+    "backward": [-0.2, -0.2],   # 后退：左右轮同速反转 (m/s)
+    "left": [-0.2, 0.2],        # 左转：左轮后退，右轮前进 (m/s)
+    "right": [0.2, -0.2],       # 右转：左轮前进，右轮后退 (m/s)
+    "stop": [0.0, 0.0],         # 停止 (m/s)
 }
 # 确保所有动作都是 2 维 (ACTION_DIM=2)
 assert all(len(v) == 2 for v in ACTION_TO_CONTINUOUS.values()), "动作必须是2维"
 
 # 动作统计范围 (速度 m/s)
-ACTION_MIN = [-0.5, -0.5]
-ACTION_MAX = [0.5, 0.5]
+ACTION_MIN = [-0.2, -0.2]
+ACTION_MAX = [0.2, 0.2]
 
 
 class LeRobotDatasetMetadata:

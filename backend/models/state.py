@@ -13,10 +13,10 @@ if TYPE_CHECKING:
     from policies.models.act.modeling_act import ACTModel
 
 # ============ 速度配置（统一管理）===========
-SPEED_FORWARD = 5.0      # 前进/后退速度 (像素/帧)
-SPEED_TURN = 3.0         # 转向差速 (像素/帧)
+SPEED_FORWARD = 2.0      # 前进/后退速度 (像素/帧)，0.2 m/s @ 10 FPS
+SPEED_TURN = 2.0         # 转向差速 (像素/帧)
 ANGULAR_SCALE = 0.01     # 角速度系数
-MAX_SPEED = 12.0         # 最大速度限制 (像素/帧)
+MAX_SPEED = 2.0         # 最大速度限制 (像素/帧)
 # ==========================================
 
 # 车辆状态 - 保留 x, y, angle 用于仿真显示，但状态输入输出只用轮速
@@ -82,21 +82,26 @@ def update_car_state(action):
 
     # 解析动作
     if isinstance(action, str):
-        # 速度单位：像素/帧（直接作用于地图坐标）
+        # 速度单位：m/s（地图 1 像素 = 0.01 m）
         vel_mapping = {
-            "forward": [20.0, 20.0],
-            "backward": [-20.0, -20.0],
-            "left": [-3.0, 3.0],   # 左转: 左轮后退，右轮前进
-            "right": [3.0, -3.0],  # 右转: 左轮前进，右轮后退
-            "stop": [0, 0],
+            "forward": [0.2, 0.2],      # m/s
+            "backward": [-0.2, -0.2],   # m/s
+            "left": [-0.2, 0.2],         # m/s: 左轮后退，右轮前进
+            "right": [0.2, -0.2],        # m/s: 左轮前进，右轮后退
+            "stop": [0.0, 0.0],          # m/s
         }
-        vel_left, vel_right = vel_mapping.get(action, [0, 0])
+        vel_left, vel_right = vel_mapping.get(action, [0.0, 0.0])
+        # m/s 转像素/帧（1 像素 = 0.01 m）
+        vel_left *= 100.0
+        vel_right *= 100.0
     elif isinstance(action, (list, tuple)):
-        vel_left, vel_right = float(action[0]), float(action[1])
+        # 输入已经是 m/s，需要转换
+        vel_left = float(action[0]) * 100.0
+        vel_right = float(action[1]) * 100.0
     else:
-        vel_left, vel_right = 0, 0
+        vel_left, vel_right = 0.0, 0.0
 
-    # 限制速度范围
+    # 限制速度范围（max_speed 单位是像素/帧，12 像素 = 0.12 m/s）
     vel_left = max(-car_state["max_speed"], min(car_state["max_speed"], vel_left))
     vel_right = max(-car_state["max_speed"], min(car_state["max_speed"], vel_right))
 
@@ -118,20 +123,6 @@ def update_car_state(action):
     # 边界检测
     car_state["x"] = max(20, min(config.MAP_WIDTH - 20, car_state["x"]))
     car_state["y"] = max(20, min(config.MAP_HEIGHT - 20, car_state["y"]))
-
-
-def velocity_to_pwm(vel_left: float, vel_right: float) -> tuple:
-    """
-    将轮子速度转换为 PWM 值（真机部署用）
-
-    Args:
-        vel_left: 左轮速度 (m/s)
-        vel_right: 右轮速度 (m/s)
-
-    Returns:
-        (pwm_left, pwm_right) 元组，范围 -255 ~ 255
-    """
-
 
 def apply_friction():
     """
