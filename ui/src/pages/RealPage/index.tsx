@@ -16,7 +16,7 @@ import {
     finalizeEpisode,
     getEpisodeStatus,
     collectImageData,
-    onTrainingProgress,
+    onTrainingProgress, simSocket,
 } from "../../api/socket.ts";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
@@ -337,7 +337,8 @@ const RealPage = () => {
 
     const doInference = async () => {
         const state: [number, number] = [carState.vel_left, carState.vel_right]
-        const result = await runInferenceWithSocket(realSocket, state, undefined)
+        const imageBase64 = fpvCameraViewRef.current?.getImageData()
+        const result = await runInferenceWithSocket(simSocket, state, imageBase64)
         if (result.success && result.action) {
             const actionChunks = Array.isArray(result.action) ? result.action : [result.action]
             if (actionChunks.length === 0 || !Array.isArray(actionChunks[0])) {
