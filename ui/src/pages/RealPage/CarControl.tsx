@@ -56,7 +56,7 @@ export const CarControl = ({
                 )}
             </div>
 
-            <div className="h-[240px] shrink-0">
+            <div className="shrink-0">
                 <RealCameraView
                     ref={fpvCameraRef}
                     title="右侧摄像头 / 第一人称"

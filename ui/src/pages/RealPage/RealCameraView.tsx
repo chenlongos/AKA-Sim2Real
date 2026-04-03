@@ -97,7 +97,7 @@ export const RealCameraView = forwardRef<RealCameraViewRef, RealCameraViewProps>
     }, [selectedDeviceId])
 
     return (
-        <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-2 h-full">
+        <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-3 h-full min-h-0">
             <div className="flex items-center justify-between gap-3">
                 <div className="font-semibold">{title}</div>
                 {collectTarget ? (
@@ -119,14 +119,16 @@ export const RealCameraView = forwardRef<RealCameraViewRef, RealCameraViewProps>
                     </option>
                 ))}
             </select>
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 min-h-0">
+                <div className="h-full min-h-[220px] w-full overflow-hidden rounded border border-gray-800 bg-black">
                 <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted
-                    className="bg-black border border-gray-800 rounded max-w-full max-h-full w-full h-full object-contain"
+                    className="block h-full w-full object-contain"
                 />
+                </div>
             </div>
             <canvas ref={captureCanvasRef} className="hidden"/>
             <div className="text-xs text-gray-500">

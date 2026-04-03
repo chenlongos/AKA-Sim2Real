@@ -561,10 +561,10 @@ const RealPage = () => {
     }, [carIP, getCurrentActions, isRecording])
 
     return (
-        <div className="flex flex-col gap-3 p-4 h-screen overflow-hidden">
-            <h1 className="text-center font-bold">AKA-Sim Real 真实小车</h1>
-            <div className="flex gap-5 flex-1 items-stretch">
-                <div className="w-64 flex flex-col h-full">
+        <div className="flex min-h-screen w-full flex-col gap-4 bg-gray-50 p-4 text-gray-900 xl:h-screen xl:overflow-hidden">
+            <h1 className="text-center text-2xl font-bold">AKA-Sim Real 真实小车</h1>
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_380px] xl:overflow-hidden">
+                <div className="flex min-h-0 flex-col gap-3">
                     <TrainingControl
                         collectedCount={collectedCount}
                         isTraining={isTraining}
@@ -595,7 +595,7 @@ const RealPage = () => {
                     />
                 </div>
 
-                <div className="flex-1 relative min-h-0">
+                <div className="min-h-[420px] xl:min-h-0">
                     <RealCameraView
                         ref={topdownCameraViewRef}
                         title="前方摄像头 / 俯视视角"
@@ -608,7 +608,7 @@ const RealPage = () => {
                         collectTarget={selectedCameraSource === "topdown"}
                     />
                 </div>
-                <div className="w-90 flex flex-col h-full">
+                <div className="min-h-0 xl:overflow-hidden">
                     <CarControl
                         carState={carState}
                         isRecording={isRecording}
