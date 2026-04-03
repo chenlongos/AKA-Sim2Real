@@ -18,7 +18,7 @@ export const InferenceControl = ({
     onAutoInference,
 }: InferenceControlProps) => {
     return (
-        <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-2 mt-4">
+        <div className="border-2 flex-1 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-2 mt-4">
             <div className="font-semibold">推理控制</div>
             <div className="text-xs text-gray-600">
                 模型状态: {isModelLoaded ? '已加载' : '未加载'}

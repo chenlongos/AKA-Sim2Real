@@ -19,7 +19,7 @@ import {
 } from "../../api/socket.ts";
 import type {CarState, Obstacle} from "../../models/types.ts";
 import {TopDownView} from "./TopDownView.tsx";
-import {FirstPersonView, type FirstPersonViewRef} from "./FirstPersonView.tsx";
+import {RightPanel, type RightPanelRef} from "./RightPanel.tsx";
 import {TrainingControl} from "./TrainingControl.tsx";
 import {InferenceControl} from "./InferenceControl.tsx";
 
@@ -28,7 +28,7 @@ const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
     const lastSentActionsRef = useRef<string[]>([])
-    const firstPersonViewRef = useRef<FirstPersonViewRef>(null)
+    const firstPersonViewRef = useRef<RightPanelRef>(null)
     const [carState, setCarState] = useState<CarState>({
         x: 400,
         y: 300,
@@ -463,7 +463,7 @@ const SimPage = () => {
         <div className="flex flex-col gap-3 p-4 h-screen overflow-hidden">
             <h1 className="text-center font-bold">AKA-Sim 模拟器</h1>
             <div className="flex gap-5 flex-1 items-stretch">
-                <div className="w-64 flex flex-col h-full">
+                <div className="w-64 flex flex-col h-[88vh]">
                     <TrainingControl
                         collectedCount={collectedCount}
                         isTraining={isTraining}
@@ -504,7 +504,8 @@ const SimPage = () => {
                     />
                 </div>
                 <div className="w-90 flex flex-col h-full">
-                    <FirstPersonView
+                    {/* 第一视角 + 日志 - 同一卡片 */}
+                    <RightPanel
                         ref={firstPersonViewRef}
                         carState={carState}
                         obstacles={obstacles}

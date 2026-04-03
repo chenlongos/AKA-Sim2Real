@@ -24,6 +24,7 @@ from backend.services.episode import EpisodeService
 from backend.services.simulator import CameraService, SimController
 from backend.sio_handlers import SimNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime
 from backend.sio_handlers.core.runtime import SioRuntimeState
+from backend.utils import set_broadcast_sio, setup_socket_logging
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -87,6 +88,13 @@ sio.register_namespace(
 
 # 设置sio_server到api模块
 api.set_sio_server(sio)
+
+# 设置日志广播
+set_broadcast_sio(sio, namespace="/")
+setup_socket_logging(level=logging.INFO)
+
+# 测试日志
+logger.info("后端服务启动，日志广播系统已就绪")
 
 # 挂载 Socket.IO 到 FastAPI (使用 ASGI 应用)
 from socketio.asgi import ASGIApp

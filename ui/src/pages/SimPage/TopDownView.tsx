@@ -174,7 +174,7 @@ export const TopDownView = ({
     }
 
     return (
-        <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-3 h-full">
+        <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-3 h-[88vh]">
             <div className="font-semibold">俯视地图</div>
             <div className="relative flex justify-center">
                 <canvas

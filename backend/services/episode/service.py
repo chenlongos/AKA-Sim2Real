@@ -171,4 +171,10 @@ class EpisodeService:
 
         state.episode_samples[state.current_episode_id].append(sample)
         state.add_frame_to_episode(state.current_episode_id, sample)
-        return len(state.episode_samples[state.current_episode_id])
+
+        count = len(state.episode_samples[state.current_episode_id])
+        # 每50帧输出一次采集日志，避免太频繁
+        if count % 50 == 0:
+            logger.info(f"数据采集中: episode={state.current_episode_id}, frames={count}")
+
+        return count

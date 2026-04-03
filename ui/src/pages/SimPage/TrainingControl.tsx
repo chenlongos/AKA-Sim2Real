@@ -121,6 +121,7 @@ export const TrainingControl = ({
                             <div key={ep} className="flex justify-between">
                                 <span>轮次 {ep}:</span>
                                 <span>{count} 样本</span>
+                                <span className="text-green-400">√ 已上传</span>
                             </div>
                         ))}
                     </div>

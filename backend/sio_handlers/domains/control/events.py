@@ -23,9 +23,11 @@ class ControlEventsMixin:
         logger.info(f"客户端断开: {sid}")
 
     async def on_action(self, sid: str, actions: list):
+        logger.info(f"收到控制动作: actions={actions}")
         self.sim_controller.set_actions(actions)
 
     async def on_reset_car_state(self, sid: str):
+        logger.info("收到复位场景请求")
         await self.emit("car_state_update", self.sim_controller.reset_car_state())
 
     async def on_get_car_state(self, sid: str):

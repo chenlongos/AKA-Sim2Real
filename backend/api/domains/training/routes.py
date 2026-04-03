@@ -27,6 +27,7 @@ async def start_training(request: TrainRequest):
     """启动训练。"""
     try:
         if training.training_state["is_running"]:
+            logger.warning("训练启动失败: 训练正在进行中")
             return {
                 "success": False,
                 "message": "训练正在进行中",
@@ -36,6 +37,7 @@ async def start_training(request: TrainRequest):
         data_path = project_root / request.data_dir
         output_path = project_root / request.output_dir
         if not data_path.exists():
+            logger.error(f"训练启动失败: 数据集目录不存在: {data_path}")
             return {
                 "success": False,
                 "message": f"数据集目录不存在: {data_path}",
@@ -44,6 +46,8 @@ async def start_training(request: TrainRequest):
         resume_path = None
         if request.resume_from:
             resume_path = str(project_root / request.resume_from)
+
+        logger.info(f"收到开始训练请求: epochs={request.epochs}, batch_size={request.batch_size}, lr={request.lr}, resume_from={resume_path}")
 
         asyncio.create_task(
             training.train_model(
@@ -76,7 +80,9 @@ async def get_training_status():
 @router.post("/stop")
 async def stop_training():
     """停止训练"""
+    logger.info("收到停止训练请求")
     training.training_state["is_running"] = False
+    logger.info("训练已停止")
     return {
         "success": True,
         "message": "训练已停止",

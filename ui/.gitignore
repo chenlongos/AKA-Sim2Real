@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
