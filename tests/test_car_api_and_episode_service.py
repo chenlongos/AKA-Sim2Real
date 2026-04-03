@@ -37,6 +37,31 @@ def test_car_motor_status_route_requests_once_directly(monkeypatch):
     }
 
 
+def test_car_motor_direct_route_passes_direct_values(monkeypatch):
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    captured = {}
+
+    async def fake_motor_direct(car_ip: str, left: int, right: int):
+        captured["car_ip"] = car_ip
+        captured["left"] = left
+        captured["right"] = right
+        return {"ok": True, "status": 200, "left": left, "right": right, "payload": {"applied": True}}
+
+    monkeypatch.setattr(control_routes.car_gateway, "motor_direct", fake_motor_direct)
+
+    response = client.post(
+        "/api/car/motor_direct",
+        params={"car_ip": "192.168.1.8", "left": 6, "right": -12},
+    )
+
+    assert response.status_code == 200
+    assert captured == {"car_ip": "192.168.1.8", "left": 6, "right": -12}
+    assert response.json()["ok"] is True
+
+
 async def _fake_get_motor_status(car_ip: str, timestamp: int):
     return {
         "ok": True,

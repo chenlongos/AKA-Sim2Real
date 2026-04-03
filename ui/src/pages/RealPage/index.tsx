@@ -16,7 +16,7 @@ import {
     finalizeEpisode,
     getEpisodeStatus,
     collectImageData,
-    onTrainingProgress, simSocket,
+    onTrainingProgress,
 } from "../../api/socket.ts";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
@@ -48,6 +48,8 @@ const RealPage = () => {
     const [isInferring, setIsInferring] = useState(false)
     const [autoInference, setAutoInference] = useState(false)
     const autoInferenceRef = useRef(false)
+    const autoInferenceSessionRef = useRef(0)
+    const inferenceInFlightRef = useRef(false)
     const inferenceTimerRef = useRef<number | null>(null)
     const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
     const fpvCameraViewRef = useRef<RealRightPanelRef | null>(null)
@@ -257,6 +259,77 @@ const RealPage = () => {
         checkCarHeartbeat(ip)
     }
 
+    const getRealtimeInferenceState = async (): Promise<[number, number]> => {
+        if (!carIP) {
+            throw new Error("请先输入小车IP")
+        }
+
+        const timestamp = Date.now()
+        const res = await fetch(`/api/car/motor_status?car_ip=${encodeURIComponent(carIP)}&timestamp=${timestamp}`)
+        const data = await res.json()
+
+        if (!res.ok || !data?.ok) {
+            setCarConnected(false)
+            throw new Error(data?.error || data?.detail || data?.message || "获取小车实时状态失败")
+        }
+
+        const velLeft = data?.state?.vel_left
+        const velRight = data?.state?.vel_right
+        if (typeof velLeft !== "number" || typeof velRight !== "number") {
+            throw new Error("小车实时状态返回格式不正确")
+        }
+
+        setCarConnected(true)
+        setCarState((prev) => ({
+            ...prev,
+            vel_left: velLeft,
+            vel_right: velRight,
+        }))
+
+        return [velLeft, velRight]
+    }
+
+    const sendInferenceActionToCar = async (left: number, right: number) => {
+        if (!carIP) {
+            throw new Error("请先输入小车IP")
+        }
+
+        const leftCommand = Math.round(left)
+        const rightCommand = Math.round(right)
+        const res = await fetch(
+            `/api/car/motor_direct?car_ip=${encodeURIComponent(carIP)}&left=${leftCommand * 200}&right=${rightCommand* 200}`,
+            {method: "POST"}
+        )
+        const data = await res.json()
+
+        if (!res.ok || !data?.ok) {
+            throw new Error(data?.error || data?.detail || data?.message || "发送推理控制到小车失败")
+        }
+
+        return {
+            leftCommand,
+            rightCommand,
+        }
+    }
+
+    const stopInferenceAndCar = useCallback(() => {
+        setAutoInference(false)
+        autoInferenceRef.current = false
+        autoInferenceSessionRef.current += 1
+        inferenceInFlightRef.current = false
+
+        if (inferenceTimerRef.current) {
+            clearInterval(inferenceTimerRef.current)
+            inferenceTimerRef.current = null
+        }
+
+        if (carIP) {
+            fetch(`/api/car/motor_direct?car_ip=${encodeURIComponent(carIP)}&left=0&right=0`, {
+                method: "POST",
+            }).catch(() => {})
+        }
+    }, [carIP])
+
     const handleSetEpisode = (episodeId: number) => {
         if (episodeId < 1) return
 
@@ -335,10 +408,19 @@ const RealPage = () => {
         }
     }
 
-    const doInference = async () => {
-        const state: [number, number] = [carState.vel_left, carState.vel_right]
+    const doInference = async (sessionId?: number) => {
+        if (sessionId !== undefined && sessionId !== autoInferenceSessionRef.current) {
+            return
+        }
+
+        const state = await getRealtimeInferenceState()
         const imageBase64 = fpvCameraViewRef.current?.getImageData()
-        const result = await runInferenceWithSocket(simSocket, state, imageBase64)
+        const result = await runInferenceWithSocket(realSocket, state, imageBase64)
+
+        if (sessionId !== undefined && (!autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current)) {
+            return
+        }
+
         if (result.success && result.action) {
             const actionChunks = Array.isArray(result.action) ? result.action : [result.action]
             if (actionChunks.length === 0 || !Array.isArray(actionChunks[0])) {
@@ -358,7 +440,12 @@ const RealPage = () => {
                 return
             }
 
-            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}]`
+            if (sessionId !== undefined && (!autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current)) {
+                return
+            }
+
+            const {leftCommand, rightCommand} = await sendInferenceActionToCar(velLeftTarget, velRightTarget)
+            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}]`
             setInferenceResult([velStr])
         } else if (!result.success) {
             throw new Error(result.error || '推理失败')
@@ -385,19 +472,30 @@ const RealPage = () => {
             return
         }
         if (autoInference) {
-            setAutoInference(false)
-            autoInferenceRef.current = false
-            if (inferenceTimerRef.current) {
-                clearInterval(inferenceTimerRef.current)
-                inferenceTimerRef.current = null
-            }
+            stopInferenceAndCar()
         } else {
+            const sessionId = autoInferenceSessionRef.current + 1
+            autoInferenceSessionRef.current = sessionId
             setAutoInference(true)
             autoInferenceRef.current = true
-            await doInference()
+            inferenceInFlightRef.current = true
+            try {
+                await doInference(sessionId)
+            } finally {
+                inferenceInFlightRef.current = false
+            }
             inferenceTimerRef.current = window.setInterval(async () => {
-                await doInference()
-            }, 50)
+                if (inferenceInFlightRef.current || !autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current) {
+                    return
+                }
+
+                inferenceInFlightRef.current = true
+                try {
+                    await doInference(sessionId)
+                } finally {
+                    inferenceInFlightRef.current = false
+                }
+            }, 100)
         }
     }
 
