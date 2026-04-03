@@ -45,7 +45,12 @@ class EpisodeEventsMixin:
 
     async def on_collect_data(self, sid: str, payload: dict):
         try:
-            count = self.episode_service.collect_data(payload.get("image", ""), list(self.runtime.current_actions))
+            count = await self.episode_service.collect_data(
+                payload.get("image", ""),
+                list(payload.get("actions") or self.runtime.current_actions),
+                car_ip=payload.get("car_ip"),
+                timestamp=payload.get("timestamp"),
+            )
             if count is not None and count % 10 == 0:
                 await self.emit("collection_count", {"count": count, "episode_id": state.current_episode_id})
         except Exception as exc:

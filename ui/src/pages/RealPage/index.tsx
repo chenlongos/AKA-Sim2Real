@@ -15,13 +15,13 @@ import {
     endEpisode,
     finalizeEpisode,
     getEpisodeStatus,
-    sendImageData,
+    collectImageData,
 } from "../../api/socket.ts";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
-import {RealCameraView} from "./RealCameraView.tsx";
-import {CarControl} from "./CarControl.tsx";
+import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
+import {CarControl, type CameraSource} from "./CarControl.tsx";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 
@@ -48,6 +48,15 @@ const RealPage = () => {
     const [autoInference, setAutoInference] = useState(false)
     const autoInferenceRef = useRef(false)
     const inferenceTimerRef = useRef<number | null>(null)
+    const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
+    const fpvCameraViewRef = useRef<RealCameraViewRef | null>(null)
+    const collectTimerRef = useRef<number | null>(null)
+    const collectInFlightRef = useRef(false)
+    const [selectedCameraSource, setSelectedCameraSource] = useState<CameraSource>("fpv")
+    const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
+    const [topdownCameraId, setTopdownCameraId] = useState("")
+    const [fpvCameraId, setFpvCameraId] = useState("")
+    const [cameraPermissionError, setCameraPermissionError] = useState("")
 
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
@@ -157,6 +166,67 @@ const RealPage = () => {
             socket.off("episode_ended")
             socket.off("episode_finalized")
             socket.disconnect()
+        }
+    }, [])
+
+    useEffect(() => {
+        if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
+            setCameraPermissionError("当前浏览器不支持摄像头访问")
+            return
+        }
+
+        let cancelled = false
+
+        const syncCameraDevices = async () => {
+            try {
+                const tempStream = await navigator.mediaDevices.getUserMedia({video: true})
+                tempStream.getTracks().forEach((track) => track.stop())
+
+                const devices = await navigator.mediaDevices.enumerateDevices()
+                if (cancelled) return
+
+                const videoInputs = devices
+                    .filter((device) => device.kind === "videoinput")
+                    .map((device, index) => ({
+                        deviceId: device.deviceId,
+                        label: device.label || `摄像头 ${index + 1}`,
+                    }))
+
+                setCameraDevices(videoInputs)
+                setCameraPermissionError(videoInputs.length === 0 ? "未检测到可用摄像头" : "")
+
+                setTopdownCameraId((current) => {
+                    if (videoInputs.some((device) => device.deviceId === current)) {
+                        return current
+                    }
+                    return videoInputs[0]?.deviceId ?? ""
+                })
+                setFpvCameraId((current) => {
+                    if (videoInputs.some((device) => device.deviceId === current)) {
+                        return current
+                    }
+                    return videoInputs[1]?.deviceId ?? videoInputs[0]?.deviceId ?? ""
+                })
+            } catch (error) {
+                if (cancelled) return
+                const message = error instanceof Error ? error.message : "摄像头权限获取失败"
+                setCameraPermissionError(message)
+                setCameraDevices([])
+                setTopdownCameraId("")
+                setFpvCameraId("")
+            }
+        }
+
+        syncCameraDevices()
+
+        const handleDeviceChange = () => {
+            syncCameraDevices()
+        }
+        navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange)
+
+        return () => {
+            cancelled = true
+            navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange)
         }
     }, [])
 
@@ -447,6 +517,49 @@ const RealPage = () => {
         return () => window.cancelAnimationFrame(rafId)
     }, [getCurrentActions])
 
+    useEffect(() => {
+        if (collectTimerRef.current) {
+            window.clearInterval(collectTimerRef.current)
+            collectTimerRef.current = null
+        }
+
+        if (!isRecording) {
+            return
+        }
+
+        collectTimerRef.current = window.setInterval(() => {
+            if (collectInFlightRef.current) return
+
+            const imageData = selectedCameraSource === "topdown"
+                ? topdownCameraViewRef.current?.getImageData()
+                : fpvCameraViewRef.current?.getImageData()
+            if (!imageData) return
+
+            const actions = getCurrentActions()
+            collectInFlightRef.current = true
+            collectImageData(imageData, actions, {
+                carIP,
+                timestamp: Date.now(),
+            })
+                .then((data: { count: number }) => {
+                    setCollectedCount(data.count)
+                })
+                .catch((error: unknown) => {
+                    console.error("Collect image failed:", error)
+                })
+                .finally(() => {
+                    collectInFlightRef.current = false
+                })
+        }, 100)
+
+        return () => {
+            if (collectTimerRef.current) {
+                window.clearInterval(collectTimerRef.current)
+                collectTimerRef.current = null
+            }
+        }
+    }, [carIP, getCurrentActions, isRecording])
+
     return (
         <div className="flex flex-col gap-3 p-4 h-screen overflow-hidden">
             <h1 className="text-center font-bold">AKA-Sim Real 真实小车</h1>
@@ -482,19 +595,34 @@ const RealPage = () => {
                     />
                 </div>
 
-                <div className="flex-1 flex flex-col h-full">
-                    <RealCameraView isRecording={isRecording}/>
+                <div className="flex-1 relative min-h-0">
+                    <RealCameraView
+                        ref={topdownCameraViewRef}
+                        title="前方摄像头 / 俯视视角"
+                        description="预留给前置摄像头，作为环境俯视观察。"
+                        devices={cameraDevices}
+                        selectedDeviceId={topdownCameraId}
+                        onDeviceChange={setTopdownCameraId}
+                        cameraError={cameraPermissionError}
+                        isRecording={isRecording}
+                        collectTarget={selectedCameraSource === "topdown"}
+                    />
                 </div>
-
                 <div className="w-90 flex flex-col h-full">
                     <CarControl
                         carState={carState}
                         isRecording={isRecording}
                         getCurrentActions={getCurrentActions}
-                        onCollect={(imageData, actions) => sendImageData(imageData, actions)}
                         carIP={carIP}
                         onCarIPChange={handleCarIPChange}
-                        carConnected={carConnected}/>
+                        carConnected={carConnected}
+                        fpvCameraRef={fpvCameraViewRef}
+                        selectedCameraSource={selectedCameraSource}
+                        onCameraSourceChange={setSelectedCameraSource}
+                        cameraDevices={cameraDevices}
+                        fpvCameraId={fpvCameraId}
+                        onFpvCameraChange={setFpvCameraId}
+                        fpvCameraError={cameraPermissionError}/>
                 </div>
             </div>
         </div>

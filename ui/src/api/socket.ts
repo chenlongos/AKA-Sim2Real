@@ -25,11 +25,40 @@ export const getCarState = () => {
 }
 
 // 发送图像数据用于训练数据采集
-export const sendImageData = (imageData: string, actions: string[]) => {
+export const sendImageData = (
+    imageData: string,
+    actions: string[],
+    options?: { carIP?: string; timestamp?: number },
+) => {
     socket.emit('collect_data', {
         image: imageData,
-        actions: actions
+        actions: actions,
+        car_ip: options?.carIP,
+        timestamp: options?.timestamp ?? Date.now(),
     });
+}
+
+export const collectImageData = (
+    imageData: string,
+    actions: string[],
+    options?: { carIP?: string; timestamp?: number },
+) => {
+    return fetch('/api/dataset/collect', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            image: imageData,
+            actions,
+            car_ip: options?.carIP,
+            timestamp: options?.timestamp ?? Date.now(),
+        }),
+    }).then(async res => {
+        const data = await res.json()
+        if (!res.ok) {
+            throw new Error(data.detail || '图像采集失败')
+        }
+        return data
+    })
 }
 
 // 设置当前采集轮次

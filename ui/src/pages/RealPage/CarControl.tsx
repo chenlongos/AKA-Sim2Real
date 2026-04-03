@@ -1,58 +1,40 @@
-import {useEffect, useRef} from "react";
-import {socket} from "../../api/socket.ts";
+import type {RefObject} from "react";
 import type {CarState} from "../../models/types.ts";
+import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
+
+export type CameraSource = "topdown" | "fpv";
 
 interface CarControlProps {
     carState: CarState;
     isRecording: boolean;
     getCurrentActions: () => string[];
-    onCollect?: (imageData: string, actions: string[]) => void;
     carIP: string;
     onCarIPChange: (ip: string) => void;
     carConnected: boolean;
+    fpvCameraRef?: RefObject<RealCameraViewRef | null>;
+    selectedCameraSource: CameraSource;
+    onCameraSourceChange: (source: CameraSource) => void;
+    cameraDevices: CameraDeviceOption[];
+    fpvCameraId: string;
+    onFpvCameraChange: (deviceId: string) => void;
+    fpvCameraError?: string;
 }
 
 export const CarControl = ({
     carState,
     isRecording,
     getCurrentActions,
-    onCollect,
     carIP,
     onCarIPChange,
     carConnected,
+    fpvCameraRef,
+    selectedCameraSource,
+    onCameraSourceChange,
+    cameraDevices,
+    fpvCameraId,
+    onFpvCameraChange,
+    fpvCameraError,
 }: CarControlProps) => {
-    const canvasRef = useRef<HTMLCanvasElement | null>(null)
-    const lastCollectTimeRef = useRef(0)
-
-    // 实时显示摄像头画面（模拟画面，实际真车会替换为真实摄像头）
-    useEffect(() => {
-        const canvas = canvasRef.current
-        if (!canvas) return
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-
-        ctx.fillStyle = '#1a1a2e'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-        // 显示提示文字
-        ctx.fillStyle = '#00ff88'
-        ctx.font = '14px monospace'
-        ctx.textAlign = 'center'
-        ctx.fillText('Real Camera Feed', canvas.width / 2, canvas.height / 2 - 10)
-        ctx.fillText(`${carState.vel_left.toFixed(3)} | ${carState.vel_right.toFixed(3)}`, canvas.width / 2, canvas.height / 2 + 10)
-
-        // 采集数据
-        if (isRecording && onCollect && getCurrentActions) {
-            const now = Date.now()
-            if (now - lastCollectTimeRef.current >= 100) {
-                const imageData = canvas.toDataURL('image/jpeg', 0.8)
-                const actions = getCurrentActions()
-                onCollect(imageData, actions)
-                lastCollectTimeRef.current = now
-            }
-        }
-    }, [carState, isRecording, onCollect, getCurrentActions])
-
     return (
         <div className="border-2 border-gray-800 rounded-lg bg-gray-100 p-3 flex flex-col gap-3 h-full text-gray-800 overflow-y-auto min-h-0">
             <div className="font-semibold">小车控制 & 状态</div>
@@ -74,13 +56,34 @@ export const CarControl = ({
                 )}
             </div>
 
-            {/* 摄像头画面占位 */}
-            <canvas
-                ref={canvasRef}
-                width={320}
-                height={240}
-                className="bg-black border-2 border-gray-800 rounded self-center"
-            />
+            <div className="h-[240px] shrink-0">
+                <RealCameraView
+                    ref={fpvCameraRef}
+                    title="右侧摄像头 / 第一人称"
+                    description="数据采集与后续推理输入统一使用这一路画面。"
+                    devices={cameraDevices}
+                    selectedDeviceId={fpvCameraId}
+                    onDeviceChange={onFpvCameraChange}
+                    cameraError={fpvCameraError}
+                    isRecording={isRecording}
+                    collectTarget={selectedCameraSource === "fpv"}
+                />
+            </div>
+
+            <div className="border border-gray-300 rounded p-2">
+                <div className="text-xs font-semibold mb-2">数据来源</div>
+                <select
+                    value={selectedCameraSource}
+                    onChange={(e) => onCameraSourceChange(e.target.value as CameraSource)}
+                    className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white"
+                >
+                    <option value="fpv">右侧摄像头 / 第一人称</option>
+                    <option value="topdown">前方摄像头 / 俯视视角</option>
+                </select>
+                <div className="text-[11px] text-gray-500 mt-2">
+                    当前录制会使用这里选中的摄像头画面。
+                </div>
+            </div>
 
             {/* 速度显示 */}
             <div className="border border-gray-300 rounded p-2">
@@ -135,7 +138,7 @@ export const CarControl = ({
 
             {/* 录制状态 */}
             <div className="text-xs text-gray-500">
-                状态来源: 后端实时同步
+                {isRecording ? '录制中: 图像与轮速会一起采集' : '状态来源: 后端实时同步'}
             </div>
         </div>
     )
