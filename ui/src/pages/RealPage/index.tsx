@@ -7,17 +7,14 @@ import {
     setEpisode,
     getEpisodes,
     deleteEpisode,
-    startTraining,
-    stopTraining,
-    loadTrainedModel,
     runInferenceWithSocket,
     startEpisode,
     endEpisode,
     finalizeEpisode,
     getEpisodeStatus,
-    collectImageData,
     onTrainingProgress,
 } from "../../api/socket.ts";
+import {carHeartbeat, motorStatus, motorDirect, carControl, startTraining, stopTraining, loadTrainedModel, collectImage} from "../../api/api";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
@@ -245,10 +242,7 @@ const RealPage = () => {
             return
         }
         heartbeatIPRef.current = ip
-        const res = await fetch(`/api/car/heartbeat?car_ip=${encodeURIComponent(ip)}`, {
-            method: 'POST',
-        })
-        const data = await res.json()
+        const data = await carHeartbeat(ip)
         if (data.ok && heartbeatIPRef.current === ip) {
             setCarConnected(true)
             return
@@ -266,11 +260,9 @@ const RealPage = () => {
             throw new Error("请先输入小车IP")
         }
 
-        const timestamp = Date.now()
-        const res = await fetch(`/api/car/motor_status?car_ip=${encodeURIComponent(carIP)}&timestamp=${timestamp}`)
-        const data = await res.json()
+        const data = await motorStatus(carIP)
 
-        if (!res.ok || !data?.ok) {
+        if (!data?.ok) {
             setCarConnected(false)
             throw new Error(data?.error || data?.detail || data?.message || "获取小车实时状态失败")
         }
@@ -309,13 +301,9 @@ const RealPage = () => {
 
         const leftCommand = mapVelocityToMotorCommand(left)
         const rightCommand = mapVelocityToMotorCommand(right)
-        const res = await fetch(
-            `/api/car/motor_direct?car_ip=${encodeURIComponent(carIP)}&left=${leftCommand}&right=${rightCommand}`,
-            {method: "POST"}
-        )
-        const data = await res.json()
+        const data = await motorDirect(carIP, leftCommand, rightCommand)
 
-        if (!res.ok || !data?.ok) {
+        if (!data?.ok) {
             throw new Error(data?.error || data?.detail || data?.message || "发送推理控制到小车失败")
         }
 
@@ -337,9 +325,7 @@ const RealPage = () => {
         }
 
         if (carIP) {
-            fetch(`/api/car/motor_direct?car_ip=${encodeURIComponent(carIP)}&left=0&right=0`, {
-                method: "POST",
-            }).catch(() => {})
+            motorDirect(carIP, 0, 0).catch(() => {})
         }
     }, [carIP])
 
@@ -560,9 +546,7 @@ const RealPage = () => {
             const action = keyActionMap[e.code]
             if (action && carConnected && carIP && !keys.current[e.code]) {
                 keys.current[e.code] = true
-                fetch(`/api/car/control?car_ip=${encodeURIComponent(carIP)}&action=${action}&speed=50`, {
-                    method: 'POST',
-                }).catch(() => {})
+                carControl(carIP, action, 50).catch(() => {})
             }
         }
 
@@ -581,9 +565,7 @@ const RealPage = () => {
             const directionKeys = ['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS', 'ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD']
             const anyPressed = directionKeys.some(k => keys.current[k])
             if (!anyPressed && carIP && carConnected) {
-                fetch(`/api/car/control?car_ip=${encodeURIComponent(carIP)}&action=stop&speed=50`, {
-                    method: 'POST',
-                }).catch(() => {})
+                carControl(carIP, 'stop', 50).catch(() => {})
             }
         }
 
@@ -644,12 +626,16 @@ const RealPage = () => {
 
             const actions = getCurrentActions()
             collectInFlightRef.current = true
-            collectImageData(imageData, actions, {
-                carIP,
+            collectImage({
+                image: imageData,
+                actions,
+                car_ip: carIP,
                 timestamp: Date.now(),
             })
-                .then((data: { count: number }) => {
-                    setCollectedCount(data.count)
+                .then((data) => {
+                    if (data.count !== undefined) {
+                        setCollectedCount(data.count)
+                    }
                 })
                 .catch((error: unknown) => {
                     console.error("Collect image failed:", error)

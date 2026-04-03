@@ -60,29 +60,6 @@ export const sendImageData = (
     });
 }
 
-export const collectImageData = (
-    imageData: string,
-    actions: string[],
-    options?: { carIP?: string; timestamp?: number },
-) => {
-    return fetch('/api/dataset/collect', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            image: imageData,
-            actions,
-            car_ip: options?.carIP,
-            timestamp: options?.timestamp ?? Date.now(),
-        }),
-    }).then(async res => {
-        const data = await res.json()
-        if (!res.ok) {
-            throw new Error(data.detail || '图像采集失败')
-        }
-        return data
-    })
-}
-
 // 设置当前采集轮次
 export const setEpisode = (socket: Socket, episodeId: number) => {
     socket.emit('set_episode', episodeId);
@@ -118,39 +95,6 @@ export const getEpisodeStatus = (socket: Socket) => {
     socket.emit('get_episode_status');
 }
 
-// 训练相关
-export const startTraining = (params: {
-    data_dir?: string;
-    output_dir?: string;
-    epochs?: number;
-    batch_size?: number;
-    lr?: number;
-    episode_ids?: number[];
-    resume_from?: string;
-}) => {
-    return fetch('/api/train', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-    }).then(res => res.json());
-};
-
-export const stopTraining = () => {
-    return fetch('/api/train/stop', { method: 'POST' }).then(res => res.json());
-};
-
-// 推理相关
-export const loadTrainedModel = () => {
-    return fetch('/api/act/load_trained', { method: 'POST' }).then(res => {
-        if (!res.ok) {
-            return res.json().then(err => {
-                throw new Error(err.detail || '加载失败')
-            })
-        }
-        return res.json()
-    })
-};
-
 export const runInferenceWithSocket = (
     socket: Socket,
     state: number[],
@@ -185,25 +129,3 @@ export const onTrainingProgress = (socket: Socket, callback: (data: {
     socket.on('training_progress', callback);
     return () => socket.off('training_progress', callback);
 };
-
-// ============ 向后兼容的函数（使用默认 socket） ============
-
-export const sendActionsLegacy = (actions: string[]) => sendActions(socket, actions);
-export const resetCarLegacy = () => resetCar(socket);
-export const getCarStateLegacy = () => getCarState(socket);
-export const sendImageDataLegacy = (imageData: string, actions: string[], options?: { carIP?: string; timestamp?: number }) => sendImageData(socket, imageData, actions, options);
-export const setEpisodeLegacy = (episodeId: number) => setEpisode(socket, episodeId);
-export const getEpisodesLegacy = () => getEpisodes(socket);
-export const deleteEpisodeLegacy = (episodeId: number) => deleteEpisode(socket, episodeId);
-export const startEpisodeLegacy = (episodeId: number, taskName: string = "default") => startEpisode(socket, episodeId, taskName);
-export const endEpisodeLegacy = (episodeId?: number) => endEpisode(socket, episodeId);
-export const finalizeEpisodeLegacy = (episodeId?: number) => finalizeEpisode(socket, episodeId);
-export const getEpisodeStatusLegacy = () => getEpisodeStatus(socket);
-export const runInferenceWithSocketLegacy = (state: number[], image?: string, timeoutMs: number = 10000) => runInferenceWithSocket(socket, state, image, timeoutMs);
-export const onTrainingProgressLegacy = (callback: (data: {
-    is_running: boolean;
-    epoch: number;
-    total_epochs: number;
-    loss: number;
-    progress: number;
-}) => void) => onTrainingProgress(socket, callback);

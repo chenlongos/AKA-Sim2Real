@@ -7,9 +7,6 @@ import {
     setEpisode,
     getEpisodes,
     deleteEpisode,
-    startTraining,
-    stopTraining,
-    loadTrainedModel,
     runInferenceWithSocket,
     startEpisode,
     endEpisode,
@@ -18,6 +15,7 @@ import {
     sendImageData,
     onTrainingProgress,
 } from "../../api/socket.ts";
+import {startTraining, stopTraining, loadTrainedModel} from "../../api/api";
 import type {CarState, Obstacle} from "../../models/types.ts";
 import {TopDownView} from "./TopDownView.tsx";
 import {RightPanel, type RightPanelRef} from "./RightPanel.tsx";

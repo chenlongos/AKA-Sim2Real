@@ -2,6 +2,7 @@ import {forwardRef, useImperativeHandle, useRef} from "react";
 import type {CarState} from "../../models/types.ts";
 import {LogConsole} from "../SimPage/LogConsole.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
+import {motorStatus} from "../../api/api";
 
 export interface RealRightPanelRef {
     getImageData: () => string | undefined;
@@ -145,9 +146,7 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
                             return
                         }
                         try {
-                            const timestamp = Date.now()
-                            const res = await fetch(`/api/car/motor_status?car_ip=${encodeURIComponent(carIP)}&timestamp=${timestamp}`)
-                            const data = await res.json()
+                            const data = await motorStatus(carIP)
                             console.log('motor_status:', data)
                         } catch (e) {
                             console.error('获取电机状态失败:', e)
