@@ -29,8 +29,30 @@ async def car_control(car_ip: str, action: str, speed: int = 50):
 
 @router.get("/motor_status")
 async def car_snapshot(car_ip: str, timestamp: int):
-    """从真实小车请求指定时间戳的电机状态。"""
+    """从真实小车直接请求一次电机状态。"""
     try:
-        return await car_gateway.get_motor_status(car_ip, timestamp)
+        payload = await car_gateway.get_motor_status(car_ip, timestamp)
+        if not isinstance(payload, dict) or payload.get("ok") is False:
+            return {"ok": False, "error": "无法获取小车状态", "payload": payload}
+
+        matched_timestamp_ms = car_gateway.extract_timestamp(payload) or timestamp
+        wheel_velocity = car_gateway.extract_wheel_velocity(payload)
+        if wheel_velocity is None:
+            return {"ok": False, "error": "无法从小车状态中解析左右轮速度"}
+
+        vel_left, vel_right = wheel_velocity
+
+        return {
+            "ok": True,
+            "query_timestamp_ms": timestamp,
+            "matched_timestamp_ms": matched_timestamp_ms,
+            "delta_ms": matched_timestamp_ms - timestamp,
+            "source": "direct_request",
+            "state": {
+                "vel_left": vel_left,
+                "vel_right": vel_right,
+            },
+            "payload": payload,
+        }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}

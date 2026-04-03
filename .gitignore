@@ -2,3 +2,6 @@
 .vscode
 output*
 catch_ball
+.DS_Store
+__pycache__/
+*.py[cod]

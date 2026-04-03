@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from backend.models import state
 from backend.services.gateways import car_gateway
@@ -138,20 +139,21 @@ class EpisodeService:
         if not state.is_recording:
             return None
 
+        capture_timestamp = timestamp if timestamp is not None else int(time.time() * 1000)
         car_state_copy = state.car_state.copy()
         motor_status = None
 
         if car_ip:
-            status_timestamp = timestamp if timestamp is not None else 0
             try:
-                motor_status = await car_gateway.get_motor_status(car_ip, status_timestamp)
+                motor_status = await car_gateway.get_motor_status(car_ip, capture_timestamp)
+                if not isinstance(motor_status, dict) or motor_status.get("ok") is False:
+                    motor_status = None
+
                 wheel_velocity = car_gateway.extract_wheel_velocity(motor_status)
                 if wheel_velocity is not None:
                     vel_left, vel_right = wheel_velocity
                     car_state_copy["vel_left"] = vel_left
                     car_state_copy["vel_right"] = vel_right
-                    state.car_state["vel_left"] = vel_left
-                    state.car_state["vel_right"] = vel_right
             except Exception as exc:
                 logger.warning(f"获取真实小车电机状态失败: {exc}")
 
@@ -162,6 +164,7 @@ class EpisodeService:
                 "vel_right": car_state_copy.get("vel_right", 0),
             },
             "actions": actions,
+            "capture_timestamp_ms": capture_timestamp,
         }
         if motor_status is not None:
             sample["motor_status"] = motor_status

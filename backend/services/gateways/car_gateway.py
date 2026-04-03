@@ -39,6 +39,27 @@ class CarGateway:
                 payload.setdefault("ok", True)
             return payload
 
+    def extract_timestamp(self, payload: dict[str, Any] | None) -> int | None:
+        if not isinstance(payload, dict):
+            return None
+
+        candidates = ("timestamp", "timestamp_ms", "ts", "time", "time_ms")
+        for key in candidates:
+            value = payload.get(key)
+            parsed = self._parse_timestamp(value)
+            if parsed is not None:
+                return parsed
+
+        for nested_key in ("data", "motor_status", "status", "result"):
+            nested = payload.get(nested_key)
+            if isinstance(nested, dict):
+                for key in candidates:
+                    parsed = self._parse_timestamp(nested.get(key))
+                    if parsed is not None:
+                        return parsed
+
+        return None
+
     def extract_wheel_velocity(self, payload: dict[str, Any] | None) -> tuple[float, float] | None:
         if not isinstance(payload, dict):
             return None
@@ -71,6 +92,15 @@ class CarGateway:
             return None
         try:
             return float(source[left_key]), float(source[right_key])
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> int | None:
+        try:
+            if value is None:
+                return None
+            return int(value)
         except (TypeError, ValueError):
             return None
 
