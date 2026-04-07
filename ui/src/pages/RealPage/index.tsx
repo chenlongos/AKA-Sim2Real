@@ -22,7 +22,7 @@ import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from ".
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
-const COLLECT_INTERVAL = 1000 / 30 // 数据采集间隔(ms)，30fps
+const COLLECT_INTERVAL = 1000 / 20 // 数据采集间隔(ms)，30fps
 
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -560,10 +560,8 @@ const RealPage = () => {
             const directionKeys = ['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS', 'ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD']
             if (directionKeys.includes(e.code)) {
                 keys.current[e.code] = false
-                console.log(`[KeyUp] ${e.code} released at ${Date.now()}, carIP=${carIP}, carConnected=${carConnected}`)
                 if (carIP && carConnected) {
                     carControl(carIP, 'stop', 50).catch(() => {})
-                    console.log(`[KeyUp] stop command sent at ${Date.now()}`)
                 }
                 return
             }
