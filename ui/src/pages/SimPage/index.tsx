@@ -21,6 +21,7 @@ import {TopDownView} from "./TopDownView.tsx";
 import {RightPanel, type RightPanelRef} from "./RightPanel.tsx";
 import {TrainingControl} from "./TrainingControl.tsx";
 import {InferenceControl} from "./InferenceControl.tsx";
+import {useSimCarStore} from "../../stores/simCarStore.ts";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 
@@ -28,13 +29,7 @@ const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
     const lastSentActionsRef = useRef<string[]>([])
     const firstPersonViewRef = useRef<RightPanelRef>(null)
-    const [carState, setCarState] = useState<CarState>({
-        x: 400,
-        y: 300,
-        angle: -Math.PI / 2,
-        vel_left: 0,
-        vel_right: 0,
-    })
+    const carState = useSimCarStore((state) => state.carState)
     const [obstacles, setObstacles] = useState<Obstacle[]>([
         {x: 300, y: 200, width: 80, height: 80},
     ])
@@ -51,6 +46,8 @@ const SimPage = () => {
     const [autoInference, setAutoInference] = useState(false)
     const autoInferenceRef = useRef(false)  // ref 版本用于动画循环，避免闭包竞争
     const inferenceTimerRef = useRef<number | null>(null)
+    const setCarState = useSimCarStore((state) => state.setCarState)
+    const resetSimCarState = useSimCarStore((state) => state.resetCarState)
 
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
@@ -179,8 +176,9 @@ const SimPage = () => {
             simSocket.off("collection_paused")
             simSocket.off("collection_resumed")
             unsubscribeTrainingProgress()
+            resetSimCarState()
         }
-    }, [])
+    }, [resetSimCarState, setCarState])
 
     const sendCommand = (cmd: string[]) => {
         sendActions(simSocket, cmd)
@@ -514,7 +512,6 @@ const SimPage = () => {
                 {/* 中间 - 俯视图 */}
                 <div className="flex-1 min-w-0 flex flex-col">
                     <TopDownView
-                        carState={carState}
                         obstacles={obstacles}
                         onObstaclesChange={setObstacles}
                         collectedCount={collectedCount}
@@ -527,7 +524,6 @@ const SimPage = () => {
                 <div className="w-96 flex flex-col min-w-0">
                     <RightPanel
                         ref={firstPersonViewRef}
-                        carState={carState}
                         obstacles={obstacles}
                         isRecording={isRecording}
                         onCollect={(imageData, actions) => sendImageData(simSocket, imageData, actions)}

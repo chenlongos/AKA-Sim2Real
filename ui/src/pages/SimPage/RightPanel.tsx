@@ -1,13 +1,13 @@
 import {forwardRef, useEffect, useImperativeHandle, useRef} from "react";
 import type {CarState, Obstacle} from "../../models/types.ts";
 import {LogConsole} from "./LogConsole.tsx";
+import {useSimCarStore} from "../../stores/simCarStore.ts";
 
 export interface RightPanelRef {
     getImageData: () => string | undefined;
 }
 
 interface RightPanelProps {
-    carState: CarState;
     obstacles: Obstacle[];
     isRecording: boolean;
     onCollect?: (imageData: string, actions: string[]) => void;
@@ -121,12 +121,12 @@ const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState, obst
 };
 
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
-    carState,
     obstacles,
     isRecording,
     onCollect,
     getCurrentActions
 }, ref) => {
+    const carState = useSimCarStore((state) => state.carState)
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useImperativeHandle(ref, () => ({

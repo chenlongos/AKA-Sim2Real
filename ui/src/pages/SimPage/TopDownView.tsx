@@ -1,8 +1,8 @@
 import {useEffect, useRef, useState} from "react";
 import type {CarState, Obstacle} from "../../models/types.ts";
+import {useSimCarStore} from "../../stores/simCarStore.ts";
 
 interface TopDownViewProps {
-    carState: CarState;
     obstacles: Obstacle[];
     onObstaclesChange: (obstacles: Obstacle[]) => void;
     collectedCount: number;
@@ -81,13 +81,13 @@ const drawTopDown = (ctx: CanvasRenderingContext2D, carState: CarState, obstacle
 }
 
 export const TopDownView = ({
-    carState,
     obstacles,
     onObstaclesChange,
     collectedCount,
     resetCar,
     sendCommand
 }: TopDownViewProps) => {
+    const carState = useSimCarStore((state) => state.carState)
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
     const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
     const [dragOffset, setDragOffset] = useState<{x: number, y: number}>({x: 0, y: 0})
