@@ -37,6 +37,9 @@ export const motorStatus = (carIP: string, timestamp?: number) =>
 
 export interface MotorDirectResponse {
   ok: boolean;
+  left?: number;
+  right?: number;
+  duration?: number;
   error?: string;
   detail?: string;
   message?: string;
@@ -44,7 +47,7 @@ export interface MotorDirectResponse {
 
 export const motorDirect = (carIP: string, left: number, right: number) =>
   api
-    .post('car/motor_direct', { searchParams: { car_ip: carIP, left, right } })
+    .post('car/motor_direct', { searchParams: { car_ip: carIP, left, right, duration: 1 } })
     .json<MotorDirectResponse>();
 
 export interface CarControlResponse {

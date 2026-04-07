@@ -59,9 +59,16 @@ async def car_snapshot(car_ip: str, timestamp: int):
 
 
 @router.post("/motor_direct")
-async def car_motor_direct(car_ip: str, left: int, right: int):
-    """直接透传左右轮控制值到真实小车。"""
+async def motor_direct(car_ip: str, left: int, right: int, duration: float = 0):
+    """直接设置左右轮速度（带持续时间）
+
+    Query params:
+        car_ip: str  小车 IP 地址
+        left: int    左轮速度 (-255 ~ 255)
+        right: int   右轮速度 (-255 ~ 255)
+        duration: float 持续时间（秒），0 表示无限
+    """
     try:
-        return await car_gateway.motor_direct(car_ip, left, right)
+        return await car_gateway.motor_direct(car_ip, left, right, duration)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
