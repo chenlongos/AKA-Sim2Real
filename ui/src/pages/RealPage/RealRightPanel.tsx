@@ -2,7 +2,7 @@ import {forwardRef, useImperativeHandle, useRef} from "react";
 import type {CarState} from "../../models/types.ts";
 import {LogConsole} from "../SimPage/LogConsole.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
-import {motorStatus} from "../../api/api";
+import {getActionsFromMotorStatus, motorStatusAt} from "../../api/realCar";
 
 export interface RealRightPanelRef {
     getImageData: () => string | undefined;
@@ -11,7 +11,6 @@ export interface RealRightPanelRef {
 interface RealRightPanelProps {
     carState: CarState;
     isRecording: boolean;
-    getCurrentActions: () => string[];
     carIP: string;
     onCarIPChange: (ip: string) => void;
     carConnected: boolean;
@@ -25,7 +24,6 @@ interface RealRightPanelProps {
 export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>(({
     carState,
     isRecording,
-    getCurrentActions,
     carIP,
     onCarIPChange,
     carConnected,
@@ -35,6 +33,10 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
     fpvCameraError,
 }, ref) => {
     const fpvCameraViewRef = useRef<RealCameraViewRef | null>(null);
+    const currentActions = getActionsFromMotorStatus({
+        left_speed: carState.vel_left,
+        right_speed: carState.vel_right,
+    });
 
     useImperativeHandle(ref, () => ({
         getImageData: () => {
@@ -133,7 +135,7 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
                         <div>← / A - 左转</div>
                         <div>→ / D - 右转</div>
                         <div className="pt-1.5 mt-1.5 border-t border-slate-700">
-                            当前动作: <span className="text-slate-200">{getCurrentActions().join(', ') || '无'}</span>
+                            当前动作: <span className="text-slate-200">{currentActions.join(', ') || '无'}</span>
                         </div>
                     </div>
                 </div>
@@ -146,7 +148,7 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
                             return
                         }
                         try {
-                            const data = await motorStatus(carIP)
+                            const data = await motorStatusAt(carIP, Date.now(), 0)
                             console.log('motor_status:', data)
                         } catch (e) {
                             console.error('获取电机状态失败:', e)

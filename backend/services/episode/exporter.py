@@ -27,24 +27,6 @@ DEFAULT_FPS = 10
 STATE_KEYS = ["vel_left", "vel_right"]  # 当前轮子速度
 STATE_DIM = len(STATE_KEYS)
 
-# 动作到连续值的映射（离散动作 -> 轮子速度）
-# 速度单位：m/s，基于轮胎直径65mm、额定60RPM
-# 轮胎周长：π × 0.065m ≈ 0.204m，单轮最大线速度 ≈ 0.2 m/s
-ACTION_TO_CONTINUOUS = {
-    "forward": [0.2, 0.2],      # 前进：左右轮同速 (m/s)
-    "backward": [-0.2, -0.2],   # 后退：左右轮同速反转 (m/s)
-    "left": [-0.2, 0.2],        # 左转：左轮后退，右轮前进 (m/s)
-    "right": [0.2, -0.2],       # 右转：左轮前进，右轮后退 (m/s)
-    "stop": [0.0, 0.0],         # 停止 (m/s)
-}
-# 确保所有动作都是 2 维 (ACTION_DIM=2)
-assert all(len(v) == 2 for v in ACTION_TO_CONTINUOUS.values()), "动作必须是2维"
-
-# 动作统计范围 (速度 m/s)
-ACTION_MIN = [-0.2, -0.2]
-ACTION_MAX = [0.2, 0.2]
-
-
 class LeRobotDatasetMetadata:
     """
     LeRobot 风格数据集元数据管理类
@@ -289,13 +271,17 @@ class LeRobotDatasetMetadata:
             state_values = [sample.get("state", {}).get(k, 0) for k in STATE_KEYS]
             all_states.append(state_values)
 
-            # 收集动作（取最后一个动作转为连续值）
-            sample_actions = sample.get("actions", [])
-            if sample_actions:
-                last_action = sample_actions[-1]
-                action_values = ACTION_TO_CONTINUOUS.get(last_action, [0.0, 0.0])
+            # 训练数据只接受前端/设备端显式上传的数值 action。
+            sample_action = sample.get("action")
+            if (
+                isinstance(sample_action, list)
+                and len(sample_action) >= 2
+                and isinstance(sample_action[0], (int, float))
+                and isinstance(sample_action[1], (int, float))
+            ):
+                action_values = [float(sample_action[0]), float(sample_action[1])]
             else:
-                action_values = [0.0, 0.0]  # 默认停止
+                action_values = [0.0, 0.0]
             all_actions.append(action_values)
 
         states_array = np.array(all_states, dtype=np.float32)
@@ -649,7 +635,7 @@ def create_demo_samples(num_samples: int = 100) -> List[Dict[str, Any]]:
                 "acceleration": 0.2,
                 "rotationSpeed": 0.05,
             },
-            "actions": ["forward"] if i % 2 == 0 else [],
+            "action": [0.2, 0.2] if i % 2 == 0 else [0.0, 0.0],
         }
         samples.append(sample)
     return samples

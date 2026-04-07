@@ -131,10 +131,10 @@ class EpisodeService:
     async def collect_data(
         self,
         image_data: str,
-        actions: list[str],
         *,
         timestamp: int | None = None,
         state_payload: dict[str, Any] | None = None,
+        action_payload: list[float] | None = None,
     ) -> int | None:
         if not state.is_recording:
             return None
@@ -155,9 +155,13 @@ class EpisodeService:
                 "vel_left": car_state_copy.get("vel_left", 0),
                 "vel_right": car_state_copy.get("vel_right", 0),
             },
-            "actions": actions,
             "capture_timestamp_ms": capture_timestamp,
         }
+        if isinstance(action_payload, list) and len(action_payload) >= 2:
+            left_target = action_payload[0]
+            right_target = action_payload[1]
+            if isinstance(left_target, (int, float)) and isinstance(right_target, (int, float)):
+                sample["action"] = [float(left_target), float(right_target)]
 
         if state.current_episode_id not in state.episode_samples:
             state.episode_samples[state.current_episode_id] = []

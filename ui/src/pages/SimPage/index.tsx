@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from "react"
 import {
     simSocket,
-    sendActions,
+    sendActionVector,
     resetCar,
     getCarState,
     setEpisode,
@@ -22,12 +22,13 @@ import {RightPanel, type RightPanelRef} from "./RightPanel.tsx";
 import {TrainingControl} from "./TrainingControl.tsx";
 import {InferenceControl} from "./InferenceControl.tsx";
 import {useSimCarStore} from "../../stores/simCarStore.ts";
+import {getContinuousActionFromDiscreteActions, SIM_KEY_TO_ACTION} from "./actionMapping.ts";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
-    const lastSentActionsRef = useRef<string[]>([])
+    const lastSentActionVectorRef = useRef<[number, number]>([0, 0])
     const firstPersonViewRef = useRef<RightPanelRef>(null)
     const carState = useSimCarStore((state) => state.carState)
     const [obstacles, setObstacles] = useState<Obstacle[]>([
@@ -180,8 +181,8 @@ const SimPage = () => {
         }
     }, [resetSimCarState, setCarState])
 
-    const sendCommand = (cmd: string[]) => {
-        sendActions(simSocket, cmd)
+    const sendCommand = (action: [number, number]) => {
+        sendActionVector(simSocket, action)
     }
 
     const handleSetEpisode = (episodeId: number) => {
@@ -344,21 +345,9 @@ const SimPage = () => {
         }
     }
 
-    // 获取当前按下的动作列表
     const getCurrentActions = useCallback((): string[] => {
-        const keyMap: Record<string, string> = {
-            'ArrowUp': 'forward',
-            'KeyW': 'forward',
-            'ArrowDown': 'backward',
-            'KeyS': 'backward',
-            'ArrowLeft': 'left',
-            'KeyA': 'left',
-            'ArrowRight': 'right',
-            'KeyD': 'right',
-        }
-
         const actions: string[] = []
-        for (const [code, action] of Object.entries(keyMap)) {
+        for (const [code, action] of Object.entries(SIM_KEY_TO_ACTION)) {
             if (keys.current[code]) {
                 actions.push(action)
             }
@@ -366,12 +355,16 @@ const SimPage = () => {
         return actions
     }, [])
 
+    const getCurrentActionVector = useCallback((): [number, number] => {
+        return getContinuousActionFromDiscreteActions(getCurrentActions())
+    }, [getCurrentActions])
+
     // 键盘事件处理
     useEffect(() => {
         const clearKeysAndStop = () => {
             keys.current = {}
-            lastSentActionsRef.current = []
-            sendActions(simSocket, [])
+            lastSentActionVectorRef.current = [0, 0]
+            sendActionVector(simSocket, [0, 0])
         }
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -435,14 +428,14 @@ const SimPage = () => {
             }
 
             if (currentTime - lastSendTime >= SEND_INTERVAL) {
-                const actions = getCurrentActions()
-                const lastActions = lastSentActionsRef.current
-                const changed = actions.length !== lastActions.length
-                    || actions.some((action, index) => action !== lastActions[index])
+                const actionVector = getCurrentActionVector()
+                const lastActionVector = lastSentActionVectorRef.current
+                const changed = actionVector[0] !== lastActionVector[0]
+                    || actionVector[1] !== lastActionVector[1]
 
-                if (changed || actions.length > 0) {
-                    sendCommand(actions)
-                    lastSentActionsRef.current = actions
+                if (changed || actionVector[0] !== 0 || actionVector[1] !== 0) {
+                    sendCommand(actionVector)
+                    lastSentActionVectorRef.current = actionVector
                 }
                 lastSendTime = currentTime
             }
@@ -526,8 +519,13 @@ const SimPage = () => {
                         ref={firstPersonViewRef}
                         obstacles={obstacles}
                         isRecording={isRecording}
-                        onCollect={(imageData, actions) => sendImageData(simSocket, imageData, actions)}
-                        getCurrentActions={getCurrentActions}
+                        onCollect={(imageData) => sendImageData(simSocket, imageData, {
+                            state: {
+                                vel_left: carState.vel_left,
+                                vel_right: carState.vel_right,
+                            },
+                            action: getCurrentActionVector(),
+                        })}
                     />
                 </div>
             </div>

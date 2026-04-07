@@ -1,7 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react"
 import {
     realSocket,
-    sendActions,
     resetCar,
     getCarState,
     setEpisode,
@@ -14,19 +13,18 @@ import {
     getEpisodeStatus,
     onTrainingProgress,
 } from "../../api/socket.ts";
-import {carHeartbeat, motorStatus, motorDirect, carControl, startTraining, stopTraining, loadTrainedModel, collectImage} from "../../api/api";
+import {startTraining, stopTraining, loadTrainedModel, collectImage} from "../../api/api";
+import {carHeartbeat, carTimeSync, motorStatusAt, motorDirect, carControl} from "../../api/realCar";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 
-const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 const COLLECT_INTERVAL = 1000 / 20 // 数据采集间隔(ms)，30fps
 
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
-    const lastSentActionsRef = useRef<string[]>([])
     const [carState, setCarState] = useState<CarState>({
         x: 0,
         y: 0,
@@ -63,6 +61,8 @@ const RealPage = () => {
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
     const [carIP, setCarIP] = useState("")
     const [carConnected, setCarConnected] = useState(false)
+    const clockOffsetMsRef = useRef(0)
+    const clockRttMsRef = useRef(0)
 
     // 监听后端车辆状态更新
     useEffect(() => {
@@ -229,10 +229,6 @@ const RealPage = () => {
         }
     }, [])
 
-    const sendCommand = (cmd: string[]) => {
-        sendActions(realSocket, cmd)
-    }
-
     const heartbeatIPRef = useRef("")
     const checkCarHeartbeat = async (ip: string) => {
         if (!ip) {
@@ -254,20 +250,48 @@ const RealPage = () => {
         checkCarHeartbeat(ip)
     }
 
+    useEffect(() => {
+        // 向小车计算数据同步延迟时间
+        if (!carIP) {
+            clockOffsetMsRef.current = 0
+            clockRttMsRef.current = 0
+            return
+        }
+
+        let cancelled = false
+
+        const syncClock = async () => {
+            const sendTime = Date.now()
+            const data = await carTimeSync(carIP)
+            const recvTime = Date.now()
+            if (cancelled || !data?.ok || typeof data.device_time_ms !== "number") {
+                return
+            }
+
+            const midpoint = Math.round((sendTime + recvTime) / 2)
+            clockOffsetMsRef.current = data.device_time_ms - midpoint
+            clockRttMsRef.current = recvTime - sendTime
+        }
+
+        syncClock().catch(() => {})
+        const timer = window.setInterval(() => {
+            syncClock().catch(() => {})
+        }, 3000)
+
+        return () => {
+            cancelled = true
+            window.clearInterval(timer)
+        }
+    }, [carIP])
+
     const getRealtimeInferenceState = async (): Promise<[number, number]> => {
         if (!carIP) {
             throw new Error("请先输入小车IP")
         }
 
-        const data = await motorStatus(carIP)
-
-        if (!data?.ok) {
-            setCarConnected(false)
-            throw new Error(data?.error || data?.detail || data?.message || "获取小车实时状态失败")
-        }
-
-        const velLeft = data?.state?.vel_left
-        const velRight = data?.state?.vel_right
+        const data = await motorStatusAt(carIP, Date.now(), clockOffsetMsRef.current)
+        const velLeft = data?.left_speed
+        const velRight = data?.right_speed
         if (typeof velLeft !== "number" || typeof velRight !== "number") {
             throw new Error("小车实时状态返回格式不正确")
         }
@@ -577,36 +601,6 @@ const RealPage = () => {
         }
     }, [carConnected, carIP])
 
-    // 定时发送动作
-    useEffect(() => {
-        let lastSendTime = 0;
-        let rafId: number
-
-        const loop = (currentTime: number) => {
-            if (autoInferenceRef.current) {
-                rafId = window.requestAnimationFrame(loop)
-                return
-            }
-
-            if (currentTime - lastSendTime >= SEND_INTERVAL) {
-                const actions = getCurrentActions()
-                const lastActions = lastSentActionsRef.current
-                const changed = actions.length !== lastActions.length
-                    || actions.some((action, index) => action !== lastActions[index])
-
-                if (changed || actions.length > 0) {
-                    sendCommand(actions)
-                    lastSentActionsRef.current = actions
-                }
-                lastSendTime = currentTime
-            }
-            rafId = window.requestAnimationFrame(loop)
-        }
-
-        rafId = window.requestAnimationFrame(loop)
-        return () => window.cancelAnimationFrame(rafId)
-    }, [getCurrentActions])
-
     useEffect(() => {
         if (collectTimerRef.current) {
             window.clearInterval(collectTimerRef.current)
@@ -617,31 +611,40 @@ const RealPage = () => {
             return
         }
 
-        collectTimerRef.current = window.setInterval(() => {
+        collectTimerRef.current = window.setInterval(async () => {
             if (collectInFlightRef.current) return
 
             const imageData = fpvCameraViewRef.current?.getImageData()
-            if (!imageData) return
+            if (!imageData || !carIP) return
 
-            const actions = getCurrentActions()
+            const captureTimestampMs = Date.now()
             collectInFlightRef.current = true
-            collectImage({
-                image: imageData,
-                actions,
-                car_ip: carIP,
-                timestamp: Date.now(),
-            })
-                .then((data) => {
-                    if (data.count !== undefined) {
-                        setCollectedCount(data.count)
-                    }
+            try {
+                const motorStatus = await motorStatusAt(carIP, captureTimestampMs, clockOffsetMsRef.current)
+                if (typeof motorStatus.left_speed !== 'number' || typeof motorStatus.right_speed !== 'number') {
+                    throw new Error("motor_status_at 返回格式不正确")
+                }
+
+                const data = await collectImage({
+                    image: imageData,
+                    timestamp: captureTimestampMs,
+                    state: {
+                        vel_left: motorStatus.left_speed,
+                        vel_right: motorStatus.right_speed,
+                    },
+                    action: [
+                        typeof motorStatus.left_target === 'number' ? motorStatus.left_target : 0,
+                        typeof motorStatus.right_target === 'number' ? motorStatus.right_target : 0,
+                    ],
                 })
-                .catch((error: unknown) => {
-                    console.error("Collect image failed:", error)
-                })
-                .finally(() => {
-                    collectInFlightRef.current = false
-                })
+                if (data.count !== undefined) {
+                    setCollectedCount(data.count)
+                }
+            } catch (error: unknown) {
+                console.error("Collect image failed:", error)
+            } finally {
+                collectInFlightRef.current = false
+            }
         }, COLLECT_INTERVAL)
 
         return () => {
@@ -731,7 +734,6 @@ const RealPage = () => {
                         ref={fpvCameraViewRef}
                         carState={carState}
                         isRecording={isRecording}
-                        getCurrentActions={getCurrentActions}
                         carIP={carIP}
                         onCarIPChange={handleCarIPChange}
                         carConnected={carConnected}

@@ -11,12 +11,12 @@ export const api = ky.create({
 
 export interface CollectImageRequest {
   image: string;
-  actions: string[];
   timestamp?: number;
   state?: {
     vel_left: number;
     vel_right: number;
   };
+  action?: [number, number];
 }
 
 export interface CollectImageResponse {

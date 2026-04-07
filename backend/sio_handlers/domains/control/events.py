@@ -22,12 +22,12 @@ class ControlEventsMixin:
         self.runtime.connected_clients.discard(sid)
         log_broadcast.remove_connected_sid(sid, namespace=self.namespace)
         if not self.runtime.connected_clients:
-            self.runtime.current_actions.clear()
+            self.runtime.current_action_vector = None
         logger.info(f"客户端断开: {sid}, namespace={self.namespace}")
 
-    async def on_action(self, sid: str, actions: list):
-        logger.info(f"收到控制动作: actions={actions}")
-        self.sim_controller.set_actions(actions)
+    async def on_action(self, sid: str, action: list[float]):
+        logger.info(f"收到控制动作: action={action}")
+        self.sim_controller.set_action(action)
 
     async def on_reset_car_state(self, sid: str):
         logger.info("收到复位场景请求")

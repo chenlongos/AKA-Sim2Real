@@ -23,7 +23,7 @@ async def game_loop_task(sio_server, runtime: SioRuntimeState, sim_controller: S
             frame_count += 1
             if frame_count % 100 == 0:
                 logger.info(
-                    f"[游戏循环] frame={frame_count}, inference_mode={runtime.inference_mode}, current_actions={runtime.current_actions}, connected_clients={len(runtime.connected_clients)}, namespace={namespace}"
+                    f"[游戏循环] frame={frame_count}, inference_mode={runtime.inference_mode}, current_action_vector={runtime.current_action_vector}, connected_clients={len(runtime.connected_clients)}, namespace={namespace}"
                 )
 
             sim_controller.tick()
@@ -41,7 +41,7 @@ async def game_loop_task(sio_server, runtime: SioRuntimeState, sim_controller: S
 
         if not runtime.connected_clients:
             sleep_interval = 0.2
-        elif runtime.current_actions or runtime.inference_mode or sim_controller.is_moving():
+        elif runtime.current_action_vector is not None or runtime.inference_mode or sim_controller.is_moving():
             sleep_interval = 1 / 30
         else:
             sleep_interval = 0.1

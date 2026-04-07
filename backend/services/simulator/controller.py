@@ -34,17 +34,21 @@ class SimController:
         except Exception as exc:
             logger.debug(f"重置 ACT 推理上下文失败: {exc}")
 
-    def set_actions(self, actions: list[str]) -> None:
-        self.runtime.current_actions = set(actions)
+    def set_action(self, action: list[float]) -> None:
+        if len(action) >= 2 and all(isinstance(value, (int, float)) for value in action[:2]):
+            self.runtime.current_action_vector = (float(action[0]), float(action[1]))
+        else:
+            self.runtime.current_action_vector = None
 
-        if actions and actions != ["stop"]:
+        if action and action != [0, 0]:
             self.runtime.inference_mode = False
             self.reset_act_inference_context()
-            logger.info(f"[on_action] 用户控制，退出推理模式: {actions}")
+            logger.info(f"[on_action] 用户控制，退出推理模式: {action}")
 
-        if not actions:
+        if not action:
             state.car_state["vel_left"] = 0
             state.car_state["vel_right"] = 0
+            self.runtime.current_action_vector = None
 
     def reset_car_state(self) -> dict:
         logger.info("重置车辆状态")
@@ -59,7 +63,7 @@ class SimController:
         action = self.runtime.act_runtime.infer(inference_state, image)
         vel_left, vel_right = extract_velocity_from_action(action)
 
-        self.runtime.current_actions.clear()
+        self.runtime.current_action_vector = None
         self.runtime.inference_mode = True
         state.update_car_state([vel_left, vel_right])
 
@@ -70,25 +74,8 @@ class SimController:
     def tick(self) -> bool:
         car_state_before = dict(state.car_state)
 
-        if self.runtime.current_actions:
-            combined_vel_left = 0.0
-            combined_vel_right = 0.0
-
-            for action in self.runtime.current_actions:
-                if action == "forward":
-                    combined_vel_left += state.SPEED_FORWARD
-                    combined_vel_right += state.SPEED_FORWARD
-                elif action == "backward":
-                    combined_vel_left -= state.SPEED_FORWARD
-                    combined_vel_right -= state.SPEED_FORWARD
-                elif action == "left":
-                    combined_vel_left -= state.SPEED_TURN
-                    combined_vel_right += state.SPEED_TURN
-                elif action == "right":
-                    combined_vel_left += state.SPEED_TURN
-                    combined_vel_right -= state.SPEED_TURN
-
-            state.update_car_state([combined_vel_left, combined_vel_right])
+        if self.runtime.current_action_vector is not None:
+            state.update_car_state(list(self.runtime.current_action_vector))
             self.runtime.inference_mode = False
         elif self.runtime.inference_mode:
             vel = [state.car_state["vel_left"], state.car_state["vel_right"]]

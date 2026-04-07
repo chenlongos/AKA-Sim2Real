@@ -32,9 +32,8 @@ export const clientId = generateClientId();
 
 // ============ 通用 Socket 函数（接受 socket 参数） ============
 
-// 发送当前按下的按键列表
-export const sendActions = (socket: Socket, actions: string[]) => {
-    socket.emit('action', actions);
+export const sendActionVector = (socket: Socket, action: [number, number]) => {
+    socket.emit('action', action);
 }
 
 export const resetCar = (socket: Socket) => {
@@ -49,14 +48,14 @@ export const getCarState = (socket: Socket) => {
 export const sendImageData = (
     socket: Socket,
     imageData: string,
-    actions: string[],
-    options?: { carIP?: string; timestamp?: number },
+    options?: { carIP?: string; timestamp?: number; state?: { vel_left: number; vel_right: number }; action?: [number, number] },
 ) => {
     socket.emit('collect_data', {
         image: imageData,
-        actions: actions,
         car_ip: options?.carIP,
         timestamp: options?.timestamp ?? Date.now(),
+        state: options?.state,
+        action: options?.action,
     });
 }
 

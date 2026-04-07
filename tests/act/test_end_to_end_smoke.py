@@ -18,11 +18,11 @@ def _sample_image() -> str:
     return f"data:image/jpeg;base64,{payload}"
 
 
-def _sample(vel_left: float, vel_right: float, actions):
+def _sample(vel_left: float, vel_right: float, action):
     return {
         "image": _sample_image(),
         "state": {"vel_left": vel_left, "vel_right": vel_right},
-        "actions": actions,
+        "action": action,
     }
 
 
@@ -33,10 +33,10 @@ def test_end_to_end_smoke(tmp_path):
 
         reset_metadata()
         samples = [
-            _sample(0.10, 0.10, ["forward"]),
-            _sample(0.12, 0.11, ["forward"]),
-            _sample(0.08, 0.20, ["left"]),
-            _sample(0.20, 0.09, ["right"]),
+            _sample(0.10, 0.10, [0.2, 0.2]),
+            _sample(0.12, 0.11, [0.2, 0.2]),
+            _sample(0.08, 0.20, [-0.2, 0.2]),
+            _sample(0.20, 0.09, [0.2, -0.2]),
         ]
         export_episode(samples, episode_id=1, output_dir=str(dataset_dir), chunk_size=10)
 

@@ -10,8 +10,7 @@ export interface RightPanelRef {
 interface RightPanelProps {
     obstacles: Obstacle[];
     isRecording: boolean;
-    onCollect?: (imageData: string, actions: string[]) => void;
-    getCurrentActions?: () => string[];
+    onCollect?: (imageData: string) => void;
 }
 
 const MAP_W = 800;
@@ -123,8 +122,7 @@ const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState, obst
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
     obstacles,
     isRecording,
-    onCollect,
-    getCurrentActions
+    onCollect
 }, ref) => {
     const carState = useSimCarStore((state) => state.carState)
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -161,10 +159,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
                 drawFirstPerson(ctx, carState, obstacles);
 
                 // 采集数据
-                if (isRecording && onCollect && getCurrentActions && currentTime - lastCollectTimeRef.current >= COLLECT_INTERVAL) {
+                if (isRecording && onCollect && currentTime - lastCollectTimeRef.current >= COLLECT_INTERVAL) {
                     const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                    const actions = getCurrentActions();
-                    onCollect(imageData, actions);
+                    onCollect(imageData);
                     lastCollectTimeRef.current = currentTime;
                 }
             }
@@ -177,7 +174,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
         return () => {
             window.cancelAnimationFrame(animationFrameId);
         };
-    }, [carState, obstacles, isRecording, onCollect, getCurrentActions]);
+    }, [carState, obstacles, isRecording, onCollect]);
 
     return (
         <div className="flex flex-col h-full gap-3">

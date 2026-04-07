@@ -8,7 +8,7 @@ from backend.services.inference import get_act_runtime
 
 @dataclass
 class SioRuntimeState:
-    current_actions: set[str] = field(default_factory=set)
+    current_action_vector: tuple[float, float] | None = None
     connected_clients: set[str] = field(default_factory=set)
     inference_mode: bool = False
     camera_active: bool = False

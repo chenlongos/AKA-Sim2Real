@@ -14,11 +14,11 @@ SAMPLE_IMAGE = (
 )
 
 
-def _sample(vel_left: float, vel_right: float, actions):
+def _sample(vel_left: float, vel_right: float, action=None):
     return {
         "image": SAMPLE_IMAGE,
         "state": {"vel_left": vel_left, "vel_right": vel_right},
-        "actions": actions,
+        "action": action,
     }
 
 
@@ -26,15 +26,15 @@ def test_stats_aggregation(tmp_path):
     metadata = LeRobotDatasetMetadata(output_dir=tmp_path, chunk_size=10)
     metadata.save_episode(
         [
-            _sample(1.0, 2.0, ["forward"]),
-            _sample(3.0, 4.0, ["left"]),
+            _sample(1.0, 2.0, [0.2, 0.2]),
+            _sample(3.0, 4.0, [-0.2, 0.2]),
         ],
         episode_id=1,
     )
     metadata.save_episode(
         [
-            _sample(5.0, 6.0, ["backward"]),
-            _sample(7.0, 8.0, ["right"]),
+            _sample(5.0, 6.0, [-0.2, -0.2]),
+            _sample(7.0, 8.0, [0.2, -0.2]),
         ],
         episode_id=2,
     )
@@ -55,3 +55,20 @@ def test_stats_aggregation(tmp_path):
     assert stats["observation.state"]["count"] == 4
     assert "count" in stats["action"]
     print("data_export stats 聚合测试通过!")
+
+
+def test_export_defaults_to_zero_when_numeric_action_missing(tmp_path):
+    metadata = LeRobotDatasetMetadata(output_dir=tmp_path, chunk_size=10)
+    metadata.save_episode(
+        [
+            _sample(1.0, 2.0),
+        ],
+        episode_id=1,
+    )
+
+    parquet_file = next((tmp_path / "data").glob("chunk-*/file-*.parquet"))
+    df = __import__("pandas").read_parquet(parquet_file)
+    action = np.asarray(df.iloc[0]["action"].tolist(), dtype=np.float32)
+
+    assert action.shape[-1] == 2
+    assert np.allclose(action[0], np.array([0.0, 0.0], dtype=np.float32))

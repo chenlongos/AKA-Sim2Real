@@ -8,16 +8,11 @@ AKA-Sim 后端 - 全局状态
 from typing import TYPE_CHECKING, Optional, Dict, Any, List
 
 from backend.config import config
-
 if TYPE_CHECKING:
     from policies.models.act.modeling_act import ACTModel
 
-# ============ 速度配置（统一管理）===========
-SPEED_FORWARD = 2.0      # 前进/后退速度 (像素/帧)，0.2 m/s @ 10 FPS
-SPEED_TURN = 2.0         # 转向差速 (像素/帧)
 ANGULAR_SCALE = 0.01     # 角速度系数
 MAX_SPEED = 2.0         # 最大速度限制 (像素/帧)
-# ==========================================
 
 # 车辆状态 - 保留 x, y, angle 用于仿真显示，但状态输入输出只用轮速
 car_state = {
@@ -76,25 +71,11 @@ def update_car_state(action):
     只更新左右轮速度，但保留位置用于仿真显示
 
     Args:
-        action: 可以是字符串 (离散动作) 或 [vel_left, vel_right] 列表
+        action: [vel_left, vel_right] 列表
     """
     import math
 
-    # 解析动作
-    if isinstance(action, str):
-        # 速度单位：m/s（地图 1 像素 = 0.01 m）
-        vel_mapping = {
-            "forward": [0.2, 0.2],      # m/s
-            "backward": [-0.2, -0.2],   # m/s
-            "left": [-0.2, 0.2],         # m/s: 左轮后退，右轮前进
-            "right": [0.2, -0.2],        # m/s: 左轮前进，右轮后退
-            "stop": [0.0, 0.0],          # m/s
-        }
-        vel_left, vel_right = vel_mapping.get(action, [0.0, 0.0])
-        # m/s 转像素/帧（1 像素 = 0.01 m）
-        vel_left *= 100.0
-        vel_right *= 100.0
-    elif isinstance(action, (list, tuple)):
+    if isinstance(action, (list, tuple)):
         # 输入已经是 m/s，需要转换
         vel_left = float(action[0]) * 100.0
         vel_right = float(action[1]) * 100.0

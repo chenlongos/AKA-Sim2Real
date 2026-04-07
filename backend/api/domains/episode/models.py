@@ -17,6 +17,6 @@ class CollectImagePayload(BaseModel):
     """前端直接采集图像到当前 episode。"""
 
     image: str = Field(..., min_length=1)
-    actions: list[str] = Field(default_factory=list)
     timestamp: int | None = None
     state: Dict[str, Any] | None = None
+    action: list[float] | None = None
