@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter
 
 from backend.services import inference as inference_service
-from backend.api.domains import control, episode, inference, training
+from backend.api.domains import episode, inference, training
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,6 @@ async def health():
 
 
 # 注册子路由
-router.include_router(control.router)
 router.include_router(episode.router)
 router.include_router(inference.router)
 router.include_router(training.router)
