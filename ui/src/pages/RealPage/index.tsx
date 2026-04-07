@@ -490,7 +490,7 @@ const RealPage = () => {
                 } finally {
                     inferenceInFlightRef.current = false
                 }
-            }, 100)
+            }, 50)
         }
     }
 
