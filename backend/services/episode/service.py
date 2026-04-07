@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from backend.models import state
-from backend.services.gateways import car_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -133,29 +133,21 @@ class EpisodeService:
         image_data: str,
         actions: list[str],
         *,
-        car_ip: str | None = None,
         timestamp: int | None = None,
+        state_payload: dict[str, Any] | None = None,
     ) -> int | None:
         if not state.is_recording:
             return None
 
         capture_timestamp = timestamp if timestamp is not None else int(time.time() * 1000)
         car_state_copy = state.car_state.copy()
-        motor_status = None
-
-        if car_ip:
-            try:
-                motor_status = await car_gateway.get_motor_status(car_ip, capture_timestamp)
-                if not isinstance(motor_status, dict) or motor_status.get("ok") is False:
-                    motor_status = None
-
-                wheel_velocity = car_gateway.extract_wheel_velocity(motor_status)
-                if wheel_velocity is not None:
-                    vel_left, vel_right = wheel_velocity
-                    car_state_copy["vel_left"] = vel_left
-                    car_state_copy["vel_right"] = vel_right
-            except Exception as exc:
-                logger.warning(f"获取真实小车电机状态失败: {exc}")
+        if isinstance(state_payload, dict):
+            vel_left = state_payload.get("vel_left")
+            vel_right = state_payload.get("vel_right")
+            if isinstance(vel_left, (int, float)):
+                car_state_copy["vel_left"] = vel_left
+            if isinstance(vel_right, (int, float)):
+                car_state_copy["vel_right"] = vel_right
 
         sample = {
             "image": image_data,
@@ -166,8 +158,6 @@ class EpisodeService:
             "actions": actions,
             "capture_timestamp_ms": capture_timestamp,
         }
-        if motor_status is not None:
-            sample["motor_status"] = motor_status
 
         if state.current_episode_id not in state.episode_samples:
             state.episode_samples[state.current_episode_id] = []

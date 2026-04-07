@@ -54,8 +54,8 @@ class EpisodeEventsMixin:
             count = await self.episode_service.collect_data(
                 payload.get("image", ""),
                 list(payload.get("actions") or self.runtime.current_actions),
-                car_ip=payload.get("car_ip"),
                 timestamp=payload.get("timestamp"),
+                state_payload=payload.get("state"),
             )
             if count is not None and count % 10 == 0:
                 await self.emit("collection_count", {"count": count, "episode_id": state.current_episode_id})

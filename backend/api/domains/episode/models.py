@@ -18,5 +18,5 @@ class CollectImagePayload(BaseModel):
 
     image: str = Field(..., min_length=1)
     actions: list[str] = Field(default_factory=list)
-    car_ip: str | None = None
     timestamp: int | None = None
+    state: Dict[str, Any] | None = None

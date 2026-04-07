@@ -59,8 +59,8 @@ async def collect_image(payload: CollectImagePayload):
         count = await episode_service.collect_data(
             payload.image,
             payload.actions,
-            car_ip=payload.car_ip,
             timestamp=payload.timestamp,
+            state_payload=payload.state,
         )
         if count is None:
             raise HTTPException(status_code=409, detail="当前未处于录制状态")

@@ -7,68 +7,16 @@ export const api = ky.create({
   timeout: 30000,
 });
 
-// ============ 小车相关 ============
-
-export interface CarHeartbeatResponse {
-  ok: boolean;
-  message?: string;
-}
-
-export const carHeartbeat = (carIP: string) =>
-  api
-    .post('car/heartbeat', { searchParams: { car_ip: carIP } })
-    .json<CarHeartbeatResponse>();
-
-export interface MotorStatusResponse {
-  ok: boolean;
-  state?: {
-    vel_left: number;
-    vel_right: number;
-  };
-  error?: string;
-  detail?: string;
-  message?: string;
-}
-
-export const motorStatus = (carIP: string, timestamp?: number) =>
-  api
-    .get('car/motor_status', { searchParams: { car_ip: carIP, timestamp: timestamp ?? Date.now() } })
-    .json<MotorStatusResponse>();
-
-export interface MotorDirectResponse {
-  ok: boolean;
-  left?: number;
-  right?: number;
-  duration?: number;
-  error?: string;
-  detail?: string;
-  message?: string;
-}
-
-export const motorDirect = (carIP: string, left: number, right: number) =>
-  api
-    .post('car/motor_direct', { searchParams: { car_ip: carIP, left, right, duration: 1 } })
-    .json<MotorDirectResponse>();
-
-export interface CarControlResponse {
-  ok?: boolean;
-  error?: string;
-  detail?: string;
-  message?: string;
-}
-
-export const carControl = (carIP: string, action: string, speed: number = 50) =>
-  api
-    .post('car/control', { searchParams: { car_ip: carIP, action, speed } })
-    .json<CarControlResponse>();
-
 // ============ 数据采集 ============
 
 export interface CollectImageRequest {
   image: string;
   actions: string[];
-  car_ip?: string;
   timestamp?: number;
+  state?: {
+    vel_left: number;
+    vel_right: number;
+  };
 }
 
 export interface CollectImageResponse {
