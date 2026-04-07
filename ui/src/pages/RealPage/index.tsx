@@ -22,8 +22,7 @@ import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from ".
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
-const MOTOR_DEADBAND = 200
-const MOTOR_MAX = 255
+const COLLECT_INTERVAL = 1000 / 30 // 数据采集间隔(ms)，30fps
 
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -292,11 +291,8 @@ const RealPage = () => {
             if (Math.abs(value) < 1e-3) {
                 return 0
             }
-
             const sign = value >= 0 ? 1 : -1
-            const magnitude = Math.min(1, Math.abs(value))
-            const command = MOTOR_DEADBAND + magnitude * (MOTOR_MAX - MOTOR_DEADBAND)
-            return sign * Math.round(command)
+            return sign * Math.round(Math.abs(value) * 250)
         }
 
         const leftCommand = mapVelocityToMotorCommand(left)
@@ -643,7 +639,7 @@ const RealPage = () => {
                 .finally(() => {
                     collectInFlightRef.current = false
                 })
-        }, 100)
+        }, COLLECT_INTERVAL)
 
         return () => {
             if (collectTimerRef.current) {
