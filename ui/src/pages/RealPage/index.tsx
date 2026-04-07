@@ -557,12 +557,17 @@ const RealPage = () => {
             if (e.code.startsWith("Arrow")) {
                 e.preventDefault()
             }
-            keys.current[e.code] = false
             const directionKeys = ['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS', 'ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD']
-            const anyPressed = directionKeys.some(k => keys.current[k])
-            if (!anyPressed && carIP && carConnected) {
-                carControl(carIP, 'stop', 50).catch(() => {})
+            if (directionKeys.includes(e.code)) {
+                keys.current[e.code] = false
+                console.log(`[KeyUp] ${e.code} released at ${Date.now()}, carIP=${carIP}, carConnected=${carConnected}`)
+                if (carIP && carConnected) {
+                    carControl(carIP, 'stop', 50).catch(() => {})
+                    console.log(`[KeyUp] stop command sent at ${Date.now()}`)
+                }
+                return
             }
+            keys.current[e.code] = false
         }
 
         window.addEventListener('keydown', handleKeyDown)
