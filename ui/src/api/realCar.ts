@@ -4,6 +4,11 @@ export interface CarHeartbeatResponse {
   status?: string;
 }
 
+type CarApiSuccessPayload = {
+  ok?: boolean;
+  status?: string;
+};
+
 const fetchCarApi = async <T>(carIP: string, path: string, searchParams: Record<string, string | number>) => {
   const url = new URL(`http://${carIP}/api/${path}`);
   for (const [key, value] of Object.entries(searchParams)) {
@@ -74,7 +79,8 @@ export const getActionsFromMotorStatus = (
 };
 
 export interface TimeSyncResponse {
-  ok: boolean;
+  ok?: boolean;
+  status?: string;
   device_time_ms?: number;
   error?: string;
   detail?: string;
@@ -85,7 +91,8 @@ export const carTimeSync = (carIP: string) =>
   fetchCarApi<TimeSyncResponse>(carIP, 'time_sync', {});
 
 export interface MotorDirectResponse {
-  ok: boolean;
+  ok?: boolean;
+  status?: string;
   left?: number;
   right?: number;
   duration?: number;
@@ -94,11 +101,12 @@ export interface MotorDirectResponse {
   message?: string;
 }
 
-export const motorDirect = (carIP: string, left: number, right: number) =>
-  fetchCarApi<MotorDirectResponse>(carIP, 'motor_direct', { left, right, duration: 1 });
+export const motorDirect = (carIP: string, left: number, right: number, duration: number = 0) =>
+  fetchCarApi<MotorDirectResponse>(carIP, 'motor_direct', { left, right, duration });
 
 export interface CarControlResponse {
   ok?: boolean;
+  status?: string;
   error?: string;
   detail?: string;
   message?: string;
@@ -106,3 +114,6 @@ export interface CarControlResponse {
 
 export const carControl = (carIP: string, action: string, speed: number = 50) =>
   fetchCarApi<CarControlResponse>(carIP, 'control', { action, speed });
+
+export const isCarApiSuccess = (payload?: CarApiSuccessPayload | null) =>
+  payload?.ok === true || payload?.status === 'ok' || payload?.status === 'success';

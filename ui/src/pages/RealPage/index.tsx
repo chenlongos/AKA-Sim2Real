@@ -14,7 +14,7 @@ import {
     onTrainingProgress,
 } from "../../api/socket.ts";
 import {startTraining, stopTraining, loadTrainedModel, collectImage} from "../../api/api";
-import {carHeartbeat, carTimeSync, motorStatusAt, motorDirect, carControl} from "../../api/realCar";
+import {carHeartbeat, carTimeSync, motorStatusAt, motorDirect, carControl, isCarApiSuccess} from "../../api/realCar";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
@@ -237,7 +237,7 @@ const RealPage = () => {
         }
         heartbeatIPRef.current = ip
         const data = await carHeartbeat(ip)
-        if ((data.ok || data.status === "ok") && heartbeatIPRef.current === ip) {
+        if (isCarApiSuccess(data) && heartbeatIPRef.current === ip) {
             setCarConnected(true)
             return
         }
@@ -263,7 +263,7 @@ const RealPage = () => {
             const sendTime = Date.now()
             const data = await carTimeSync(carIP)
             const recvTime = Date.now()
-            if (cancelled || !data?.ok || typeof data.device_time_ms !== "number") {
+            if (cancelled || !isCarApiSuccess(data) || typeof data.device_time_ms !== "number") {
                 return
             }
 
@@ -305,7 +305,7 @@ const RealPage = () => {
         return [velLeft, velRight]
     }
 
-    const sendInferenceActionToCar = async (left: number, right: number) => {
+    const sendInferenceActionToCar = async (left: number, right: number, duration: number) => {
         if (!carIP) {
             throw new Error("请先输入小车IP")
         }
@@ -315,14 +315,14 @@ const RealPage = () => {
                 return 0
             }
             const sign = value >= 0 ? 1 : -1
-            return sign * Math.round(Math.abs(value) * 250)
+            return sign * Math.round(Math.abs(value))
         }
 
         const leftCommand = mapVelocityToMotorCommand(left)
         const rightCommand = mapVelocityToMotorCommand(right)
-        const data = await motorDirect(carIP, leftCommand, rightCommand)
+        const data = await motorDirect(carIP, leftCommand, rightCommand, duration)
 
-        if (!data?.ok) {
+        if (!isCarApiSuccess(data)) {
             throw new Error(data?.error || data?.detail || data?.message || "发送推理控制到小车失败")
         }
 
@@ -462,11 +462,16 @@ const RealPage = () => {
                 return
             }
 
-            const {leftCommand, rightCommand} = await sendInferenceActionToCar(velLeftTarget, velRightTarget)
-            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}]`
+            const duration = sessionId === undefined ? 1 : 0
+            const {leftCommand, rightCommand} = await sendInferenceActionToCar(
+                velLeftTarget,
+                velRightTarget,
+                duration,
+            )
+            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=${duration}s`
             setInferenceResult([velStr])
         } else if (!result.success) {
-            throw new Error(result.error || '推理失败')
+            throw new Error(result.error || '推理失败1')
         }
     }
 
@@ -479,7 +484,7 @@ const RealPage = () => {
         try {
             await doInference()
         } catch {
-            alert('推理失败')
+            alert('推理失败2')
         }
         setIsInferring(false)
     }
