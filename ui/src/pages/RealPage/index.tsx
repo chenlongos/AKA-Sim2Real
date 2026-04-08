@@ -21,8 +21,6 @@ import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 
-const COLLECT_INTERVAL = 1000 / 20 // 数据采集间隔(ms)，30fps
-
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
     const [carState, setCarState] = useState<CarState>({
@@ -36,6 +34,7 @@ const RealPage = () => {
     const [isTraining, setIsTraining] = useState(false)
     const [trainingProgress, setTrainingProgress] = useState({epoch: 0, total_epochs: 50, loss: 0, progress: 0})
     const [trainingEpochs, setTrainingEpochs] = useState(50)
+    const [collectionFps, setCollectionFps] = useState(20)
     const [currentEpisode, setCurrentEpisode] = useState(1)
     const [episodeCounts, setEpisodeCounts] = useState<Record<number, number>>({})
     const [resumeTraining, setResumeTraining] = useState(false)
@@ -611,6 +610,8 @@ const RealPage = () => {
             return
         }
 
+        const collectInterval = 1000 / Math.max(collectionFps, 1)
+
         collectTimerRef.current = window.setInterval(async () => {
             if (collectInFlightRef.current) return
 
@@ -645,7 +646,7 @@ const RealPage = () => {
             } finally {
                 collectInFlightRef.current = false
             }
-        }, COLLECT_INTERVAL)
+        }, collectInterval)
 
         return () => {
             if (collectTimerRef.current) {
@@ -653,7 +654,7 @@ const RealPage = () => {
                 collectTimerRef.current = null
             }
         }
-    }, [carIP, getCurrentActions, isRecording])
+    }, [carIP, collectionFps, getCurrentActions, isRecording])
 
     return (
         <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
@@ -687,6 +688,7 @@ const RealPage = () => {
                         isTraining={isTraining}
                         trainingProgress={trainingProgress}
                         trainingEpochs={trainingEpochs}
+                        collectionFps={collectionFps}
                         resumeTraining={resumeTraining}
                         episodeCounts={episodeCounts}
                         currentEpisode={currentEpisode}
@@ -694,6 +696,7 @@ const RealPage = () => {
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}
                         onSetTrainingEpochs={setTrainingEpochs}
+                        onSetCollectionFps={(fps) => setCollectionFps(Math.max(1, Math.min(60, fps)))}
                         onSetResumeTraining={setResumeTraining}
                         onSetEpisode={handleSetEpisode}
                         onEndEpisode={handleEndEpisode}

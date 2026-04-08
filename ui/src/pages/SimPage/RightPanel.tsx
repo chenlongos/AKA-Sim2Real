@@ -10,6 +10,7 @@ export interface RightPanelRef {
 interface RightPanelProps {
     obstacles: Obstacle[];
     isRecording: boolean;
+    collectionFps: number;
     onCollect?: (imageData: string) => void;
 }
 
@@ -122,6 +123,7 @@ const drawFirstPerson = (ctx: CanvasRenderingContext2D, carState: CarState, obst
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
     obstacles,
     isRecording,
+    collectionFps,
     onCollect
 }, ref) => {
     const carState = useSimCarStore((state) => state.carState)
@@ -146,7 +148,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
         ctx.imageSmoothingEnabled = false;
 
         let animationFrameId: number;
-        const COLLECT_INTERVAL = 1000 / 30; // 采集间隔(ms)，30fps
+        const collectInterval = 1000 / Math.max(collectionFps, 1);
         const FPS = 30;
         const frameInterval = 1000 / FPS;
         let lastTime = 0;
@@ -159,7 +161,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
                 drawFirstPerson(ctx, carState, obstacles);
 
                 // 采集数据
-                if (isRecording && onCollect && currentTime - lastCollectTimeRef.current >= COLLECT_INTERVAL) {
+                if (isRecording && onCollect && currentTime - lastCollectTimeRef.current >= collectInterval) {
                     const imageData = canvas.toDataURL('image/jpeg', 0.8);
                     onCollect(imageData);
                     lastCollectTimeRef.current = currentTime;
@@ -174,7 +176,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
         return () => {
             window.cancelAnimationFrame(animationFrameId);
         };
-    }, [carState, obstacles, isRecording, onCollect]);
+    }, [carState, obstacles, isRecording, collectionFps, onCollect]);
 
     return (
         <div className="flex flex-col h-full gap-3">

@@ -3,6 +3,7 @@ interface TrainingControlProps {
     isTraining: boolean;
     trainingProgress: { epoch: number; total_epochs: number; loss: number; progress: number };
     trainingEpochs: number;
+    collectionFps: number;
     resumeTraining: boolean;
     episodeCounts: Record<number, number>;
     currentEpisode: number;
@@ -10,6 +11,7 @@ interface TrainingControlProps {
     onStartTraining: () => void;
     onStopTraining: () => void;
     onSetTrainingEpochs: (epochs: number) => void;
+    onSetCollectionFps: (fps: number) => void;
     onSetResumeTraining: (resume: boolean) => void;
     onSetEpisode: (episode: number) => void;
     onEndEpisode: () => void;
@@ -22,6 +24,7 @@ export const TrainingControl = ({
     isTraining,
     trainingProgress,
     trainingEpochs,
+    collectionFps,
     resumeTraining,
     episodeCounts,
     currentEpisode,
@@ -29,17 +32,20 @@ export const TrainingControl = ({
     onStartTraining,
     onStopTraining,
     onSetTrainingEpochs,
+    onSetCollectionFps,
     onSetResumeTraining,
     onSetEpisode,
     onEndEpisode,
     onStartEpisode,
     onResetCar,
 }: TrainingControlProps) => {
+    const collectionFpsPresets = [10, 20, 30]
+
     return (
-        <div className="flex flex-col gap-4 h-full">
+        <div className="flex flex-col gap-3">
             {/* 数据采集模块 */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
                         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
                         数据采集
@@ -55,13 +61,37 @@ export const TrainingControl = ({
 
                 {/* 帧数显示 */}
                 {collectedCount > 0 && (
-                    <div className="mb-3 bg-slate-900/50 rounded px-3 py-2">
-                        <div className="text-xs text-slate-400">已采集</div>
-                        <div className="text-lg font-mono font-bold text-emerald-400">
+                    <div className="mb-2 bg-slate-900/50 rounded px-3 py-0">
+                        <div className="text-[11px] leading-4 text-slate-400">已采集</div>
+                        <div className="text-base leading-5 font-mono font-bold text-emerald-400">
                             {collectedCount} <span className="text-xs text-slate-500">帧</span>
                         </div>
                     </div>
                 )}
+
+                <div className="mb-2">
+                    <div className="flex items-center gap-2 mb-1.5">
+                        <label className="text-xs text-slate-400">采样频率</label>
+                        <div className="flex-1" />
+                        <span className="text-xs font-mono text-slate-300">{collectionFps} FPS</span>
+                    </div>
+                    <div className="flex gap-2">
+                        {collectionFpsPresets.map((fps) => (
+                            <button
+                                key={fps}
+                                type="button"
+                                onClick={() => onSetCollectionFps(fps)}
+                                className={`flex-1 px-2 py-1 rounded text-xs font-mono border transition-all ${
+                                    collectionFps === fps
+                                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                        : "bg-slate-900/50 text-slate-300 border-slate-700 hover:bg-slate-800"
+                                }`}
+                            >
+                                {fps} FPS
+                            </button>
+                        ))}
+                    </div>
+                </div>
 
                 {/* 采集控制按钮 */}
                 <div className="space-y-2">
@@ -91,8 +121,8 @@ export const TrainingControl = ({
                 </div>
 
                 {/* 轮次控制 */}
-                <div className="mt-3 pt-3 border-t border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-2">
+                <div className="mt-2 pt-2 border-t border-slate-700/50">
+                    <div className="flex items-center gap-2 mb-1.5">
                         <label className="text-xs text-slate-400">采集轮次</label>
                         <div className="flex-1" />
                         <span className="text-xs font-mono text-slate-300">
@@ -121,9 +151,9 @@ export const TrainingControl = ({
 
                 {/* 各轮次数据量 */}
                 {Object.keys(episodeCounts).length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-slate-700/50">
-                        <div className="text-xs text-emerald-400 mb-1.5">√ 数据集已上传</div>
-                        <div className="bg-slate-900/50 rounded-lg p-2 max-h-24 overflow-y-auto space-y-1">
+                    <div className="mt-2 pt-2 border-t border-slate-700/50">
+                        <div className="text-xs text-emerald-400 mb-1">√ 数据集已上传</div>
+                        <div className="bg-slate-900/50 rounded-lg p-2 max-h-20 overflow-y-auto space-y-1">
                             {Object.entries(episodeCounts).map(([ep, count]) => (
                                 <div key={ep} className="flex items-center justify-between text-xs">
                                     <span className="text-slate-400">轮次 {ep}</span>
@@ -136,7 +166,7 @@ export const TrainingControl = ({
             </div>
 
             {/* 训练控制模块 */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 flex-1">
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-3">
                     <span className="w-2 h-2 bg-violet-500 rounded-full" />
                     模型训练

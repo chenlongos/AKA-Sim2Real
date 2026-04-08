@@ -17,6 +17,16 @@ export const InferenceControl = ({
     onInference,
     onAutoInference,
 }: InferenceControlProps) => {
+    const inferenceActionLabel = inferenceResult.length > 0
+        ? inferenceResult.join(", ")
+        : autoInference
+            ? "自动推理中"
+            : isInferring
+                ? "单次推理中"
+                : isModelLoaded
+                    ? "暂无结果"
+                    : "模型未加载"
+
     return (
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-3">
@@ -34,6 +44,22 @@ export const InferenceControl = ({
                         : 'bg-slate-700/50 text-slate-400'
                 }`}>
                     {isModelLoaded ? '已加载' : '未加载'}
+                </span>
+            </div>
+
+            <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-slate-400">推理动作</span>
+                <div className="flex-1"/>
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                    autoInference
+                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
+                        : isInferring
+                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                            : isModelLoaded
+                                ? 'bg-slate-700/50 text-slate-300 border border-slate-600'
+                                : 'bg-slate-700/50 text-slate-400'
+                }`}>
+                    {inferenceActionLabel}
                 </span>
             </div>
 
@@ -72,16 +98,6 @@ export const InferenceControl = ({
                             {autoInference ? '停止自动' : '自动推理'}
                         </button>
                     </div>
-
-                    {/* 推理结果 */}
-                    {inferenceResult.length > 0 && (
-                        <div className="mt-2 pt-2 border-t border-slate-700/50">
-                            <div className="text-xs text-slate-500 mb-1">推理动作</div>
-                            <div className="bg-slate-900/50 rounded px-3 py-1.5 font-mono text-xs text-cyan-400">
-                                {inferenceResult.join(', ')}
-                            </div>
-                        </div>
-                    )}
                 </div>
             )}
         </div>

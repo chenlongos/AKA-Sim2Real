@@ -38,6 +38,7 @@ const SimPage = () => {
     const [isTraining, setIsTraining] = useState(false)
     const [trainingProgress, setTrainingProgress] = useState({epoch: 0, total_epochs: 50, loss: 0, progress: 0})
     const [trainingEpochs, setTrainingEpochs] = useState(50)
+    const [collectionFps, setCollectionFps] = useState(30)
     const [currentEpisode, setCurrentEpisode] = useState(1)
     const [episodeCounts, setEpisodeCounts] = useState<Record<number, number>>({})
     const [resumeTraining, setResumeTraining] = useState(false)
@@ -477,6 +478,7 @@ const SimPage = () => {
                         isTraining={isTraining}
                         trainingProgress={trainingProgress}
                         trainingEpochs={trainingEpochs}
+                        collectionFps={collectionFps}
                         resumeTraining={resumeTraining}
                         episodeCounts={episodeCounts}
                         currentEpisode={currentEpisode}
@@ -484,6 +486,7 @@ const SimPage = () => {
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}
                         onSetTrainingEpochs={setTrainingEpochs}
+                        onSetCollectionFps={(fps) => setCollectionFps(Math.max(1, Math.min(60, fps)))}
                         onSetResumeTraining={setResumeTraining}
                         onSetEpisode={handleSetEpisode}
                         onEndEpisode={handleEndEpisode}
@@ -519,6 +522,7 @@ const SimPage = () => {
                         ref={firstPersonViewRef}
                         obstacles={obstacles}
                         isRecording={isRecording}
+                        collectionFps={collectionFps}
                         onCollect={(imageData) => sendImageData(simSocket, imageData, {
                             state: {
                                 vel_left: carState.vel_left,
