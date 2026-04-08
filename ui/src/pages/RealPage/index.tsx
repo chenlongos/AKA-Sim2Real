@@ -507,20 +507,43 @@ const RealPage = () => {
             } finally {
                 inferenceInFlightRef.current = false
             }
-            inferenceTimerRef.current = window.setInterval(async () => {
-                if (inferenceInFlightRef.current || !autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current) {
-                    return
-                }
-
-                inferenceInFlightRef.current = true
-                try {
-                    await doInference(sessionId)
-                } finally {
-                    inferenceInFlightRef.current = false
-                }
-            }, 50)
         }
     }
+
+    useEffect(() => {
+        if (!autoInferenceRef.current) {
+            return
+        }
+
+        if (inferenceTimerRef.current) {
+            clearInterval(inferenceTimerRef.current)
+            inferenceTimerRef.current = null
+        }
+
+        const sessionId = autoInferenceSessionRef.current
+        const inferenceFps = Math.min(Math.max(collectionFps * 1.2, 1), collectionFps + 5)
+        const inferenceInterval = 1000 / inferenceFps
+
+        inferenceTimerRef.current = window.setInterval(async () => {
+            if (inferenceInFlightRef.current || !autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current) {
+                return
+            }
+
+            inferenceInFlightRef.current = true
+            try {
+                await doInference(sessionId)
+            } finally {
+                inferenceInFlightRef.current = false
+            }
+        }, inferenceInterval)
+
+        return () => {
+            if (inferenceTimerRef.current) {
+                clearInterval(inferenceTimerRef.current)
+                inferenceTimerRef.current = null
+            }
+        }
+    }, [collectionFps, autoInference])
 
     const getCurrentActions = useCallback((): string[] => {
         const keyMap: Record<string, string> = {
