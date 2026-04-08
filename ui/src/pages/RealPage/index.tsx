@@ -237,7 +237,7 @@ const RealPage = () => {
         }
         heartbeatIPRef.current = ip
         const data = await carHeartbeat(ip)
-        if (data.ok && heartbeatIPRef.current === ip) {
+        if ((data.ok || data.status === "ok") && heartbeatIPRef.current === ip) {
             setCarConnected(true)
             return
         }
