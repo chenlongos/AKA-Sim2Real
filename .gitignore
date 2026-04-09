@@ -1,7 +1,7 @@
 .idea
 .vscode
 output*
-catch_ball
+demo_*
 .DS_Store
 __pycache__/
 *.py[cod]

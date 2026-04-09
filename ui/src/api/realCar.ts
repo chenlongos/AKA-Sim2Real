@@ -9,12 +9,17 @@ type CarApiSuccessPayload = {
   status?: string;
 };
 
-const fetchCarApi = async <T>(carIP: string, path: string, searchParams: Record<string, string | number>) => {
+const fetchCarApi = async <T>(
+  carIP: string,
+  path: string,
+  searchParams: Record<string, string | number>,
+  options?: { signal?: AbortSignal },
+) => {
   const url = new URL(`http://${carIP}/api/${path}`);
   for (const [key, value] of Object.entries(searchParams)) {
     url.searchParams.set(key, String(value));
   }
-  const response = await fetch(url.toString(), { method: 'GET' });
+  const response = await fetch(url.toString(), { method: 'GET', signal: options?.signal });
   if (!response.ok) {
     throw new Error(`${path} failed: ${response.status}`);
   }
@@ -101,8 +106,13 @@ export interface MotorDirectResponse {
   message?: string;
 }
 
-export const motorDirect = (carIP: string, left: number, right: number, duration: number = 0) =>
-  fetchCarApi<MotorDirectResponse>(carIP, 'motor_direct', { left, right, duration });
+export const motorDirect = (
+  carIP: string,
+  left: number,
+  right: number,
+  duration: number = 0,
+  options?: { signal?: AbortSignal },
+) => fetchCarApi<MotorDirectResponse>(carIP, 'motor_direct', { left, right, duration }, options);
 
 export interface CarControlResponse {
   ok?: boolean;

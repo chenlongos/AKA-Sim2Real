@@ -46,6 +46,9 @@ const RealPage = () => {
     const autoInferenceSessionRef = useRef(0)
     const inferenceInFlightRef = useRef(false)
     const inferenceTimerRef = useRef<number | null>(null)
+    const inferenceLoopTimeoutRef = useRef<number | null>(null)
+    const latestAutoCommandAbortRef = useRef<AbortController | null>(null)
+    const latestAutoCommandSeqRef = useRef(0)
     const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
     const fpvCameraViewRef = useRef<RealRightPanelRef | null>(null)
     const collectTimerRef = useRef<number | null>(null)
@@ -305,7 +308,12 @@ const RealPage = () => {
         return [velLeft, velRight]
     }
 
-    const sendInferenceActionToCar = async (left: number, right: number, duration: number) => {
+    const sendInferenceActionToCar = async (
+        left: number,
+        right: number,
+        duration: number,
+        options?: { signal?: AbortSignal },
+    ) => {
         if (!carIP) {
             throw new Error("请先输入小车IP")
         }
@@ -320,7 +328,7 @@ const RealPage = () => {
 
         const leftCommand = mapVelocityToMotorCommand(left)
         const rightCommand = mapVelocityToMotorCommand(right)
-        const data = await motorDirect(carIP, leftCommand, rightCommand, duration)
+        const data = await motorDirect(carIP, leftCommand, rightCommand, duration, {signal: options?.signal})
 
         if (!isCarApiSuccess(data)) {
             throw new Error(data?.error || data?.detail || data?.message || "发送推理控制到小车失败")
@@ -332,15 +340,50 @@ const RealPage = () => {
         }
     }
 
+    const dispatchLatestAutoInferenceAction = useCallback((left: number, right: number) => {
+        latestAutoCommandSeqRef.current += 1
+        const commandSeq = latestAutoCommandSeqRef.current
+
+        latestAutoCommandAbortRef.current?.abort()
+        const controller = new AbortController()
+        latestAutoCommandAbortRef.current = controller
+
+        const leftCommand = Math.sign(left) * Math.round(Math.abs(left))
+        const rightCommand = Math.sign(right) * Math.round(Math.abs(right))
+        setInferenceResult([`v=[${left.toFixed(2)}, ${right.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=0s`])
+
+        void sendInferenceActionToCar(left, right, 0, {signal: controller.signal})
+            .then(({leftCommand: appliedLeft, rightCommand: appliedRight}) => {
+                if (commandSeq !== latestAutoCommandSeqRef.current) {
+                    return
+                }
+                setInferenceResult([`v=[${left.toFixed(2)}, ${right.toFixed(2)}] -> motor=[${appliedLeft}, ${appliedRight}], duration=0s`])
+            })
+            .catch((error: unknown) => {
+                if (controller.signal.aborted) {
+                    return
+                }
+                console.error("Auto inference motor command failed:", error)
+            })
+    }, [sendInferenceActionToCar])
+
     const stopInferenceAndCar = useCallback(() => {
         setAutoInference(false)
         autoInferenceRef.current = false
         autoInferenceSessionRef.current += 1
         inferenceInFlightRef.current = false
+        latestAutoCommandSeqRef.current += 1
+        latestAutoCommandAbortRef.current?.abort()
+        latestAutoCommandAbortRef.current = null
 
         if (inferenceTimerRef.current) {
             clearInterval(inferenceTimerRef.current)
             inferenceTimerRef.current = null
+        }
+
+        if (inferenceLoopTimeoutRef.current) {
+            window.clearTimeout(inferenceLoopTimeoutRef.current)
+            inferenceLoopTimeoutRef.current = null
         }
 
         if (carIP) {
@@ -462,14 +505,18 @@ const RealPage = () => {
                 return
             }
 
-            const duration = sessionId === undefined ? 1 : 0
-            const {leftCommand, rightCommand} = await sendInferenceActionToCar(
-                velLeftTarget,
-                velRightTarget,
-                duration,
-            )
-            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=${duration}s`
-            setInferenceResult([velStr])
+            if (sessionId === undefined) {
+                const {leftCommand, rightCommand} = await sendInferenceActionToCar(
+                    velLeftTarget,
+                    velRightTarget,
+                    0,
+                )
+                const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=1s`
+                setInferenceResult([velStr])
+                return
+            }
+
+            dispatchLatestAutoInferenceAction(velLeftTarget, velRightTarget)
         } else if (!result.success) {
             throw new Error(result.error || '推理失败1')
         }
@@ -515,32 +562,38 @@ const RealPage = () => {
             return
         }
 
-        if (inferenceTimerRef.current) {
-            clearInterval(inferenceTimerRef.current)
-            inferenceTimerRef.current = null
-        }
-
         const sessionId = autoInferenceSessionRef.current
         const inferenceFps = Math.min(Math.max(collectionFps * 1.2, 1), collectionFps + 5)
         const inferenceInterval = 1000 / inferenceFps
+        let cancelled = false
 
-        inferenceTimerRef.current = window.setInterval(async () => {
-            if (inferenceInFlightRef.current || !autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current) {
+        const runLoop = async () => {
+            if (cancelled || !autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current) {
                 return
             }
 
+            const startedAt = performance.now()
             inferenceInFlightRef.current = true
             try {
                 await doInference(sessionId)
             } finally {
                 inferenceInFlightRef.current = false
             }
-        }, inferenceInterval)
+
+            const elapsed = performance.now() - startedAt
+            const delay = Math.max(inferenceInterval - elapsed, 0)
+            inferenceLoopTimeoutRef.current = window.setTimeout(() => {
+                void runLoop()
+            }, delay)
+        }
+
+        void runLoop()
 
         return () => {
-            if (inferenceTimerRef.current) {
-                clearInterval(inferenceTimerRef.current)
-                inferenceTimerRef.current = null
+            cancelled = true
+            if (inferenceLoopTimeoutRef.current) {
+                window.clearTimeout(inferenceLoopTimeoutRef.current)
+                inferenceLoopTimeoutRef.current = null
             }
         }
     }, [collectionFps, autoInference])

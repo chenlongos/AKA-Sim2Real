@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
@@ -51,6 +52,10 @@ class ACTInferenceRuntime:
         self.execution_policy.update_decay(self._temporal_decay())
         return self.execution_policy.blend(action_chunk)
 
+    def should_blend_current_action(self) -> bool:
+        flag = os.getenv("ACT_TEMPORAL_ENSEMBLING", "0").strip().lower()
+        return flag in {"1", "true", "yes", "on"}
+
     def _load_stats(self, stats_dir: Optional[str]):
         self.stats = load_stats(stats_dir)
         logger.info("状态归一化: mean=%s, std=%s", self.stats.state_mean, self.stats.state_std)
@@ -82,7 +87,8 @@ class ACTInferenceRuntime:
                 state_tensor,
                 use_temporal_ensembling=False,
             )
-            action = self.blend_current_action(action)
+            if self.should_blend_current_action():
+                action = self.blend_current_action(action)
             action = self.preprocessor.denormalize_action(action, self.stats, self.device)
             return action.cpu().numpy().tolist()
 
