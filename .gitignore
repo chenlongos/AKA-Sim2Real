@@ -6,3 +6,4 @@ demo_*
 __pycache__/
 *.py[cod]
 .coverage
+htmlcov
