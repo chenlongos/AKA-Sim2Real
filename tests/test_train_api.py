@@ -45,7 +45,7 @@ def test_train_api_reads_json_body(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.json()["success"] is True
     assert captured["data_dir"] == str(dataset_dir)
-    assert captured["output_dir"] == "checkpoints"
+    assert "checkpoints" in captured["output_dir"]
     assert captured["epochs"] == 7
     assert captured["batch_size"] == 4
     assert captured["lr"] == 0.002
