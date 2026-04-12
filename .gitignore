@@ -5,3 +5,4 @@ demo_*
 .DS_Store
 __pycache__/
 *.py[cod]
+.coverage

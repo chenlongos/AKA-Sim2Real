@@ -36,6 +36,9 @@ car_state = {
 # 数据集存储 - 支持多轮采集
 # 格式: { episode_id: [samples] }
 episode_samples: dict = {}
+
+# 数据集样本（用于 /api/dataset 端点）
+dataset_samples: list = []
 current_episode_id: int = 1  # 当前采集的轮次
 
 # Episode Buffer - 用于实时保存帧到磁盘

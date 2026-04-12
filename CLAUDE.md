@@ -24,11 +24,11 @@ cd backend && python main.py
 # 启动前端
 cd ui && npm run dev
 
-# 运行 ACT 检查
-#python3 backend/run_act_checks.py
+# 运行测试
+coverage erase && python3 -m pytest tests/ --cov=backend --cov-report=html
 
-# 运行 ACT pytest
-#python3 -m pytest tests/act -q
+# 打开报告网页
+open htmlcov/index.html
 ```
 
 ## 🏗️ 架构与规范
