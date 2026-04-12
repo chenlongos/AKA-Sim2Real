@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Optional, Union
 import torch
 from PIL import Image
 
-from backend.config import config
 from backend.services.inference.checkpoint import (
     ACTNormalizationStats,
     get_default_device,

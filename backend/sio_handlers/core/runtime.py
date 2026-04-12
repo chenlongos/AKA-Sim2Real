@@ -11,7 +11,6 @@ class SioRuntimeState:
     current_action_vector: tuple[float, float] | None = None
     connected_clients: set[str] = field(default_factory=set)
     inference_mode: bool = False
-    camera_active: bool = False
     act_runtime: Any = field(default_factory=get_act_runtime)
 
     def set_act_runtime(self, runtime: Any) -> None:

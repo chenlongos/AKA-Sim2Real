@@ -8,7 +8,7 @@ from backend.sio_handlers.core.runtime import SioRuntimeState
 
 if TYPE_CHECKING:
     from backend.services.episode import EpisodeService
-    from backend.services.simulator import CameraService, SimController
+    from backend.services.simulator import SimController
 
 
 class BaseSimNamespace(AsyncNamespace):
@@ -18,10 +18,8 @@ class BaseSimNamespace(AsyncNamespace):
         runtime: SioRuntimeState | None = None,
         sim_controller: SimController | None = None,
         episode_service: EpisodeService | None = None,
-        camera_service: CameraService | None = None,
     ):
         super().__init__(namespace)
         self.runtime = runtime
         self.sim_controller = sim_controller
         self.episode_service = episode_service
-        self.camera_service = camera_service
