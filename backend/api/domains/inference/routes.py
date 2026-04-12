@@ -6,7 +6,6 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from backend.api.domains.inference.models import ACTInferenceRequest
 from backend.services import inference as inference_service
 
 logger = logging.getLogger(__name__)
@@ -19,21 +18,6 @@ _act_runtime = inference_service.get_act_runtime()
 def set_act_runtime(runtime):
     global _act_runtime
     _act_runtime = runtime
-
-
-@router.post("/infer")
-async def infer_act(request: ACTInferenceRequest):
-    """ACT 模型推理 API"""
-    try:
-        logger.debug(f"收到推理API请求: state={request.state}")
-        action = _act_runtime.infer(request.state, request.image)
-        return {
-            "success": True,
-            "action": action,
-        }
-    except Exception as exc:
-        logger.error(f"推理API失败: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/load_trained")

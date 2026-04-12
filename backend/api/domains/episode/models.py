@@ -7,12 +7,6 @@ from typing import Any, Dict
 from pydantic import BaseModel, Field
 
 
-class DatasetPayload(BaseModel):
-    """数据集载荷"""
-    observation: Dict[str, Any]
-    action: Dict[str, Any]
-
-
 class CollectImagePayload(BaseModel):
     """前端直接采集图像到当前 episode。"""
 
