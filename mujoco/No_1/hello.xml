@@ -1,0 +1,120 @@
+<mujoco>
+    <!-- option: 全局仿真选项 -->
+    <!-- gravity: 重力加速度 (x=0, y=0, z=-0.1 m/s²) -->
+    <option gravity="0 0 -9.81"/>
+
+    <!-- compiler: XML 编译器设置 -->
+    <!-- angle: 角度单位使用弧度 (而非默认的角度) -->
+    <compiler angle="radian"/>
+    <visual>
+        <headlight ambient="0.1 0.1 0.1"/>
+    </visual>
+
+    <asset>
+        <material name="white" rgba="1 1 1 1"/>
+    </asset>
+
+    <!-- worldbody: 定义物理世界中的所有物体 -->
+    <worldbody>
+        <!--
+            light: 场景光源
+            diffuse: 漫反射颜色 (RGB=0.5, 0.5, 0.5 灰白色)
+            pos:    光源位置 (x=0, y=0, z=3 米，在物体上方)
+            dir:    光照方向 (沿 -z 轴向下照射)
+        -->
+        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
+
+        <!--
+            geom: 几何体（同时定义视觉外观和碰撞体积）
+            type="plane": 平面地面
+            size: 平面半尺寸 (x=1, y=1, z=0.5 米 → 全尺寸 2×2×1)
+            rgba: 颜色 (红=0.9, 绿=0, 蓝=0, alpha=1=不透明) → 红色地面
+        -->
+        <geom type="plane" size="1 1 0.5" rgba=".9 0 0 1"/>
+
+        <!--
+            body: 刚体（具有质量、位置、姿态，可内嵌关节和几何体）
+            pos="0 0 1": 初始位置在 z=1 米高处
+            euler="0 90 60": 初始欧拉角 (roll=0, pitch=90°, yaw=60°)
+        -->
+        <body pos="0 0 1" euler="0 0 0">
+            <!--
+                joint: 关节
+                type="free": 自由关节（6 DoF，可沿 x/y/z 平移和绕三轴旋转，无约束）
+            -->
+            <joint type="free"/>
+
+            <!--
+                inertial: 惯性特性（质量分布）
+                pos: 质心位置（在 body 本地坐标系中，0,0,0=与 body origin 重合）
+                mass: 质量 (1 kg)
+            -->
+            <inertial pos="0 0 0" mass="1" diaginertia="0.01 0.01 0.01"/>
+
+            <!--
+                geom: 几何体（定义外观和碰撞体积）
+                type="box": 盒子形状
+                size: 盒子半尺寸 (x=0.1, y=0.2, z=0.3 米 → 全尺寸 0.2×0.4×0.6)
+                rgba: 颜色 (红=0, 绿=0.9, 蓝=0, alpha=1) → 绿色盒子
+            -->
+<!--            <geom type="box" size=".1 .2 .3" rgba="0 .9 0 1"/>-->
+            <geom type="box" size=".1 .2 .3" material="white"/>
+        </body>
+
+        <!--
+            body: 刚体（具有质量、位置、姿态，可内嵌关节和几何体）
+            pos="0 0 1": 初始位置在 z=1 米高处
+            euler="0 90 60": 初始欧拉角 (roll=0, pitch=90°, yaw=60°)
+        -->
+        <body pos="0 0 2" euler="0 90 0">
+            <!--
+                joint: 关节
+                type="free": 自由关节（6 DoF，可沿 x/y/z 平移和绕三轴旋转，无约束）
+            -->
+            <joint type="free"/>
+
+            <!--
+                inertial: 惯性特性（质量分布）
+                pos: 质心位置（在 body 本地坐标系中，0,0,0=与 body origin 重合）
+                mass: 质量 (1 kg)
+            -->
+            <inertial pos="0 0 0" mass="1" diaginertia="0.01 0.01 0.01"/>
+
+            <!--
+                geom: 几何体（定义外观和碰撞体积）
+                type="box": 盒子形状
+                size: 盒子半尺寸 (x=0.1, y=0.2, z=0.3 米 → 全尺寸 0.2×0.4×0.6)
+                rgba: 颜色 (红=0, 绿=0.9, 蓝=0, alpha=1) → 绿色盒子
+            -->
+            <geom type="box" size=".1 .2 .3" rgba="0 .9 .9 1"/>
+        </body>
+
+        <!--
+            body: 刚体（具有质量、位置、姿态，可内嵌关节和几何体）
+            pos="0 0 1": 初始位置在 z=1 米高处
+            euler="0 90 60": 初始欧拉角 (roll=0, pitch=90°, yaw=60°)
+        -->
+        <body pos="0 0 3" euler="0 0 0">
+            <!--
+                joint: 关节
+                type="free": 自由关节（6 DoF，可沿 x/y/z 平移和绕三轴旋转，无约束）
+            -->
+            <joint type="free"/>
+
+            <!--
+                inertial: 惯性特性（质量分布）
+                pos: 质心位置（在 body 本地坐标系中，0,0,0=与 body origin 重合）
+                mass: 质量 (1 kg)
+            -->
+            <inertial pos="0 0 0" mass="1" diaginertia="0.01 0.01 0.01"/>
+
+            <!--
+                geom: 几何体（定义外观和碰撞体积）
+                type="box": 盒子形状
+                size: 盒子半尺寸 (x=0.1, y=0.2, z=0.3 米 → 全尺寸 0.2×0.4×0.6)
+                rgba: 颜色 (红=0, 绿=0.9, 蓝=0, alpha=1) → 绿色盒子
+            -->
+            <geom type="sphere" size=".1" rgba=".5 .5 .5 1"/>
+        </body>
+    </worldbody>
+</mujoco>

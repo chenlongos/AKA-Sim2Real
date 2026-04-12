@@ -10,3 +10,4 @@
 
 - [第二部分：MuJoCo](MuJoCo/catalogue.md)
   - [安装](MuJoCo/install.md)
+  - [No.1 第一个仿真](MuJoCo/No_1.md)
