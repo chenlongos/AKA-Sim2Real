@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 async def game_loop_task(sio_server, runtime: SioRuntimeState, sim_controller: SimController, namespace: str = "/"):
-    """游戏循环 - 处理物理更新，给每个连接单独发送状态"""
-    logger.info(f"[游戏循环] 任务已启动, namespace={namespace}")
+    """仿真循环 - 处理物理更新，给每个连接单独发送状态"""
+    logger.info(f"[仿真循环] 任务已启动, namespace={namespace}")
     frame_count = 0
     # 注意：这里依然使用全局 state.car_state，因为 car_state 是全局的
     # 如果需要完全隔离，需要把 car_state 移到 SioRuntimeState 中
@@ -23,7 +23,7 @@ async def game_loop_task(sio_server, runtime: SioRuntimeState, sim_controller: S
             frame_count += 1
             if frame_count % 100 == 0:
                 logger.info(
-                    f"[游戏循环] frame={frame_count}, inference_mode={runtime.inference_mode}, current_action_vector={runtime.current_action_vector}, connected_clients={len(runtime.connected_clients)}, namespace={namespace}"
+                    f"[仿真循环] frame={frame_count}, inference_mode={runtime.inference_mode}, current_action_vector={runtime.current_action_vector}, connected_clients={len(runtime.connected_clients)}, namespace={namespace}"
                 )
 
             sim_controller.tick()
@@ -37,7 +37,7 @@ async def game_loop_task(sio_server, runtime: SioRuntimeState, sim_controller: S
                         pass
                 last_emitted_state = dict(state.car_state)
         except Exception as exc:
-            logger.error(f"游戏循环错误: {exc}")
+            logger.error(f"仿真循环错误: {exc}")
 
         if not runtime.connected_clients:
             sleep_interval = 0.2
