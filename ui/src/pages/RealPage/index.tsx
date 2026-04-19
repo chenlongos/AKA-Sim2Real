@@ -21,6 +21,8 @@ import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 import {showToast} from "../../lib/toast.ts";
+import {PATHS} from "../../lib/constants.ts";
+import {KEY_TO_ACTION} from "../SimPage/actionMapping.ts";
 
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -429,12 +431,12 @@ const RealPage = () => {
     const handleStartTraining = async () => {
         try {
             const result = await startTraining({
-                data_dir: 'output/dataset',
-                output_dir: 'output/train',
+                data_dir: PATHS.DATASET,
+                output_dir: PATHS.TRAIN_DIR,
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? 'output/train/model.pt' : undefined,
+                resume_from: resumeTraining ? PATHS.MODEL : undefined,
             })
             if (!result.success) {
                 showToast.error(result.message)
@@ -597,19 +599,8 @@ const RealPage = () => {
     }, [collectionFps, autoInference])
 
     const getCurrentActions = useCallback((): string[] => {
-        const keyMap: Record<string, string> = {
-            'ArrowUp': 'forward',
-            'KeyW': 'forward',
-            'ArrowDown': 'backward',
-            'KeyS': 'backward',
-            'ArrowLeft': 'left',
-            'KeyA': 'left',
-            'ArrowRight': 'right',
-            'KeyD': 'right',
-        }
-
         const actions: string[] = []
-        for (const [code, action] of Object.entries(keyMap)) {
+        for (const [code, action] of Object.entries(KEY_TO_ACTION)) {
             if (keys.current[code]) {
                 actions.push(action)
             }

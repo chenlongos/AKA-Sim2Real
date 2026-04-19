@@ -24,8 +24,7 @@ import {InferenceControl} from "./InferenceControl.tsx";
 import {useSimCarStore} from "../../stores/simCarStore.ts";
 import {getContinuousActionFromDiscreteActions, SIM_KEY_TO_ACTION} from "./actionMapping.ts";
 import {showToast} from "../../lib/toast.ts";
-
-const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
+import {PATHS, SIMULATION} from "../../lib/constants.ts";
 
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -235,12 +234,12 @@ const SimPage = () => {
     const handleStartTraining = async () => {
         try {
             const result = await startTraining({
-                data_dir: 'output/dataset',
-                output_dir: 'output/train',
+                data_dir: PATHS.DATASET,
+                output_dir: PATHS.TRAIN_DIR,
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? 'output/train/model.pt' : undefined,
+                resume_from: resumeTraining ? PATHS.MODEL : undefined,
             })
             if (!result.success) {
                 showToast.error(result.message)
@@ -423,7 +422,7 @@ const SimPage = () => {
                 return
             }
 
-            if (currentTime - lastSendTime >= SEND_INTERVAL) {
+            if (currentTime - lastSendTime >= SIMULATION.SEND_INTERVAL_MS) {
                 const actionVector = getCurrentActionVector()
                 const lastActionVector = lastSentActionVectorRef.current
                 const changed = actionVector[0] !== lastActionVector[0]

@@ -17,6 +17,9 @@ export const SIM_KEY_TO_ACTION: Record<string, string> = {
     KeyD: "right",
 };
 
+// Re-export for backward compatibility
+export const KEY_TO_ACTION = SIM_KEY_TO_ACTION;
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 export const getContinuousActionFromDiscreteActions = (actions: string[]): [number, number] => {
