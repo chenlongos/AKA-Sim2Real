@@ -20,6 +20,7 @@ import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
+import {showToast} from "../../lib/toast.ts";
 
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -128,10 +129,8 @@ const RealPage = () => {
             output_path?: string;
             error?: string
         }) => {
-            if (data.output_path) {
-                // alert(`Episode ${data.episode_id} 已保存到: ${data.output_path}`)
-            } else if (data.error) {
-                alert(`保存失败: ${data.error}`)
+            if (data.error) {
+                showToast.error(`保存失败: ${data.error}`)
             }
         })
 
@@ -171,7 +170,6 @@ const RealPage = () => {
 
     useEffect(() => {
         if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCameraPermissionError("当前浏览器不支持摄像头访问")
             return
         }
@@ -439,10 +437,10 @@ const RealPage = () => {
                 resume_from: resumeTraining ? 'output/train/model.pt' : undefined,
             })
             if (!result.success) {
-                alert(result.message)
+                showToast.error(result.message)
             }
         } catch {
-            alert('启动训练失败')
+            showToast.error('启动训练失败')
         }
     }
 
@@ -450,7 +448,7 @@ const RealPage = () => {
         try {
             await stopTraining()
         } catch {
-            alert('停止训练失败')
+            showToast.error('停止训练失败')
         }
     }
 
@@ -459,13 +457,13 @@ const RealPage = () => {
             const result = await loadTrainedModel()
             if (result.success) {
                 setIsModelLoaded(true)
-                alert('模型加载成功')
+                showToast.success('模型加载成功')
             } else {
-                alert('模型加载失败: ' + result.message)
+                showToast.error('模型加载失败: ' + result.message)
             }
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e)
-            alert('加载模型失败: ' + msg)
+            showToast.error('加载模型失败: ' + msg)
         }
     }
 
@@ -524,21 +522,21 @@ const RealPage = () => {
 
     const handleInference = async () => {
         if (!isModelLoaded) {
-            alert('请先加载模型')
+            showToast.warning('请先加载模型')
             return
         }
         setIsInferring(true)
         try {
             await doInference()
         } catch {
-            alert('推理失败2')
+            showToast.error('推理失败')
         }
         setIsInferring(false)
     }
 
     const handleAutoInference = async () => {
         if (!isModelLoaded) {
-            alert('请先加载模型')
+            showToast.warning('请先加载模型')
             return
         }
         if (autoInference) {

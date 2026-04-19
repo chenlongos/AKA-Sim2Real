@@ -23,6 +23,7 @@ import {TrainingControl} from "./TrainingControl.tsx";
 import {InferenceControl} from "./InferenceControl.tsx";
 import {useSimCarStore} from "../../stores/simCarStore.ts";
 import {getContinuousActionFromDiscreteActions, SIM_KEY_TO_ACTION} from "./actionMapping.ts";
+import {showToast} from "../../lib/toast.ts";
 
 const SEND_INTERVAL = 50 // 发送控制指令间隔(ms)
 
@@ -77,10 +78,8 @@ const SimPage = () => {
             error?: string
         }) => {
             setCollectedCount(data.count)
-            if (data.exported) {
-                // alert(`数据已导出到: ${data.output_path}`)
-            } else if (data.error) {
-                alert(`导出失败: ${data.error}`)
+            if (data.error) {
+                showToast.error(`导出失败: ${data.error}`)
             }
         })
 
@@ -122,10 +121,8 @@ const SimPage = () => {
         }) => {
             setIsRecording(false)
             setCollectedCount(data.frame_count)
-            if (data.exported) {
-                // alert(`Episode ${data.episode_id} 数据已导出到: ${data.output_path}`)
-            } else if (data.error) {
-                alert(`导出失败: ${data.error}`)
+            if (data.error) {
+                showToast.error(`导出失败: ${data.error}`)
             }
         })
 
@@ -136,10 +133,8 @@ const SimPage = () => {
             output_path?: string;
             error?: string
         }) => {
-            if (data.output_path) {
-                // alert(`Episode ${data.episode_id} 已保存到: ${data.output_path}`)
-            } else if (data.error) {
-                alert(`保存失败: ${data.error}`)
+            if (data.error) {
+                showToast.error(`保存失败: ${data.error}`)
             }
         })
 
@@ -248,10 +243,10 @@ const SimPage = () => {
                 resume_from: resumeTraining ? 'output/train/model.pt' : undefined,
             })
             if (!result.success) {
-                alert(result.message)
+                showToast.error(result.message)
             }
         } catch {
-            alert('启动训练失败')
+            showToast.error('启动训练失败')
         }
     }
 
@@ -259,7 +254,7 @@ const SimPage = () => {
         try {
             await stopTraining()
         } catch {
-            alert('停止训练失败')
+            showToast.error('停止训练失败')
         }
     }
 
@@ -268,13 +263,13 @@ const SimPage = () => {
             const result = await loadTrainedModel()
             if (result.success) {
                 setIsModelLoaded(true)
-                alert('模型加载成功')
+                showToast.success('模型加载成功')
             } else {
-                alert('模型加载失败: ' + result.message)
+                showToast.error('模型加载失败: ' + result.message)
             }
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e)
-            alert('加载模型失败: ' + msg)
+            showToast.error('加载模型失败: ' + msg)
         }
     }
 
@@ -312,21 +307,21 @@ const SimPage = () => {
 
     const handleInference = async () => {
         if (!isModelLoaded) {
-            alert('请先加载模型')
+            showToast.warning('请先加载模型')
             return
         }
         setIsInferring(true)
         try {
             await doInference()
         } catch {
-            alert('推理失败')
+            showToast.error('推理失败')
         }
         setIsInferring(false)
     }
 
     const handleAutoInference = async () => {
         if (!isModelLoaded) {
-            alert('请先加载模型')
+            showToast.warning('请先加载模型')
             return
         }
         if (autoInference) {
