@@ -46,25 +46,8 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
 
     return (
         <div className="flex flex-col h-full gap-3 min-h-0 overflow-hidden">
-            {/* 自定义滚动条样式 */}
-            <style>{`
-                .panel-scrollbar::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .panel-scrollbar::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                .panel-scrollbar::-webkit-scrollbar-thumb {
-                    background-color: rgba(156, 163, 175, 0.4);
-                    border-radius: 3px;
-                }
-                .panel-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background-color: rgba(156, 163, 175, 0.6);
-                }
-            `}</style>
-
             {/* 小车控制模块 - 固定高度，可滚动 */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 overflow-y-auto shrink-0 panel-scrollbar" style={{maxHeight: '55%'}}>
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 overflow-y-auto shrink-0 custom-scrollbar" style={{maxHeight: '55%'}}>
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
                         <span className="w-2 h-2 bg-blue-500 rounded-full"/>

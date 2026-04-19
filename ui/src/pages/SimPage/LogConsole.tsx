@@ -96,23 +96,6 @@ export const LogConsole = ({className = ""}: LogConsoleProps) => {
 
     return (
         <div className={`flex flex-col bg-gray-900 border-2 border-gray-700 rounded-lg overflow-hidden ${className}`}>
-            {/* 自定义滚动条样式 */}
-            <style>{`
-                .log-scrollbar::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .log-scrollbar::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                .log-scrollbar::-webkit-scrollbar-thumb {
-                    background-color: rgba(156, 163, 175, 0.4);
-                    border-radius: 3px;
-                }
-                .log-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background-color: rgba(156, 163, 175, 0.6);
-                }
-            `}</style>
-
             {/* 工具栏 */}
             <div className="flex items-center justify-between bg-gray-800 px-3 py-2 border-b border-gray-700">
                 <div className="flex items-center gap-2">
@@ -149,7 +132,7 @@ export const LogConsole = ({className = ""}: LogConsoleProps) => {
             <div
                 ref={logContainerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto font-mono text-xs p-2 space-y-0.5 log-scrollbar"
+                className="flex-1 overflow-y-auto font-mono text-xs p-2 space-y-0.5 custom-scrollbar"
             >
                 {logs.length === 0 ? (
                     <div className="text-gray-600 text-center py-4">
