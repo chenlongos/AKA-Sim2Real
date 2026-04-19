@@ -1,75 +1,87 @@
-# React + TypeScript + Vite
+# AKA-Sim2Real Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AKA-Sim2Real 系统的前端，基于 React + TypeScript + Vite。
 
-Currently, two official plugins are available:
+## 技术栈
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **框架**: React 19 + TypeScript
+- **路由**: React Router DOM 7
+- **状态管理**: Zustand
+- **样式**: Tailwind CSS 4
+- **HTTP 客户端**: Ky
+- **实时通信**: Socket.IO Client
+- **构建工具**: Vite 7
 
-## React Compiler
+## 快速开始
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# 安装依赖
+npm install
+```
+```shell
+# 启动开发服务器
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```shell
+# 构建生产版本
+npm run build
 ```
+
+前端运行在 **http://localhost:5173**，会自动代理 API 请求到后端 `http://localhost:8000`。
+
+## 页面
+
+| 路由 | 页面 | 说明 |
+|------|------|------|
+| `/` | SimPage | 模拟器视角，用于数据采集与推理 |
+| `/real` | RealPage | 真实小车控制接口 |
+
+## 目录结构
+
+```
+src/
+├── main.tsx              # 应用入口
+├── App.tsx               # 根组件，路由配置
+├── index.css             # Tailwind 入口
+├── api/
+│   ├── api.ts            # REST API 客户端
+│   ├── socket.ts         # Socket.IO 客户端工厂
+│   └── realCar.ts        # 真实小车 HTTP API
+├── models/
+│   └── types.ts          # 共享 TypeScript 类型
+├── stores/
+│   └── simCarStore.ts    # Zustand 状态管理
+└── pages/
+    ├── SimPage/          # 模拟器页面
+    ├── RealPage/         # 真实小车页面
+    └── NotFound.tsx      # 404 页面
+```
+
+## Socket.IO 命名空间
+
+| 命名空间 | 用途 |
+|----------|------|
+| `/sim` | 模拟器状态同步 |
+| `/real` | 真实小车控制 |
+
+## 键盘控制（SimPage）
+
+| 按键 | 动作 |
+|------|------|
+| W / ↑ | 前进 |
+| S / ↓ | 后退 |
+| A / ← | 左转 |
+| D / → | 右转 |
+| Q | 左前 |
+| E | 右前 |
+| Z | 左后 |
+| C | 右后 |
+| Space | 停止 |
+
+## API 代理
+
+Vite 开发服务器配置了以下代理：
+
+- `/api` → `http://localhost:8000/api`
+- `/socket.io` → `http://localhost:8000/socket.io` (WebSocket)
