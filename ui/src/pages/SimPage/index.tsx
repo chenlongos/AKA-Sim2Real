@@ -180,7 +180,7 @@ const SimPage = () => {
             unsubscribeTrainingProgress()
             resetSimCarState()
         }
-    }, [resetSimCarState, setCarState])
+    }, [setCarState, resetSimCarState])
 
     const sendCommand = (action: [number, number]) => {
         sendActionVector(simSocket, action)
@@ -278,7 +278,7 @@ const SimPage = () => {
         }
     }
 
-    const doInference = async () => {
+    const doInference = useCallback(async () => {
         // 真实小车模式：状态输入是左右轮速度 [vel_left, vel_right]
         const state: [number, number] = [carState.vel_left, carState.vel_right]
         const imageBase64 = firstPersonViewRef.current?.getImageData()
@@ -308,7 +308,7 @@ const SimPage = () => {
         } else if (!result.success) {
             throw new Error(result.error || '推理失败')
         }
-    }
+    }, [carState.vel_left, carState.vel_right])
 
     const handleInference = async () => {
         if (!isModelLoaded) {
@@ -445,7 +445,7 @@ const SimPage = () => {
 
         rafId = window.requestAnimationFrame(loop)
         return () => window.cancelAnimationFrame(rafId)
-    }, [getCurrentActions])
+    }, [getCurrentActionVector, getCurrentActions])
 
     return (
         <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
