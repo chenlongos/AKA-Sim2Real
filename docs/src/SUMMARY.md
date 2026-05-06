@@ -17,3 +17,5 @@
   - [安装](MuJoCo/install.md)
   - [No.1 第一个仿真](MuJoCo/No_1.md)
   - [No.2 交互式仿真与鼠标控制](MuJoCo/No_2.md)
+  - [No.3 单摆控制仿真](MuJoCo/No_3.md)
+  - [No.4 双摆控制仿真](MuJoCo/No_4.md)
