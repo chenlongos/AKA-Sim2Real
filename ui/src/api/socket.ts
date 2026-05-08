@@ -25,6 +25,7 @@ export function createSocket(namespace: string = "/"): Socket {
 // 创建 Sim 和 Real 页面专用的 socket 实例
 export const simSocket = createSocket("/sim");
 export const realSocket = createSocket("/real");
+export const mujocoSocket = createSocket("/mujoco");
 
 // 为了向后兼容，保留默认的全局 socket（使用 /sim 命名空间）
 export const socket = simSocket;
@@ -127,4 +128,29 @@ export const onTrainingProgress = (socket: Socket, callback: (data: {
 }) => void) => {
     socket.on('training_progress', callback);
     return () => socket.off('training_progress', callback);
+};
+
+// ============ MuJoCo Socket 函数 ============
+
+export const sendMujocoAction = (socket: Socket, yaw: number, pitch: number, roll: number) => {
+    socket.emit('mujoco_action', { yaw, pitch, roll });
+}
+
+export const sendMujocoCarAction = (socket: Socket, velLeft: number, velRight: number) => {
+    socket.emit('mujoco_car_action', { vel_left: velLeft, vel_right: velRight });
+}
+
+export const requestMujocoState = (socket: Socket) => {
+    socket.emit('get_mujoco_state');
+}
+
+export const onMujocoStateUpdate = (
+    socket: Socket,
+    callback: (data: { topdown: string; firstperson: string; state: unknown }) => void
+) => {
+    socket.on('mujoco_state_update', callback);
+    const cleanup = () => {
+        socket.off('mujoco_state_update', callback);
+    };
+    return cleanup;
 };

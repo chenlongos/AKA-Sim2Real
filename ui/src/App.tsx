@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import SimPage from "./pages/SimPage";
 import RealPage from "./pages/RealPage";
+import MujocoPage from "./pages/MujocoPage";
 import NotFound from "./pages/NotFound.tsx";
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
         <Routes>
           <Route path="/" element={<SimPage />} />
           <Route path="/real" element={<RealPage />} />
+          <Route path="/mujoco" element={<MujocoPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </div>
