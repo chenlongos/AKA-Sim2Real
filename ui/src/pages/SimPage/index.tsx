@@ -47,8 +47,6 @@ const SimPage = () => {
     const autoInferenceRef = useRef(false)  // ref 版本用于动画循环，避免闭包竞争
     const inferenceTimerRef = useRef<number | null>(null)
     const resetSimCarState = useSimCarStore((state) => state.resetCarState)
-    const tick = useSimCarStore((state) => state.tick)
-    const applyFriction = useSimCarStore((state) => state.applyFriction)
 
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
@@ -290,15 +288,15 @@ const SimPage = () => {
                 return
             }
 
-            // 应用推理动作到本地状态
-            tick([velLeftTarget, velRightTarget])
+            // 设置目标速度，RAF 循环会持续应用物理
+            useSimCarStore.getState().setTargetVelocity(velLeftTarget, velRightTarget)
 
             const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}]`
             setInferenceResult([velStr])
         } else if (!result.success) {
             throw new Error(result.error || '推理失败')
         }
-    }, [tick])
+    }, [])
 
     const handleInference = async () => {
         if (!isModelLoaded) {
@@ -412,10 +410,12 @@ const SimPage = () => {
         let rafId: number
 
         const loop = (currentTime: number) => {
-            // 自动推理模式下只更新本地状态
+            // 每帧应用物理（通过 store 直接获取最新状态）
+            const store = useSimCarStore.getState()
+            store.applyPhysics()
+
+            // 自动推理模式下只发推理请求
             if (autoInferenceRef.current) {
-                // 每帧都应用摩擦力减速
-                applyFriction()
                 rafId = window.requestAnimationFrame(loop)
                 return
             }
@@ -427,14 +427,11 @@ const SimPage = () => {
                     || actionVector[1] !== lastActionVector[1]
 
                 if (changed || actionVector[0] !== 0 || actionVector[1] !== 0) {
-                    // 更新本地状态
-                    tick(actionVector)
+                    // 更新目标速度
+                    store.setTargetVelocity(actionVector[0], actionVector[1])
                     // 发送命令到后端（用于日志和推理）
                     sendCommand(actionVector)
                     lastSentActionVectorRef.current = actionVector
-                } else if (carState.vel_left !== 0 || carState.vel_right !== 0) {
-                    // 无新动作但有速度，应用摩擦力
-                    applyFriction()
                 }
                 lastSendTime = currentTime
             }
@@ -443,7 +440,7 @@ const SimPage = () => {
 
         rafId = window.requestAnimationFrame(loop)
         return () => window.cancelAnimationFrame(rafId)
-    }, [getCurrentActionVector, getCurrentActions, carState.vel_left, carState.vel_right, tick, applyFriction])
+    }, [getCurrentActionVector, getCurrentActions, sendCommand])
 
     return (
         <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">

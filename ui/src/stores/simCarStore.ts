@@ -4,6 +4,7 @@ import type { CarState } from "../models/types.ts";
 // 运动学常量 (vel_left/vel_right 单位是 m/s)
 const ANGULAR_SCALE = 0.01;
 const FRICTION = 0.98;
+const MS_TO_PIXELS = 100;  // m/s 转 像素/帧
 const MAP_WIDTH = 800;
 const MAP_HEIGHT = 600;
 
@@ -19,8 +20,8 @@ interface SimCarStore {
     carState: CarState;
     setCarState: (carState: CarState) => void;
     resetCarState: () => void;
-    tick: (action: [number, number]) => void;
-    applyFriction: () => void;
+    setTargetVelocity: (velLeft: number, velRight: number) => void;
+    applyPhysics: () => void;
     getCarState: () => CarState;
 }
 
@@ -30,65 +31,28 @@ export const useSimCarStore = create<SimCarStore>((set, get) => ({
     resetCarState: () => set({ carState: initialSimCarState }),
     getCarState: () => get().carState,
 
-    tick: (action: [number, number]) => {
-        const state = get().carState;
-
-        // vel_left/vel_right 存的是 m/s 单位，和训练数据一致
-        // 用于发送给后端推理，以及采集时记录状态
-        const velLeftMs = action[0];
-        const velRightMs = action[1];
-
-        // 限制速度范围 (m/s)
-        const clampedVelLeftMs = Math.max(-0.2, Math.min(0.2, velLeftMs));
-        const clampedVelRightMs = Math.max(-0.2, Math.min(0.2, velRightMs));
-
-        // 运动学计算时转换为像素/帧
-        const velLeftPx = clampedVelLeftMs * 100;
-        const velRightPx = clampedVelRightMs * 100;
-
-        // 差速轮运动学
-        const linearVel = (velLeftPx + velRightPx) / 2;
-        const angularVel = (velLeftPx - velRightPx) * ANGULAR_SCALE;
-
-        let x = state.x + Math.cos(state.angle) * linearVel;
-        let y = state.y + Math.sin(state.angle) * linearVel;
-        let angle = state.angle + angularVel;
-
-        // 角度归一化到 [-π, π]
-        angle = Math.atan2(Math.sin(angle), Math.cos(angle));
-
-        // 边界检测
-        x = Math.max(20, Math.min(MAP_WIDTH - 20, x));
-        y = Math.max(20, Math.min(MAP_HEIGHT - 20, y));
-
-        set({
+    // 设置目标速度（m/s），用于推理结果
+    setTargetVelocity: (velLeft: number, velRight: number) => {
+        const clampedVelLeft = Math.max(-0.2, Math.min(0.2, velLeft));
+        const clampedVelRight = Math.max(-0.2, Math.min(0.2, velRight));
+        set((state) => ({
             carState: {
-                ...state,
-                x,
-                y,
-                angle,
-                vel_left: clampedVelLeftMs,
-                vel_right: clampedVelRightMs,
+                ...state.carState,
+                vel_left: clampedVelLeft,
+                vel_right: clampedVelRight,
             },
-        });
+        }));
     },
 
-    applyFriction: () => {
+    // 应用物理：一帧的运动学 + 摩擦力
+    applyPhysics: () => {
         const state = get().carState;
+        const velLeftMs = state.vel_left;
+        const velRightMs = state.vel_right;
 
-        // vel_left/vel_right 存的是 m/s
-        let velLeftMs = state.vel_left * FRICTION;
-        let velRightMs = state.vel_right * FRICTION;
-
-        // 停止时清零
-        if (Math.abs(velLeftMs) < 0.001 && Math.abs(velRightMs) < 0.001) {
-            velLeftMs = 0;
-            velRightMs = 0;
-        }
-
-        // 运动学计算时转换为像素/帧
-        const velLeftPx = velLeftMs * 100;
-        const velRightPx = velRightMs * 100;
+        // 转换为像素/帧
+        const velLeftPx = velLeftMs * MS_TO_PIXELS;
+        const velRightPx = velRightMs * MS_TO_PIXELS;
 
         // 差速轮运动学
         const linearVel = (velLeftPx + velRightPx) / 2;
@@ -97,6 +61,16 @@ export const useSimCarStore = create<SimCarStore>((set, get) => ({
         let x = state.x + Math.cos(state.angle) * linearVel;
         let y = state.y + Math.sin(state.angle) * linearVel;
         let angle = state.angle + angularVel;
+
+        // 应用摩擦力
+        let newVelLeftMs = velLeftMs * FRICTION;
+        let newVelRightMs = velRightMs * FRICTION;
+
+        // 停止时清零
+        if (Math.abs(newVelLeftMs) < 0.001 && Math.abs(newVelRightMs) < 0.001) {
+            newVelLeftMs = 0;
+            newVelRightMs = 0;
+        }
 
         // 角度归一化到 [-π, π]
         angle = Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -111,8 +85,8 @@ export const useSimCarStore = create<SimCarStore>((set, get) => ({
                 x,
                 y,
                 angle,
-                vel_left: velLeftMs,
-                vel_right: velRightMs,
+                vel_left: newVelLeftMs,
+                vel_right: newVelRightMs,
             },
         });
     },
