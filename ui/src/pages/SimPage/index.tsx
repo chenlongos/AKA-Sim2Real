@@ -2,8 +2,6 @@ import {useCallback, useEffect, useRef, useState} from "react"
 import {
     simSocket,
     sendActionVector,
-    resetCar,
-    getCarState,
     setEpisode,
     getEpisodes,
     deleteEpisode,
@@ -16,7 +14,7 @@ import {
     onTrainingProgress,
 } from "../../api/socket.ts";
 import {startTraining, stopTraining, loadTrainedModel} from "../../api/api";
-import type {CarState, Obstacle} from "../../models/types.ts";
+import type {Obstacle} from "../../models/types.ts";
 import {TopDownView} from "./TopDownView.tsx";
 import {RightPanel, type RightPanelRef} from "./RightPanel.tsx";
 import {TrainingControl} from "./TrainingControl.tsx";
@@ -48,25 +46,19 @@ const SimPage = () => {
     const [autoInference, setAutoInference] = useState(false)
     const autoInferenceRef = useRef(false)  // ref 版本用于动画循环，避免闭包竞争
     const inferenceTimerRef = useRef<number | null>(null)
-    const setCarState = useSimCarStore((state) => state.setCarState)
     const resetSimCarState = useSimCarStore((state) => state.resetCarState)
+    const tick = useSimCarStore((state) => state.tick)
+    const applyFriction = useSimCarStore((state) => state.applyFriction)
 
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
 
-    // 监听后端车辆状态更新
+    // 监听后端事件
     useEffect(() => {
         // 监听连接
         simSocket.on("connected", (data) => {
             console.log("Connected:", data)
-            // 连接后获取初始状态
-            getCarState(simSocket)
-        })
-
-        // 监听车辆状态更新
-        simSocket.on("car_state_update", (state: CarState) => {
-            setCarState(state)
         })
 
         // 监听采集计数更新
@@ -161,7 +153,6 @@ const SimPage = () => {
 
         return () => {
             simSocket.off("connected")
-            simSocket.off("car_state_update")
             simSocket.off("collection_count")
             simSocket.off("training_progress")
             simSocket.off("episode_info")
@@ -174,7 +165,7 @@ const SimPage = () => {
             unsubscribeTrainingProgress()
             resetSimCarState()
         }
-    }, [setCarState, resetSimCarState])
+    }, [resetSimCarState])
 
     const sendCommand = (action: [number, number]) => {
         sendActionVector(simSocket, action)
@@ -273,8 +264,10 @@ const SimPage = () => {
     }
 
     const doInference = useCallback(async () => {
+        // 获取最新的 carState（避免闭包问题）
+        const currentCarState = useSimCarStore.getState().carState
         // 真实小车模式：状态输入是左右轮速度 [vel_left, vel_right]
-        const state: [number, number] = [carState.vel_left, carState.vel_right]
+        const state: [number, number] = [currentCarState.vel_left, currentCarState.vel_right]
         const imageBase64 = firstPersonViewRef.current?.getImageData()
         const result = await runInferenceWithSocket(simSocket, state, imageBase64)
         if (result.success && result.action) {
@@ -297,12 +290,15 @@ const SimPage = () => {
                 return
             }
 
+            // 应用推理动作到本地状态
+            tick([velLeftTarget, velRightTarget])
+
             const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}]`
             setInferenceResult([velStr])
         } else if (!result.success) {
             throw new Error(result.error || '推理失败')
         }
-    }, [carState.vel_left, carState.vel_right])
+    }, [tick])
 
     const handleInference = async () => {
         if (!isModelLoaded) {
@@ -410,14 +406,16 @@ const SimPage = () => {
         }
     }, [])
 
-    // 定时发送动作
+    // 定时发送动作并更新本地状态
     useEffect(() => {
         let lastSendTime = 0;
         let rafId: number
 
         const loop = (currentTime: number) => {
-            // 自动推理模式下完全跳过，不发任何命令
+            // 自动推理模式下只更新本地状态
             if (autoInferenceRef.current) {
+                // 每帧都应用摩擦力减速
+                applyFriction()
                 rafId = window.requestAnimationFrame(loop)
                 return
             }
@@ -429,8 +427,14 @@ const SimPage = () => {
                     || actionVector[1] !== lastActionVector[1]
 
                 if (changed || actionVector[0] !== 0 || actionVector[1] !== 0) {
+                    // 更新本地状态
+                    tick(actionVector)
+                    // 发送命令到后端（用于日志和推理）
                     sendCommand(actionVector)
                     lastSentActionVectorRef.current = actionVector
+                } else if (carState.vel_left !== 0 || carState.vel_right !== 0) {
+                    // 无新动作但有速度，应用摩擦力
+                    applyFriction()
                 }
                 lastSendTime = currentTime
             }
@@ -439,7 +443,7 @@ const SimPage = () => {
 
         rafId = window.requestAnimationFrame(loop)
         return () => window.cancelAnimationFrame(rafId)
-    }, [getCurrentActionVector, getCurrentActions])
+    }, [getCurrentActionVector, getCurrentActions, carState.vel_left, carState.vel_right, tick, applyFriction])
 
     return (
         <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
@@ -485,7 +489,7 @@ const SimPage = () => {
                         onSetEpisode={handleSetEpisode}
                         onEndEpisode={handleEndEpisode}
                         onStartEpisode={handleStartEpisode}
-                        onResetCar={() => resetCar(simSocket)}
+                        onResetCar={() => { resetSimCarState(); sendCommand([0, 0]); }}
                     />
 
                     <InferenceControl
@@ -505,7 +509,6 @@ const SimPage = () => {
                         obstacles={obstacles}
                         onObstaclesChange={setObstacles}
                         collectedCount={collectedCount}
-                        resetCar={() => resetCar(simSocket)}
                         sendCommand={sendCommand}
                     />
                 </div>

@@ -13,7 +13,6 @@ class ControlEventsMixin:
         log_broadcast.add_connected_sid(sid, namespace=self.namespace)
         logger.info(f"客户端连接: {sid}, namespace={self.namespace}, auth={auth}")
         await self.emit("connected", {"sid": sid})
-        await self.emit("car_state_update", self.sim_controller.get_car_state())
 
     async def on_disconnect(self, sid: str):
         self.runtime.connected_clients.discard(sid)
@@ -25,10 +24,3 @@ class ControlEventsMixin:
     async def on_action(self, sid: str, action: list[float]):
         logger.info(f"收到控制动作: action={action}")
         self.sim_controller.set_action(action)
-
-    async def on_reset_car_state(self, sid: str):
-        logger.info("收到复位场景请求")
-        await self.emit("car_state_update", self.sim_controller.reset_car_state())
-
-    async def on_get_car_state(self, sid: str):
-        await self.emit("car_state_update", self.sim_controller.get_car_state())

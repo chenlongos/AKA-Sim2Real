@@ -19,7 +19,6 @@ class InferenceEventsMixin:
                 logger.info(f"image length: {len(image)}")
 
             action = self.sim_controller.infer(inference_state, image)
-            await self.emit("car_state_update", self.sim_controller.get_car_state())
             await self.emit("act_infer_result", {"success": True, "action": action})
         except Exception as exc:
             logger.error(f"ACT 推理失败: {exc}")

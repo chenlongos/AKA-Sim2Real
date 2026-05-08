@@ -140,20 +140,21 @@ class EpisodeService:
             return None
 
         capture_timestamp = timestamp if timestamp is not None else int(time.time() * 1000)
-        car_state_copy = state.car_state.copy()
+
+        # 从前端传来的状态
+        vel_left = 0
+        vel_right = 0
         if isinstance(state_payload, dict):
-            vel_left = state_payload.get("vel_left")
-            vel_right = state_payload.get("vel_right")
-            if isinstance(vel_left, (int, float)):
-                car_state_copy["vel_left"] = vel_left
-            if isinstance(vel_right, (int, float)):
-                car_state_copy["vel_right"] = vel_right
+            if isinstance(state_payload.get("vel_left"), (int, float)):
+                vel_left = state_payload["vel_left"]
+            if isinstance(state_payload.get("vel_right"), (int, float)):
+                vel_right = state_payload["vel_right"]
 
         sample = {
             "image": image_data,
             "state": {
-                "vel_left": car_state_copy.get("vel_left", 0),
-                "vel_right": car_state_copy.get("vel_right", 0),
+                "vel_left": vel_left,
+                "vel_right": vel_right,
             },
             "capture_timestamp_ms": capture_timestamp,
         }

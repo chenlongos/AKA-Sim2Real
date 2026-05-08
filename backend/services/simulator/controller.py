@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from backend.models import state
 from backend.sio_handlers.core.runtime import SioRuntimeState
 
 logger = logging.getLogger(__name__)
@@ -46,44 +45,14 @@ class SimController:
             logger.info(f"[on_action] 用户控制，退出推理模式: {action}")
 
         if not action:
-            state.car_state["vel_left"] = 0
-            state.car_state["vel_right"] = 0
             self.runtime.current_action_vector = None
-
-    def reset_car_state(self) -> dict:
-        logger.info("重置车辆状态")
-        self.reset_act_inference_context()
-        state.reset_car_state()
-        return state.car_state
-
-    def get_car_state(self) -> dict:
-        return state.car_state
 
     def infer(self, inference_state: list[float], image: Any) -> Any:
         action = self.runtime.act_runtime.infer(inference_state, image)
-        vel_left, vel_right = extract_velocity_from_action(action)
 
         self.runtime.current_action_vector = None
         self.runtime.inference_mode = True
-        state.update_car_state([vel_left, vel_right])
 
         logger.info(f"推理结果: {action[0]}")
-        logger.info(f"[on_act_infer] 已应用推理速度: vel_left={vel_left:.4f}, vel_right={vel_right:.4f}")
+        logger.info(f"[on_act_infer] 进入推理模式")
         return action
-
-    def tick(self) -> bool:
-        car_state_before = dict(state.car_state)
-
-        if self.runtime.current_action_vector is not None:
-            state.update_car_state(list(self.runtime.current_action_vector))
-            self.runtime.inference_mode = False
-        elif self.runtime.inference_mode:
-            vel = [state.car_state["vel_left"], state.car_state["vel_right"]]
-            state.update_car_state(vel)
-        else:
-            state.apply_friction()
-
-        return state.car_state != car_state_before
-
-    def is_moving(self) -> bool:
-        return abs(state.car_state["vel_left"]) > 1e-3 or abs(state.car_state["vel_right"]) > 1e-3

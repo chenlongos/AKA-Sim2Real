@@ -14,7 +14,6 @@ class EpisodeEventsMixin:
         logger.info(f"收到开始采集请求: episode_id={episode_id}, task_name={task_name}")
 
         result = self.episode_service.start_episode(episode_id, task_name)
-        await self.emit("car_state_update", self.sim_controller.get_car_state())
         await self.emit("episode_started", result)
 
     async def on_end_episode(self, sid: str, payload: dict):

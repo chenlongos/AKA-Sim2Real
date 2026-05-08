@@ -6,7 +6,6 @@ interface TopDownViewProps {
     obstacles: Obstacle[];
     onObstaclesChange: (obstacles: Obstacle[]) => void;
     collectedCount: number;
-    resetCar: () => void;
     sendCommand: (action: [number, number]) => void;
 }
 
@@ -84,13 +83,19 @@ export const TopDownView = ({
     obstacles,
     onObstaclesChange,
     collectedCount,
-    resetCar,
     sendCommand
 }: TopDownViewProps) => {
     const carState = useSimCarStore((state) => state.carState)
+    const resetCarState = useSimCarStore((state) => state.resetCarState)
+    const tick = useSimCarStore((state) => state.tick)
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
     const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
     const [dragOffset, setDragOffset] = useState<{x: number, y: number}>({x: 0, y: 0})
+
+    const handleResetCar = () => {
+        resetCarState()
+        sendCommand([0, 0])
+    }
 
     // 检查点是否在障碍物内
     const isPointInObstacle = (px: number, py: number, obs: Obstacle): boolean => {
@@ -189,23 +194,23 @@ export const TopDownView = ({
                 />
                 <div className="absolute top-2 left-2 bg-white/85 p-1.5 rounded text-xs">
                     使用 WASD 或 方向键 移动<br/>
-                    实时同步后端状态
+                    每个用户独立控制
                 </div>
             </div>
             <div className="flex gap-2.5 flex-wrap justify-center items-center">
-                <button onClick={() => sendCommand([0.2, 0.2])}
+                <button onClick={() => tick([0.02, 0.02])}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 前进
                 </button>
-                <button onClick={() => sendCommand([-0.2, 0.2])}
+                <button onClick={() => tick([-0.02, 0.02])}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 左转
                 </button>
-                <button onClick={() => sendCommand([0.2, -0.2])}
+                <button onClick={() => tick([0.02, -0.02])}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 右转
                 </button>
-                <button onClick={() => sendCommand([-0.2, -0.2])}
+                <button onClick={() => tick([-0.02, -0.02])}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 后退
                 </button>
-                <button onClick={() => resetCar()}
+                <button onClick={handleResetCar}
                         className="px-3 py-1 bg-green-500 text-sm text-white rounded hover:bg-green-600">复位
                 </button>
                 <span className="text-xs text-gray-600 ml-2">帧数: {collectedCount}</span>
