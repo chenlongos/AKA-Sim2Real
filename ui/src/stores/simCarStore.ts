@@ -4,7 +4,6 @@ import type { CarState } from "../models/types.ts";
 
 // 运动学常量 (vel_left/vel_right 单位是 m/s)
 const ANGULAR_SCALE = 0.01;
-const FRICTION = 0.98;
 const MS_TO_PIXELS = 100;  // m/s 转 像素/帧
 const MAP_WIDTH = 800;
 const MAP_HEIGHT = 600;
@@ -71,15 +70,9 @@ export const useSimCarStore = create<SimCarStore>()(
                 let y = state.y + Math.sin(state.angle) * linearVel;
                 let angle = state.angle + angularVel;
 
-                // 应用摩擦力
-                let newVelLeftMs = velLeftMs * FRICTION;
-                let newVelRightMs = velRightMs * FRICTION;
-
-                // 停止时清零
-                if (Math.abs(newVelLeftMs) < 0.001 && Math.abs(newVelRightMs) < 0.001) {
-                    newVelLeftMs = 0;
-                    newVelRightMs = 0;
-                }
+                // 摩擦力已禁用，速度保持不变
+                const finalVelLeft = velLeftMs;
+                const finalVelRight = velRightMs;
 
                 // 角度归一化到 [-π, π]
                 angle = Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -94,8 +87,8 @@ export const useSimCarStore = create<SimCarStore>()(
                         x,
                         y,
                         angle,
-                        vel_left: newVelLeftMs,
-                        vel_right: newVelRightMs,
+                        vel_left: finalVelLeft,
+                        vel_right: finalVelRight,
                     },
                 });
             },
