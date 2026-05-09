@@ -1,0 +1,85 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          pip install -r backend/requirements.txt
+
+      - name: Build frontend
+        run: |
+          cd ui
+          npm ci
+          npm run build
+
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy-package
+          cp -r backend deploy-package/
+          cp -r ui/dist deploy-package/
+          cp -r policies deploy-package/
+          cp deploy/nginx.conf deploy-package/
+
+      - name: Deploy to server
+        uses: appleboy/scp-action@v0.1.1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "deploy-package/*"
+          target: "/opt/aka-sim/"
+          strip_components: 1
+
+      - name: Execute deployment commands
+        uses: appleboy/ssh-action@v0.1.1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            # Install nginx if not exists
+            sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx
+
+            # Setup Python venv
+            python3 -m venv /opt/aka-sim/venv
+
+            # Install backend dependencies
+            cd /opt/aka-sim/backend
+            source /opt/aka-sim/venv/bin/activate
+            pip install -r requirements.txt
+
+            # Restart backend
+            pkill -f "uvicorn main:app" || true
+            nohup uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 > /opt/aka-sim/app.log 2>&1 &
+
+            # Setup nginx
+            sudo cp /opt/aka-sim/nginx.conf /etc/nginx/sites-available/aka-sim
+            sudo ln -sf /etc/nginx/sites-available/aka-sim /etc/nginx/sites-enabled/
+            sudo rm -f /etc/nginx/sites-enabled/default
+            sudo nginx -t && sudo systemctl reload nginx
+
+            echo "Deployment completed"
