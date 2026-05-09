@@ -439,7 +439,7 @@ const RealPage = () => {
                 resume_from: resumeTraining ? PATHS.MODEL : undefined,
             })
             if (!result.success) {
-                showToast.error(result.message)
+                showToast.error(result.message || '训练失败')
             }
         } catch {
             showToast.error('启动训练失败')

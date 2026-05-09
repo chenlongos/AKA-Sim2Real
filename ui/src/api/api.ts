@@ -72,7 +72,11 @@ export interface LoadModelResponse {
   detail?: string;
 }
 
-export const loadTrainedModel = (dataDir?: string) => {
-  const url = dataDir ? `act/load_trained?data_dir=${encodeURIComponent(dataDir)}` : 'act/load_trained';
+export const loadTrainedModel = (dataDir?: string, modelPath?: string) => {
+  let url = 'act/load_trained';
+  const params: string[] = [];
+  if (dataDir) params.push(`data_dir=${encodeURIComponent(dataDir)}`);
+  if (modelPath) params.push(`model_path=${encodeURIComponent(modelPath)}`);
+  if (params.length > 0) url += '?' + params.join('&');
   return api.post(url).json<LoadModelResponse>();
 };

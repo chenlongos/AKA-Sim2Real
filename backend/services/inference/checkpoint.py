@@ -51,7 +51,11 @@ def resolve_default_model_path() -> Path:
 
 
 def load_checkpoint_bundle(model_path: Optional[str], device: str) -> ACTCheckpointBundle:
-    path = Path(model_path) if model_path is not None else resolve_default_model_path()
+    project_root = Path(__file__).resolve().parents[3]
+    if model_path is not None:
+        path = Path(model_path) if Path(model_path).is_absolute() else project_root / model_path
+    else:
+        path = resolve_default_model_path()
     if not path.exists():
         raise FileNotFoundError(f"模型文件不存在: {path}")
 

@@ -22,7 +22,7 @@ import {InferenceControl} from "./InferenceControl.tsx";
 import {useSimCarStore} from "../../stores/simCarStore.ts";
 import {getContinuousActionFromDiscreteActions, SIM_KEY_TO_ACTION} from "./actionMapping.ts";
 import {showToast} from "../../lib/toast.ts";
-import {PATHS, SIMULATION, getDatasetPath} from "../../lib/constants.ts";
+import {SIMULATION, getDatasetPath, getTrainPath, getModelPath} from "../../lib/constants.ts";
 
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -225,14 +225,14 @@ const SimPage = () => {
             const userId = useSimCarStore.getState().userId
             const result = await startTraining({
                 data_dir: getDatasetPath(userId),
-                output_dir: PATHS.TRAIN_DIR,
+                output_dir: getTrainPath(userId),
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? PATHS.MODEL : undefined,
+                resume_from: resumeTraining ? getModelPath(userId) : undefined,
             })
             if (!result.success) {
-                showToast.error(result.message)
+                showToast.error(result.message || '训练失败')
             }
         } catch {
             showToast.error('启动训练失败')
@@ -251,7 +251,8 @@ const SimPage = () => {
         try {
             const userId = useSimCarStore.getState().userId
             const dataDir = getDatasetPath(userId)
-            const result = await loadTrainedModel(dataDir)
+            const modelPath = getModelPath(userId)
+            const result = await loadTrainedModel(dataDir, modelPath)
             if (result.success) {
                 setIsModelLoaded(true)
                 showToast.success('模型加载成功')

@@ -133,8 +133,7 @@ export const drawFirstPerson = (
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
     const {x, y, angle} = carState;
-    const {sky = DEFAULT_FIRST_PERSON_COLORS.sky, ground = DEFAULT_FIRST_PERSON_COLORS.ground} =
-        options;
+    const { sky, ground } = options.colors || DEFAULT_FIRST_PERSON_COLORS;
 
     // 天空和地面
     ctx.fillStyle = sky;
