@@ -20,11 +20,13 @@ interface SimCarStore {
     userId: string;
     currentEpisode: number;
     carState: CarState;
+    inferenceStats: { stateMin: number[]; stateMax: number[] } | null;
     setCarState: (carState: CarState) => void;
     resetCarState: () => void;
     setTargetVelocity: (velLeft: number, velRight: number) => void;
     applyPhysics: () => void;
     getCarState: () => CarState;
+    setInferenceStats: (stats: { stateMin: number[]; stateMax: number[] } | null) => void;
 }
 
 const generateUserId = () => {
@@ -37,9 +39,11 @@ export const useSimCarStore = create<SimCarStore>()(
             userId: generateUserId(),
             currentEpisode: 1,
             carState: initialSimCarState,
+            inferenceStats: null,
             setCarState: (carState) => set({ carState }),
             resetCarState: () => set({ carState: initialSimCarState }),
             getCarState: () => get().carState,
+            setInferenceStats: (stats) => set({ inferenceStats: stats }),
 
             setTargetVelocity: (velLeft: number, velRight: number) => {
                 const clampedVelLeft = Math.max(-0.2, Math.min(0.2, velLeft));

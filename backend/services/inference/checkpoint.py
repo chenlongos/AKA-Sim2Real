@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 
 @dataclass
 class ACTNormalizationStats:
-    state_mean: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
-    state_std: torch.Tensor = field(default_factory=lambda: torch.ones(2))
-    action_mean: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
-    action_std: torch.Tensor = field(default_factory=lambda: torch.ones(2))
+    state_min: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
+    state_max: torch.Tensor = field(default_factory=lambda: torch.ones(2))
+    action_min: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
+    action_max: torch.Tensor = field(default_factory=lambda: torch.ones(2))
 
 
 @dataclass
@@ -95,10 +95,10 @@ def load_stats(stats_dir: Optional[str]) -> ACTNormalizationStats:
         stats = json.load(f)
 
     return ACTNormalizationStats(
-        state_mean=torch.tensor(stats.get("observation.state", {}).get("mean", [0.0, 0.0]), dtype=torch.float32),
-        state_std=torch.tensor(stats.get("observation.state", {}).get("std", [1.0, 1.0]), dtype=torch.float32),
-        action_mean=torch.tensor(stats.get("action", {}).get("mean", [0.0, 0.0]), dtype=torch.float32),
-        action_std=torch.tensor(stats.get("action", {}).get("std", [1.0, 1.0]), dtype=torch.float32),
+        state_min=torch.tensor(stats.get("observation.state", {}).get("min", [0.0, 0.0]), dtype=torch.float32),
+        state_max=torch.tensor(stats.get("observation.state", {}).get("max", [1.0, 1.0]), dtype=torch.float32),
+        action_min=torch.tensor(stats.get("action", {}).get("min", [0.0, 0.0]), dtype=torch.float32),
+        action_max=torch.tensor(stats.get("action", {}).get("max", [1.0, 1.0]), dtype=torch.float32),
     )
 
 

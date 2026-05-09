@@ -29,9 +29,14 @@ async def load_trained_model(
     try:
         logger.info(f"收到加载模型请求: model_path={model_path}, data_dir={data_dir}")
         _act_runtime.load_model(model_path, stats_dir=data_dir)
+        stats = _act_runtime.get_stats()
         return {
             "success": True,
             "message": "模型加载成功",
+            "stats": {
+                "state_min": stats.state_min.tolist() if hasattr(stats.state_min, 'tolist') else list(stats.state_min),
+                "state_max": stats.state_max.tolist() if hasattr(stats.state_max, 'tolist') else list(stats.state_max),
+            } if stats else None,
         }
     except Exception as exc:
         logger.error(f"加载模型失败: {exc}")
