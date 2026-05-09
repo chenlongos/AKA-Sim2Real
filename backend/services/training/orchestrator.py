@@ -155,7 +155,7 @@ def _train_model_sync(
 
             logger.info(f"CVAE Latent: mu={latent_mu_mean.mean().item():.4f}, log_sigma={latent_log_sigma_mean.mean().item():.4f}")
 
-            final_path = output_path / "final_model.pt"
+            final_path = output_path / "model.pt"
             checkpoint = {
                 "model_state_dict": model.state_dict(),
                 "inference_latent_mu": latent_mu_mean,
