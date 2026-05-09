@@ -22,3 +22,5 @@ pytest>=8.0.0
 
 python-multipart
 einops
+
+mujoco

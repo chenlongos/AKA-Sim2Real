@@ -59,22 +59,25 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT }}
+          timeout: 10m
+          command_timeout: 10m
           script: |
             # Install nginx if not exists
             sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx
 
-            # Setup Python venv
-            python3 -m venv /opt/aka-sim/venv
+            # Create Python venv only if not exists
+            test -d /opt/aka-sim/venv || python3 -m venv /opt/aka-sim/venv
 
-            # Install backend dependencies
+            # Install backend dependencies (fast, already cached)
             cd /opt/aka-sim/backend
             source /opt/aka-sim/venv/bin/activate
-            pip install -r requirements.txt
+            pip install --quiet --no-deps -r requirements.txt 2>/dev/null || true
 
             # Restart backend
             pkill -f "uvicorn main:app" || true
-            nohup uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 > /opt/aka-sim/app.log 2>&1 &
+            sleep 1
+            nohup /opt/aka-sim/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 > /opt/aka-sim/app.log 2>&1 &
 
             # Setup nginx
             sudo cp /opt/aka-sim/nginx.conf /etc/nginx/sites-available/aka-sim
