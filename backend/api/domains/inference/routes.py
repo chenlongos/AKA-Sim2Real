@@ -4,7 +4,7 @@ AKA-Sim 后端 - 推理域 API
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from backend.services import inference as inference_service
 
@@ -21,11 +21,14 @@ def set_act_runtime(runtime):
 
 
 @router.post("/load_trained")
-async def load_trained_model(model_path: str = None):
+async def load_trained_model(
+    data_dir: str = Query(default=None),
+    model_path: str = Query(default=None),
+):
     """加载训练好的 ACT 模型"""
     try:
-        logger.info(f"收到加载模型请求: model_path={model_path}")
-        _act_runtime.load_model(model_path)
+        logger.info(f"收到加载模型请求: model_path={model_path}, data_dir={data_dir}")
+        _act_runtime.load_model(model_path, stats_dir=data_dir)
         return {
             "success": True,
             "message": "模型加载成功",

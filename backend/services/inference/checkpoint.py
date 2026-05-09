@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from typing import Optional, TYPE_CHECKING
 
 import torch
@@ -74,8 +77,13 @@ def load_checkpoint_bundle(model_path: Optional[str], device: str) -> ACTCheckpo
 
 def load_stats(stats_dir: Optional[str]) -> ACTNormalizationStats:
     project_root = Path(__file__).resolve().parents[3]
-    data_dir = Path(stats_dir) if stats_dir is not None else project_root / "output" / "dataset"
+    if stats_dir is not None:
+        # 如果是绝对路径直接用，否则相对于项目根目录
+        data_dir = Path(stats_dir) if Path(stats_dir).is_absolute() else project_root / stats_dir
+    else:
+        data_dir = project_root / "output" / "dataset"
     stats_path = data_dir / "meta" / "stats.json"
+    logger.info(f"[load_stats] stats_dir={stats_dir}, resolved data_dir={data_dir}, stats_path={stats_path}, exists={stats_path.exists()}")
     if not stats_path.exists():
         return ACTNormalizationStats()
 

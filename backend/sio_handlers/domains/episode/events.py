@@ -52,6 +52,7 @@ class EpisodeEventsMixin:
         try:
             count = await self.episode_service.collect_data(
                 payload.get("image", ""),
+                user_id=payload.get("user_id"),
                 timestamp=payload.get("timestamp"),
                 state_payload=payload.get("state"),
                 action_payload=payload.get("action"),

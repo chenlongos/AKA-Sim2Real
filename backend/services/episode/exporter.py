@@ -55,10 +55,13 @@ class LeRobotDatasetMetadata:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         fps: int = DEFAULT_FPS,
         features: dict = None,
+        subdir: str = None,
     ):
         if output_dir is None:
             output_dir = Path(__file__).resolve().parents[3] / "output" / "dataset"
         self.output_dir = Path(output_dir)
+        if subdir:
+            self.output_dir = self.output_dir / subdir
 
         self.data_dir = self.output_dir / "data"
         self.videos_dir = self.output_dir / "videos" / "observation.images.fpv"
@@ -489,6 +492,7 @@ def export_episode(
     task_name: str = "default",
     output_dir: str = None,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
+    subdir: str = None,
 ) -> str:
     """
     导出单个 episode
@@ -499,6 +503,7 @@ def export_episode(
         task_name: 任务名称
         output_dir: 输出目录
         chunk_size: 分块大小
+        subdir: 子目录名（如用户名）
 
     Returns:
         导出的目录路径
@@ -506,7 +511,11 @@ def export_episode(
     if not samples:
         return ""
 
-    metadata = get_metadata(output_dir, chunk_size)
+    metadata = LeRobotDatasetMetadata(
+        output_dir=output_dir,
+        chunk_size=chunk_size,
+        subdir=subdir,
+    )
     metadata.save_episode(samples, episode_id, task_name)
 
     return str(metadata.output_dir)

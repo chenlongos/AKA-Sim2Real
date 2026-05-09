@@ -30,7 +30,10 @@ class EpisodeService:
                 "frame_count": 0,
             }
 
-        logger.info(f"导出 episode {episode_id} 的 {len(samples)} 个样本...")
+        # 从样本中提取 user_id 用于创建子目录
+        user_id = samples[0].get("user_id", "default") if samples else "default"
+
+        logger.info(f"导出 episode {episode_id} 的 {len(samples)} 个样本 (user={user_id})...")
         try:
             from backend.services.episode.exporter import export_episode
 
@@ -38,6 +41,7 @@ class EpisodeService:
                 samples,
                 episode_id=episode_id,
                 task_name=state.episode_buffer.get(episode_id, {}).get("task_name", "default"),
+                subdir=user_id,
             )
             logger.info(f"数据已导出到: {output_path}")
             result = {
@@ -64,6 +68,9 @@ class EpisodeService:
         if not samples:
             return None
 
+        # 从样本中提取 user_id 用于创建子目录
+        user_id = samples[0].get("user_id", "default") if samples else "default"
+
         try:
             from backend.services.episode.exporter import export_episode
 
@@ -71,6 +78,7 @@ class EpisodeService:
                 samples,
                 episode_id=episode_id,
                 task_name=state.episode_metadata.get(episode_id, {}).get("task_name", "default"),
+                subdir=user_id,
             )
             logger.info(f"数据已导出到: {output_path}")
             return {
@@ -131,6 +139,7 @@ class EpisodeService:
     async def collect_data(
         self,
         image_data: str,
+        user_id: str = None,
         *,
         timestamp: int | None = None,
         state_payload: dict[str, Any] | None = None,
@@ -157,6 +166,7 @@ class EpisodeService:
                 "vel_right": vel_right,
             },
             "capture_timestamp_ms": capture_timestamp,
+            "user_id": user_id,  # 记录是哪个用户的
         }
         if isinstance(action_payload, list) and len(action_payload) >= 2:
             left_target = action_payload[0]
@@ -173,6 +183,6 @@ class EpisodeService:
         count = len(state.episode_samples[state.current_episode_id])
         # 每50帧输出一次采集日志，避免太频繁
         if count % 50 == 0:
-            logger.info(f"数据采集中: episode={state.current_episode_id}, frames={count}")
+            logger.info(f"数据采集中: user={user_id}, episode={state.current_episode_id}, frames={count}")
 
         return count

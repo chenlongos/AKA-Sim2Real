@@ -22,7 +22,7 @@ import {InferenceControl} from "./InferenceControl.tsx";
 import {useSimCarStore} from "../../stores/simCarStore.ts";
 import {getContinuousActionFromDiscreteActions, SIM_KEY_TO_ACTION} from "./actionMapping.ts";
 import {showToast} from "../../lib/toast.ts";
-import {PATHS, SIMULATION} from "../../lib/constants.ts";
+import {PATHS, SIMULATION, getDatasetPath} from "../../lib/constants.ts";
 
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -222,8 +222,9 @@ const SimPage = () => {
 
     const handleStartTraining = async () => {
         try {
+            const userId = useSimCarStore.getState().userId
             const result = await startTraining({
-                data_dir: PATHS.DATASET,
+                data_dir: getDatasetPath(userId),
                 output_dir: PATHS.TRAIN_DIR,
                 epochs: trainingEpochs,
                 batch_size: 8,
@@ -248,7 +249,9 @@ const SimPage = () => {
 
     const handleLoadModel = async () => {
         try {
-            const result = await loadTrainedModel()
+            const userId = useSimCarStore.getState().userId
+            const dataDir = getDatasetPath(userId)
+            const result = await loadTrainedModel(dataDir)
             if (result.success) {
                 setIsModelLoaded(true)
                 showToast.success('模型加载成功')
@@ -517,7 +520,7 @@ const SimPage = () => {
                         obstacles={obstacles}
                         isRecording={isRecording}
                         collectionFps={collectionFps}
-                        onCollect={(imageData) => sendImageData(simSocket, imageData, {
+                        onCollect={(imageData) => sendImageData(simSocket, imageData, useSimCarStore.getState().userId, {
                             state: {
                                 vel_left: carState.vel_left,
                                 vel_right: carState.vel_right,

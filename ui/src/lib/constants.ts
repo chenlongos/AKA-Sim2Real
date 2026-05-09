@@ -1,3 +1,5 @@
+export const getDatasetPath = (userId: string) => `output/dataset/${userId}`;
+
 export const PATHS = {
   DATASET: 'output/dataset',
   TRAIN_DIR: 'output/train',

@@ -72,7 +72,7 @@ export interface LoadModelResponse {
   detail?: string;
 }
 
-export const loadTrainedModel = () =>
-  api
-    .post('act/load_trained')
-    .json<LoadModelResponse>();
+export const loadTrainedModel = (dataDir?: string) => {
+  const url = dataDir ? `act/load_trained?data_dir=${encodeURIComponent(dataDir)}` : 'act/load_trained';
+  return api.post(url).json<LoadModelResponse>();
+};
