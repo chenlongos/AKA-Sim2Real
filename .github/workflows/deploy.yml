@@ -92,14 +92,14 @@ jobs:
           command_timeout: 10m
           script: |
             set -e
-  
-            # Restart backend (skip apt/nginx - already installed)                 
+            echo "Step 1: Killing old process"
             pkill -f "backend.main:app" || true
+            echo "Step 2: Sleep 2"
             sleep 2
+            echo "Step 3: Starting new process"
             nohup /opt/aka-sim/venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 > /opt/aka-sim/app.log 2>&1 &
+            echo "Step 4: Sleep 3"
             sleep 3
-  
-            # Check backend is running                                             
+            echo "Step 5: Checking backend"
             curl -s http://127.0.0.1:8000/docs > /dev/null && echo "Backend is running" || echo "Backend failed to start"
-  
-            echo "Deployment completed"
+            echo "Step 6: Completed"
