@@ -93,14 +93,8 @@ jobs:
           script: |
             set -e
             echo "Step 1: Killing old process"
-            # 获取当前 shell 的 PID
-            SELF=$$
-            # 查找匹配的进程，排除自身
-            pids=$(pgrep -f "backend.main:app" | grep -v "^$SELF$" || true)
-            if [ -n "$pids" ]; then
-              echo "$pids" | xargs kill
-              sleep 2
-            fi
+            pgrep -f "backend.main:app" | grep -v "^$$$" | xargs -r kill 2>/dev/null || true
+            sleep 2
 
             echo "Step 2: Starting new process"
             nohup /opt/aka-sim/venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 > /opt/aka-sim/app.log 2>&1 &
