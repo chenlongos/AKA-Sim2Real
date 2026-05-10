@@ -8,6 +8,7 @@ interface TrainingControlProps {
     episodeCounts: Record<number, number>;
     currentEpisode: number;
     isRecording: boolean;
+    datasetName: string;
     onStartTraining: () => void;
     onStopTraining: () => void;
     onSetTrainingEpochs: (epochs: number) => void;
@@ -17,6 +18,7 @@ interface TrainingControlProps {
     onEndEpisode: () => void;
     onStartEpisode: () => void;
     onResetCar: () => void;
+    onSetDatasetName: (name: string) => void;
 }
 
 export const TrainingControl = ({
@@ -29,6 +31,7 @@ export const TrainingControl = ({
     episodeCounts,
     currentEpisode,
     isRecording,
+    datasetName,
     onStartTraining,
     onStopTraining,
     onSetTrainingEpochs,
@@ -38,6 +41,7 @@ export const TrainingControl = ({
     onEndEpisode,
     onStartEpisode,
     onResetCar,
+    onSetDatasetName,
 }: TrainingControlProps) => {
     const collectionFpsPresets = [10, 20, 30]
 
@@ -68,6 +72,22 @@ export const TrainingControl = ({
                         </div>
                     </div>
                 )}
+
+                <div className="mb-2">
+                    <div className="flex items-center gap-2 mb-1.5">
+                        <label className="text-xs text-slate-400">数据集名称</label>
+                        <div className="flex-1" />
+                        <span className="text-xs font-mono text-emerald-400">{datasetName || 'default'}</span>
+                    </div>
+                    <input
+                        type="text"
+                        value={datasetName}
+                        onChange={(e) => onSetDatasetName(e.target.value || 'default')}
+                        placeholder="default"
+                        disabled={isRecording}
+                        className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 font-mono focus:outline-none focus:border-slate-500 disabled:opacity-50"
+                    />
+                </div>
 
                 <div className="mb-2">
                     <div className="flex items-center gap-2 mb-1.5">

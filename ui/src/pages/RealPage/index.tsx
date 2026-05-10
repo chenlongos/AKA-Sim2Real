@@ -64,6 +64,7 @@ const RealPage = () => {
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
+    const [datasetName, setDatasetName] = useState("default")
     const [carIP, setCarIP] = useState("")
     const [carConnected, setCarConnected] = useState(false)
     const clockOffsetMsRef = useRef(0)
@@ -698,6 +699,7 @@ const RealPage = () => {
 
                 const data = await collectImage({
                     image: imageData,
+                    dataset_name: datasetName,
                     timestamp: captureTimestampMs,
                     state: {
                         vel_left: motorStatus.left_speed,
@@ -763,6 +765,7 @@ const RealPage = () => {
                         episodeCounts={episodeCounts}
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
+                        datasetName={datasetName}
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}
                         onSetTrainingEpochs={setTrainingEpochs}
@@ -772,6 +775,7 @@ const RealPage = () => {
                         onEndEpisode={handleEndEpisode}
                         onStartEpisode={handleStartEpisode}
                         onResetCar={() => resetCar(realSocket)}
+                        onSetDatasetName={setDatasetName}
                     />
 
                     <InferenceControl

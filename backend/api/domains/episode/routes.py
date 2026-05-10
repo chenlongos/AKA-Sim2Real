@@ -21,6 +21,8 @@ async def collect_image(payload: CollectImagePayload):
     try:
         count = await episode_service.collect_data(
             payload.image,
+            user_id=payload.user_id,
+            dataset_name=payload.dataset_name,
             timestamp=payload.timestamp,
             state_payload=payload.state,
             action_payload=payload.action,

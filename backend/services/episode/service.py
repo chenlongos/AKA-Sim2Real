@@ -30,10 +30,12 @@ class EpisodeService:
                 "frame_count": 0,
             }
 
-        # 从样本中提取 user_id 用于创建子目录
+        # 从样本中提取 user_id 和 dataset_name 用于创建子目录
         user_id = samples[0].get("user_id", "default") if samples else "default"
+        dataset_name = samples[0].get("dataset_name", "default") if samples else "default"
+        subdir = f"{user_id}/{dataset_name}"
 
-        logger.info(f"导出 episode {episode_id} 的 {len(samples)} 个样本 (user={user_id})...")
+        logger.info(f"导出 episode {episode_id} 的 {len(samples)} 个样本 (user={user_id}, dataset={dataset_name})...")
         try:
             from backend.services.episode.exporter import export_episode
 
@@ -41,7 +43,7 @@ class EpisodeService:
                 samples,
                 episode_id=episode_id,
                 task_name=state.episode_buffer.get(episode_id, {}).get("task_name", "default"),
-                subdir=user_id,
+                subdir=subdir,
             )
             logger.info(f"数据已导出到: {output_path}")
             result = {
@@ -68,8 +70,10 @@ class EpisodeService:
         if not samples:
             return None
 
-        # 从样本中提取 user_id 用于创建子目录
+        # 从样本中提取 user_id 和 dataset_name 用于创建子目录
         user_id = samples[0].get("user_id", "default") if samples else "default"
+        dataset_name = samples[0].get("dataset_name", "default") if samples else "default"
+        subdir = f"{user_id}/{dataset_name}"
 
         try:
             from backend.services.episode.exporter import export_episode
@@ -78,7 +82,7 @@ class EpisodeService:
                 samples,
                 episode_id=episode_id,
                 task_name=state.episode_metadata.get(episode_id, {}).get("task_name", "default"),
-                subdir=user_id,
+                subdir=subdir,
             )
             logger.info(f"数据已导出到: {output_path}")
             return {
@@ -140,6 +144,7 @@ class EpisodeService:
         self,
         image_data: str,
         user_id: str = None,
+        dataset_name: str = "default",
         *,
         timestamp: int | None = None,
         state_payload: dict[str, Any] | None = None,
@@ -167,6 +172,7 @@ class EpisodeService:
             },
             "capture_timestamp_ms": capture_timestamp,
             "user_id": user_id,  # 记录是哪个用户的
+            "dataset_name": dataset_name,  # 记录数据集名称
         }
         if isinstance(action_payload, list) and len(action_payload) >= 2:
             left_target = action_payload[0]

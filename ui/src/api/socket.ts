@@ -50,11 +50,13 @@ export const sendImageData = (
     socket: Socket,
     imageData: string,
     userId: string,
+    datasetName: string = "default",
     options?: { carIP?: string; timestamp?: number; state?: { vel_left: number; vel_right: number }; action?: [number, number] },
 ) => {
     socket.emit('collect_data', {
         image: imageData,
         user_id: userId,
+        dataset_name: datasetName,
         car_ip: options?.carIP,
         timestamp: options?.timestamp ?? Date.now(),
         state: options?.state,

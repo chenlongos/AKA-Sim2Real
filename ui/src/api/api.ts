@@ -11,6 +11,8 @@ export const api = ky.create({
 
 export interface CollectImageRequest {
   image: string;
+  user_id?: string;
+  dataset_name?: string;
   timestamp?: number;
   state?: {
     vel_left: number;

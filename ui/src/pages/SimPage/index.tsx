@@ -51,6 +51,7 @@ const SimPage = () => {
     // Episode 管理状态
     const [isRecording, setIsRecording] = useState(false)
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
+    const [datasetName, setDatasetName] = useState("default")
 
     // 监听后端事件
     useEffect(() => {
@@ -488,6 +489,7 @@ const SimPage = () => {
                         episodeCounts={episodeCounts}
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
+                        datasetName={datasetName}
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}
                         onSetTrainingEpochs={setTrainingEpochs}
@@ -497,6 +499,7 @@ const SimPage = () => {
                         onEndEpisode={handleEndEpisode}
                         onStartEpisode={handleStartEpisode}
                         onResetCar={() => { resetSimCarState(); sendCommand([0, 0]); }}
+                        onSetDatasetName={setDatasetName}
                     />
 
                     <InferenceControl
@@ -527,7 +530,7 @@ const SimPage = () => {
                         obstacles={obstacles}
                         isRecording={isRecording}
                         collectionFps={collectionFps}
-                        onCollect={(imageData) => sendImageData(simSocket, imageData, useSimCarStore.getState().userId, {
+                        onCollect={(imageData) => sendImageData(simSocket, imageData, useSimCarStore.getState().userId, datasetName, {
                             state: {
                                 vel_left: carState.vel_left,
                                 vel_right: carState.vel_right,
