@@ -50,11 +50,11 @@ def _train_model_sync(
     callbacks = TrainingCallbacks(sio_server, loop=loop, namespace="/")
 
     try:
-        logger.info("=" * 50)
+        logger.info("=" * 20)
         logger.info("开始训练ACT模型")
         if resume_from:
             logger.info(f"从已有模型继续训练: {resume_from}")
-        logger.info("=" * 50)
+        logger.info("=" * 20)
 
         data = load_dataset(data_dir)
         action_dim = data["action"].shape[-1]
