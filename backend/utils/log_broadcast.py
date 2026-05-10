@@ -70,6 +70,7 @@ class SocketIOHandler(logging.Handler):
         "backend.sio_handlers.domains.episode.events",
         "backend.api.domains.training.routes",
         "backend.api.domains.episode.routes",
+        "backend.services.inference.runtime",
     }
 
     def emit(self, record: logging.LogRecord):
