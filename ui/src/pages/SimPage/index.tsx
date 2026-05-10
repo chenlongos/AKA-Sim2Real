@@ -252,11 +252,11 @@ const SimPage = () => {
             const userId = useSimCarStore.getState().userId
             const result = await startTraining({
                 data_dir: getDatasetPath(userId, datasetName),
-                output_dir: getTrainPath(userId),
+                output_dir: getTrainPath(userId, datasetName),
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? getModelPath(userId) : undefined,
+                resume_from: resumeTraining ? getModelPath(userId, datasetName) : undefined,
             })
             if (!result.success) {
                 showToast.error(result.message || '训练失败')
@@ -277,8 +277,8 @@ const SimPage = () => {
     const handleLoadModel = async () => {
         try {
             const userId = useSimCarStore.getState().userId
-            const dataDir = getDatasetPath(userId)
-            const modelPath = getModelPath(userId)
+            const dataDir = getDatasetPath(userId, datasetName)
+            const modelPath = getModelPath(userId, datasetName)
             const result = await loadTrainedModel(dataDir, modelPath)
             if (result.success) {
                 if (result.stats) {

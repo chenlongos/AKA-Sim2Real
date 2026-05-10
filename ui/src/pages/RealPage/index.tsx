@@ -21,7 +21,7 @@ import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 import {showToast} from "../../lib/toast.ts";
-import {PATHS} from "../../lib/constants.ts";
+import {PATHS, getTrainPath, getModelPath} from "../../lib/constants.ts";
 import {KEY_TO_ACTION} from "../SimPage/actionMapping.ts";
 
 const RealPage = () => {
@@ -455,11 +455,11 @@ const RealPage = () => {
         try {
             const result = await startTraining({
                 data_dir: `output/dataset/${datasetName}`,
-                output_dir: PATHS.TRAIN_DIR,
+                output_dir: getTrainPath("default", datasetName),
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? PATHS.MODEL : undefined,
+                resume_from: resumeTraining ? getModelPath("default", datasetName) : undefined,
             })
             if (!result.success) {
                 showToast.error(result.message || '训练失败')
@@ -479,7 +479,8 @@ const RealPage = () => {
 
     const handleLoadModel = async () => {
         try {
-            const result = await loadTrainedModel()
+            const modelPath = getModelPath("default", datasetName)
+            const result = await loadTrainedModel(`output/dataset/${datasetName}`, modelPath)
             if (result.success) {
                 setIsModelLoaded(true)
                 showToast.success('模型加载成功')
