@@ -9,6 +9,8 @@ interface TrainingControlProps {
     currentEpisode: number;
     isRecording: boolean;
     datasetName: string;
+    userId: string;
+    datasets: string[];
     onStartTraining: () => void;
     onStopTraining: () => void;
     onSetTrainingEpochs: (epochs: number) => void;
@@ -19,6 +21,7 @@ interface TrainingControlProps {
     onStartEpisode: () => void;
     onResetCar: () => void;
     onSetDatasetName: (name: string) => void;
+    onSelectDataset: (name: string) => void;
 }
 
 export const TrainingControl = ({
@@ -32,6 +35,8 @@ export const TrainingControl = ({
     currentEpisode,
     isRecording,
     datasetName,
+    userId,
+    datasets,
     onStartTraining,
     onStopTraining,
     onSetTrainingEpochs,
@@ -42,6 +47,7 @@ export const TrainingControl = ({
     onStartEpisode,
     onResetCar,
     onSetDatasetName,
+    onSelectDataset,
 }: TrainingControlProps) => {
     const collectionFpsPresets = [10, 20, 30]
 
@@ -194,6 +200,21 @@ export const TrainingControl = ({
 
                 {/* 训练参数 */}
                 <div className="space-y-2.5 mb-3">
+                    {/* 数据集选择 */}
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-400 w-20">训练数据集</label>
+                        <select
+                            value={datasetName}
+                            onChange={(e) => onSelectDataset(e.target.value)}
+                            disabled={isTraining}
+                            className="flex-1 bg-slate-900/50 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 font-mono focus:outline-none focus:border-slate-500 disabled:opacity-50"
+                        >
+                            {datasets.length === 0 && <option value="default">default</option>}
+                            {datasets.map((ds) => (
+                                <option key={ds} value={ds}>{ds}</option>
+                            ))}
+                        </select>
+                    </div>
                     <div className="flex items-center gap-2">
                         <label className="text-xs text-slate-400 w-20">训练轮次</label>
                         <input

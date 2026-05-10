@@ -7,6 +7,17 @@ export const api = ky.create({
   timeout: 30000,
 });
 
+// ============ 数据集相关 ============
+
+export interface DatasetDirsResponse {
+  datasets?: string[];
+}
+
+export const listDatasetDirs = (userId: string) =>
+  api
+    .get(`dataset/dirs?user_id=${encodeURIComponent(userId)}`)
+    .json<DatasetDirsResponse>();
+
 // ============ 数据采集 ============
 
 export interface CollectImageRequest {

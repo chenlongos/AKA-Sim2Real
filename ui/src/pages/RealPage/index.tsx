@@ -13,7 +13,7 @@ import {
     getEpisodeStatus,
     onTrainingProgress,
 } from "../../api/socket.ts";
-import {startTraining, stopTraining, loadTrainedModel, collectImage} from "../../api/api";
+import {startTraining, stopTraining, loadTrainedModel, collectImage, listDatasetDirs} from "../../api/api";
 import {carHeartbeat, carTimeSync, motorStatusAt, motorDirect, carControl, isCarApiSuccess} from "../../api/realCar";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
@@ -65,6 +65,7 @@ const RealPage = () => {
     const [isRecording, setIsRecording] = useState(false)
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
     const [datasetName, setDatasetName] = useState("default")
+    const [datasets, setDatasets] = useState<string[]>([])
     const [carIP, setCarIP] = useState("")
     const [carConnected, setCarConnected] = useState(false)
     const clockOffsetMsRef = useRef(0)
@@ -156,6 +157,22 @@ const RealPage = () => {
 
         getEpisodes(realSocket)
         getEpisodeStatus(realSocket)
+
+        // 加载用户的数据集列表
+        const loadDatasets = async () => {
+            try {
+                const result = await listDatasetDirs("default")
+                if (result.datasets && result.datasets.length > 0) {
+                    setDatasets(result.datasets)
+                    if (!datasetName || !result.datasets.includes(datasetName)) {
+                        setDatasetName(result.datasets[0])
+                    }
+                }
+            } catch {
+                // 忽略错误，使用默认数据集
+            }
+        }
+        loadDatasets()
 
         return () => {
             realSocket.off("connected")
@@ -422,6 +439,11 @@ const RealPage = () => {
         startEpisode(realSocket, currentEpisode, episodeTaskName)
     }
 
+    const handleSelectDataset = (name: string) => {
+        setDatasetName(name)
+        getEpisodes(realSocket)
+    }
+
     const handleEndEpisode = () => {
         endEpisode(realSocket, currentEpisode)
         setCurrentEpisode(currentEpisode + 1)
@@ -432,7 +454,7 @@ const RealPage = () => {
     const handleStartTraining = async () => {
         try {
             const result = await startTraining({
-                data_dir: PATHS.DATASET,
+                data_dir: `output/dataset/${datasetName}`,
                 output_dir: PATHS.TRAIN_DIR,
                 epochs: trainingEpochs,
                 batch_size: 8,
@@ -766,6 +788,8 @@ const RealPage = () => {
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
                         datasetName={datasetName}
+                        userId="default"
+                        datasets={datasets}
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}
                         onSetTrainingEpochs={setTrainingEpochs}
@@ -776,6 +800,7 @@ const RealPage = () => {
                         onStartEpisode={handleStartEpisode}
                         onResetCar={() => resetCar(realSocket)}
                         onSetDatasetName={setDatasetName}
+                        onSelectDataset={handleSelectDataset}
                     />
 
                     <InferenceControl

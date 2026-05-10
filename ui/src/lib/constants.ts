@@ -1,4 +1,5 @@
-export const getDatasetPath = (userId: string) => `output/dataset/${userId}`;
+export const getDatasetPath = (userId: string, datasetName?: string) =>
+  datasetName ? `output/dataset/${userId}/${datasetName}` : `output/dataset/${userId}`;
 export const getTrainPath = (userId: string) => `output/train/${userId}`;
 export const getModelPath = (userId: string) => `output/train/${userId}/model.pt`;
 

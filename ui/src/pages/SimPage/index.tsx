@@ -13,7 +13,7 @@ import {
     sendImageData,
     onTrainingProgress,
 } from "../../api/socket.ts";
-import {startTraining, stopTraining, loadTrainedModel} from "../../api/api";
+import {startTraining, stopTraining, loadTrainedModel, listDatasetDirs} from "../../api/api";
 import type {Obstacle} from "../../models/types.ts";
 import {TopDownView} from "./TopDownView.tsx";
 import {RightPanel, type RightPanelRef} from "./RightPanel.tsx";
@@ -52,6 +52,8 @@ const SimPage = () => {
     const [isRecording, setIsRecording] = useState(false)
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
     const [datasetName, setDatasetName] = useState("default")
+    const [datasets, setDatasets] = useState<string[]>([])
+    const userId = useSimCarStore.getState().userId
 
     // 监听后端事件
     useEffect(() => {
@@ -166,6 +168,24 @@ const SimPage = () => {
         }
     }, [resetSimCarState])
 
+    // 加载用户的数据集列表
+    useEffect(() => {
+        const loadDatasets = async () => {
+            try {
+                const result = await listDatasetDirs(userId)
+                if (result.datasets && result.datasets.length > 0) {
+                    setDatasets(result.datasets)
+                    if (!datasetName || !result.datasets.includes(datasetName)) {
+                        setDatasetName(result.datasets[0])
+                    }
+                }
+            } catch {
+                // 忽略错误，使用默认数据集
+            }
+        }
+        loadDatasets()
+    }, [userId])
+
     const sendCommand = (action: [number, number]) => {
         sendActionVector(simSocket, action)
     }
@@ -210,6 +230,12 @@ const SimPage = () => {
         startEpisode(simSocket, currentEpisode, episodeTaskName)
     }
 
+    const handleSelectDataset = (name: string) => {
+        setDatasetName(name)
+        // 切换数据集后重新加载该数据集的 episode 信息
+        getEpisodes(simSocket)
+    }
+
     const handleEndEpisode = () => {
         // 结束录制并自动保存数据（endEpisode会自动导出，所以不需要再调用finalizeEpisode）
         endEpisode(simSocket, currentEpisode)
@@ -225,7 +251,7 @@ const SimPage = () => {
         try {
             const userId = useSimCarStore.getState().userId
             const result = await startTraining({
-                data_dir: getDatasetPath(userId),
+                data_dir: getDatasetPath(userId, datasetName),
                 output_dir: getTrainPath(userId),
                 epochs: trainingEpochs,
                 batch_size: 8,
@@ -490,6 +516,8 @@ const SimPage = () => {
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
                         datasetName={datasetName}
+                        userId={userId}
+                        datasets={datasets}
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}
                         onSetTrainingEpochs={setTrainingEpochs}
@@ -500,6 +528,7 @@ const SimPage = () => {
                         onStartEpisode={handleStartEpisode}
                         onResetCar={() => { resetSimCarState(); sendCommand([0, 0]); }}
                         onSetDatasetName={setDatasetName}
+                        onSelectDataset={handleSelectDataset}
                     />
 
                     <InferenceControl

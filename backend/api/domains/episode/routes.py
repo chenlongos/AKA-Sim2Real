@@ -3,6 +3,7 @@ AKA-Sim 后端 - Episode/数据采集域 API
 """
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
@@ -13,6 +14,23 @@ from backend.services.episode import EpisodeService
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dataset", tags=["episode"])
 episode_service = EpisodeService()
+
+
+@router.get("/dirs")
+async def list_dataset_dirs(user_id: str = "default"):
+    """列出用户下的所有数据集目录"""
+    project_root = Path(__file__).resolve().parents[4]
+    user_dataset_path = project_root / "output" / "dataset" / user_id
+
+    if not user_dataset_path.exists():
+        return {"datasets": []}
+
+    datasets = []
+    for item in user_dataset_path.iterdir():
+        if item.is_dir() and (item / "data").exists() or (item / "meta").exists():
+            datasets.append(item.name)
+
+    return {"datasets": sorted(datasets)}
 
 
 @router.post("/collect")
