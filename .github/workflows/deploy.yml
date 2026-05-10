@@ -91,15 +91,7 @@ jobs:
           timeout: 10m
           command_timeout: 10m
           script: |
-            set -e
-
-            # Restart backend (skip apt/nginx - already installed)
-            pkill -f "uvicorn" || true
-            sleep 2
-            nohup /opt/aka-sim/venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 > /opt/aka-sim/app.log 2>&1 &
-            sleep 3
-
-            # Check backend is running
-            curl -s http://127.0.0.1:8000/docs > /dev/null && echo "Backend is running" || echo "Backend failed to start"
-
-            echo "Deployment completed"
+            echo "START"
+            date
+            pkill -f uvicorn || true
+            echo "END"
