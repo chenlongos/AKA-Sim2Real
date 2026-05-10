@@ -9,7 +9,6 @@ interface TrainingControlProps {
     currentEpisode: number;
     isRecording: boolean;
     datasetName: string;
-    userId: string;
     datasets: string[];
     onStartTraining: () => void;
     onStopTraining: () => void;
@@ -35,7 +34,6 @@ export const TrainingControl = ({
     currentEpisode,
     isRecording,
     datasetName,
-    userId,
     datasets,
     onStartTraining,
     onStopTraining,

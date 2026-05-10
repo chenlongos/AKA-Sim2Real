@@ -537,7 +537,6 @@ const SimPage = () => {
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
                         datasetName={datasetName}
-                        userId={userId}
                         datasets={datasets}
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}
