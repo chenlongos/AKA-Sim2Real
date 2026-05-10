@@ -302,12 +302,6 @@ const SimPage = () => {
             const modelPath = `output/train/${userId}/${modelName}/model.pt`
             const result = await loadTrainedModel(dataDir, modelPath)
             if (result.success) {
-                if (result.stats) {
-                    useSimCarStore.getState().setInferenceStats({
-                        stateMin: result.stats.state_min,
-                        stateMax: result.stats.state_max,
-                    })
-                }
                 setIsModelLoaded(true)
                 setSelectedModel(modelName)
                 showToast.success('模型加载成功')
@@ -328,7 +322,7 @@ const SimPage = () => {
     const doInference = useCallback(async () => {
         // 获取最新的 carState（避免闭包问题）
         const currentCarState = useSimCarStore.getState().carState
-        // 后端处理归一化，前端只发送原始状态
+        // 真实小车模式：状态输入是左右轮速度 [vel_left, vel_right]
         const state: [number, number] = [currentCarState.vel_left, currentCarState.vel_right]
         const imageBase64 = firstPersonViewRef.current?.getImageData()
         const result = await runInferenceWithSocket(simSocket, state, imageBase64)

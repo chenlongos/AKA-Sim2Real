@@ -43,7 +43,7 @@ class ACTPreprocessor:
 
     def normalize_state(self, state: list, stats: ACTNormalizationStats, device: str) -> torch.Tensor:
         state_tensor = torch.tensor(state[:2], dtype=torch.float32).unsqueeze(0).to(device)
-        return (state_tensor - stats.state_min.unsqueeze(0).to(device)) / (stats.state_max.unsqueeze(0).to(device) - stats.state_min.unsqueeze(0).to(device) + 1e-8)
+        return (state_tensor - stats.state_mean.unsqueeze(0).to(device)) / (stats.state_std.unsqueeze(0).to(device) + 1e-8)
 
     def denormalize_action(self, action: torch.Tensor, stats: ACTNormalizationStats, device: str) -> torch.Tensor:
-        return action * (stats.action_max.unsqueeze(0).to(device) - stats.action_min.unsqueeze(0).to(device)) + stats.action_min.unsqueeze(0).to(device)
+        return action * stats.action_std.unsqueeze(0).to(device) + stats.action_mean.unsqueeze(0).to(device)

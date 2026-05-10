@@ -92,10 +92,6 @@ export interface LoadModelResponse {
   success: boolean;
   message?: string;
   detail?: string;
-  stats?: {
-    state_min: number[];
-    state_max: number[];
-  };
 }
 
 export const loadTrainedModel = (dataDir?: string, modelPath?: string) => {

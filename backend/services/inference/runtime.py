@@ -57,8 +57,8 @@ class ACTInferenceRuntime:
 
     def _load_stats(self, stats_dir: Optional[str]):
         self.stats = load_stats(stats_dir)
-        logger.info("状态归一化: min=%s, max=%s", self.stats.state_min, self.stats.state_max)
-        logger.info("动作归一化: min=%s, max=%s", self.stats.action_min, self.stats.action_max)
+        logger.info("状态归一化: mean=%s, std=%s", self.stats.state_mean, self.stats.state_std)
+        logger.info("动作归一化: mean=%s, std=%s", self.stats.action_mean, self.stats.action_std)
 
     def load_model(self, model_path: str = None, stats_dir: str = None) -> "ACTModel":
         logger.info("加载 ACT 模型...")
@@ -93,9 +93,6 @@ class ACTInferenceRuntime:
 
     def is_model_loaded(self) -> bool:
         return self.model is not None
-
-    def get_stats(self) -> "ACTNormalizationStats":
-        return self.stats
 
 
 _runtime = ACTInferenceRuntime()
