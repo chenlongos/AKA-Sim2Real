@@ -5,8 +5,11 @@ on:
     branches:
       - main
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,16 +19,24 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install backend dependencies
         run: |
-          pip install -r backend/requirements.txt
+          pip install --quiet -r backend/requirements.txt
 
       - name: Build frontend
         run: |
@@ -40,6 +51,24 @@ jobs:
           cp -r ui/dist deploy-package/
           cp -r policies deploy-package/
           cp deploy/nginx.conf deploy-package/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-package
+          path: deploy-package/
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-package
+          path: deploy-package/
 
       - name: Deploy to server
         uses: appleboy/scp-action@v0.1.1
@@ -59,8 +88,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT }}
-          timeout: 30m
-          command_timeout: 30m
+          timeout: 10m
+          command_timeout: 10m
           script: |
             set -e
 
@@ -73,8 +102,8 @@ jobs:
               python3 -m venv /opt/aka-sim/venv
             fi
 
-            # Install backend dependencies
-            /opt/aka-sim/venv/bin/pip install --quiet -r /opt/aka-sim/backend/requirements.txt || true
+            # Install backend dependencies (--no-deps to skip if already installed)
+            /opt/aka-sim/venv/bin/pip install --no-deps -r /opt/aka-sim/backend/requirements.txt 2>/dev/null || true
 
             # Restart backend
             pkill -f "uvicorn" || true
