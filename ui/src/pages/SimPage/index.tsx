@@ -13,7 +13,7 @@ import {
     sendImageData,
     onTrainingProgress,
 } from "../../api/socket.ts";
-import {startTraining, stopTraining, loadTrainedModel, listDatasetDirs} from "../../api/api";
+import {startTraining, stopTraining, loadTrainedModel, listDatasetDirs, listModels} from "../../api/api";
 import type {Obstacle} from "../../models/types.ts";
 import {TopDownView} from "./TopDownView.tsx";
 import {RightPanel, type RightPanelRef} from "./RightPanel.tsx";
@@ -53,6 +53,8 @@ const SimPage = () => {
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
     const [datasetName, setDatasetName] = useState("default")
     const [datasets, setDatasets] = useState<string[]>([])
+    const [models, setModels] = useState<string[]>([])
+    const [selectedModel, setSelectedModel] = useState<string>("")
     const userId = useSimCarStore.getState().userId
 
     // 监听后端事件
@@ -186,6 +188,25 @@ const SimPage = () => {
         loadDatasets()
     }, [userId])
 
+    // 加载模型列表
+    useEffect(() => {
+        setIsModelLoaded(false)
+        setSelectedModel("")
+        const loadModels = async () => {
+            try {
+                const result = await listModels(userId, datasetName)
+                if (result.models) {
+                    setModels(result.models)
+                } else {
+                    setModels([])
+                }
+            } catch {
+                setModels([])
+            }
+        }
+        loadModels()
+    }, [userId, datasetName])
+
     const sendCommand = (action: [number, number]) => {
         sendActionVector(simSocket, action)
     }
@@ -274,11 +295,11 @@ const SimPage = () => {
         }
     }
 
-    const handleLoadModel = async () => {
+    const handleLoadModel = async (modelName: string) => {
         try {
             const userId = useSimCarStore.getState().userId
             const dataDir = getDatasetPath(userId, datasetName)
-            const modelPath = getModelPath(userId, datasetName)
+            const modelPath = `output/train/${userId}/${modelName}/model.pt`
             const result = await loadTrainedModel(dataDir, modelPath)
             if (result.success) {
                 if (result.stats) {
@@ -288,6 +309,7 @@ const SimPage = () => {
                     })
                 }
                 setIsModelLoaded(true)
+                setSelectedModel(modelName)
                 showToast.success('模型加载成功')
             } else {
                 showToast.error('模型加载失败: ' + result.message)
@@ -536,6 +558,7 @@ const SimPage = () => {
                         isInferring={isInferring}
                         autoInference={autoInference}
                         inferenceResult={inferenceResult}
+                        models={models}
                         onLoadModel={handleLoadModel}
                         onInference={handleInference}
                         onAutoInference={handleAutoInference}

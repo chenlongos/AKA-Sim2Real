@@ -3,7 +3,8 @@ interface InferenceControlProps {
     isInferring: boolean;
     autoInference: boolean;
     inferenceResult: string[];
-    onLoadModel: () => void;
+    models: string[];
+    onLoadModel: (modelName: string) => void;
     onInference: () => void;
     onAutoInference: () => void;
 }
@@ -13,6 +14,7 @@ export const InferenceControl = ({
     isInferring,
     autoInference,
     inferenceResult,
+    models,
     onLoadModel,
     onInference,
     onAutoInference,
@@ -64,12 +66,34 @@ export const InferenceControl = ({
             </div>
 
             {!isModelLoaded ? (
-                <button
-                    onClick={onLoadModel}
-                    className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-500 hover:to-cyan-600 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-cyan-900/20"
-                >
-                    加载模型
-                </button>
+                models.length > 0 ? (
+                    <div className="space-y-2">
+                        <select
+                            className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 font-mono focus:outline-none focus:border-slate-500"
+                            id="model-select"
+                        >
+                            {models.map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => {
+                                const select = document.getElementById("model-select") as HTMLSelectElement;
+                                onLoadModel(select.value);
+                            }}
+                            className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-500 hover:to-cyan-600 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-cyan-900/20"
+                        >
+                            加载模型
+                        </button>
+                    </div>
+                ) : (
+                    <button
+                        disabled
+                        className="w-full py-2.5 bg-slate-700 text-slate-500 text-sm font-medium rounded-lg cursor-not-allowed"
+                    >
+                        暂无可用模型
+                    </button>
+                )
             ) : (
                 <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">

@@ -33,6 +33,25 @@ async def list_dataset_dirs(user_id: str = "default"):
     return {"datasets": sorted(datasets)}
 
 
+@router.get("/models")
+async def list_models(user_id: str = "default", dataset_name: str = "default"):
+    """列出用户下的所有训练模型（返回文件夹名）"""
+    project_root = Path(__file__).resolve().parents[4]
+    # 训练输出在 output/train/{user_id}/ 下
+    train_path = project_root / "output" / "train" / user_id
+
+    if not train_path.exists():
+        return {"models": []}
+
+    # 返回子文件夹名称
+    models = []
+    for item in train_path.iterdir():
+        if item.is_dir():
+            models.append(item.name)
+
+    return {"models": sorted(models)}
+
+
 @router.post("/collect")
 async def collect_image(payload: CollectImagePayload):
     """将前端直接采集到的图像写入当前 episode。"""

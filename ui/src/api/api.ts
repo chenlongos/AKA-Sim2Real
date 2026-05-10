@@ -18,6 +18,15 @@ export const listDatasetDirs = (userId: string) =>
     .get(`dataset/dirs?user_id=${encodeURIComponent(userId)}`)
     .json<DatasetDirsResponse>();
 
+export interface ModelsResponse {
+  models?: string[];
+}
+
+export const listModels = (userId: string, datasetName: string) =>
+  api
+    .get(`dataset/models?user_id=${encodeURIComponent(userId)}&dataset_name=${encodeURIComponent(datasetName)}`)
+    .json<ModelsResponse>();
+
 // ============ 数据采集 ============
 
 export interface CollectImageRequest {

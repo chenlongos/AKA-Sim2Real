@@ -13,7 +13,7 @@ import {
     getEpisodeStatus,
     onTrainingProgress,
 } from "../../api/socket.ts";
-import {startTraining, stopTraining, loadTrainedModel, collectImage, listDatasetDirs} from "../../api/api";
+import {startTraining, stopTraining, loadTrainedModel, collectImage, listDatasetDirs, listModels} from "../../api/api";
 import {carHeartbeat, carTimeSync, motorStatusAt, motorDirect, carControl, isCarApiSuccess} from "../../api/realCar";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
@@ -66,6 +66,8 @@ const RealPage = () => {
     const [episodeTaskName, setEpisodeTaskName] = useState("default")
     const [datasetName, setDatasetName] = useState("default")
     const [datasets, setDatasets] = useState<string[]>([])
+    const [models, setModels] = useState<string[]>([])
+    const [selectedModel, setSelectedModel] = useState<string>("")
     const [carIP, setCarIP] = useState("")
     const [carConnected, setCarConnected] = useState(false)
     const clockOffsetMsRef = useRef(0)
@@ -173,6 +175,21 @@ const RealPage = () => {
             }
         }
         loadDatasets()
+
+        // 加载模型列表
+        const loadModels = async () => {
+            try {
+                const result = await listModels("default", datasetName)
+                if (result.models) {
+                    setModels(result.models)
+                } else {
+                    setModels([])
+                }
+            } catch {
+                setModels([])
+            }
+        }
+        loadModels()
 
         return () => {
             realSocket.off("connected")
@@ -441,7 +458,23 @@ const RealPage = () => {
 
     const handleSelectDataset = (name: string) => {
         setDatasetName(name)
+        setIsModelLoaded(false)
+        setSelectedModel("")
         getEpisodes(realSocket)
+        // 重新加载模型列表
+        const loadModels = async () => {
+            try {
+                const result = await listModels("default", name)
+                if (result.models) {
+                    setModels(result.models)
+                } else {
+                    setModels([])
+                }
+            } catch {
+                setModels([])
+            }
+        }
+        loadModels()
     }
 
     const handleEndEpisode = () => {
@@ -477,12 +510,13 @@ const RealPage = () => {
         }
     }
 
-    const handleLoadModel = async () => {
+    const handleLoadModel = async (modelName: string) => {
         try {
-            const modelPath = getModelPath("default", datasetName)
+            const modelPath = `output/train/default/${modelName}/model.pt`
             const result = await loadTrainedModel(`output/dataset/${datasetName}`, modelPath)
             if (result.success) {
                 setIsModelLoaded(true)
+                setSelectedModel(modelName)
                 showToast.success('模型加载成功')
             } else {
                 showToast.error('模型加载失败: ' + result.message)
@@ -809,6 +843,7 @@ const RealPage = () => {
                         isInferring={isInferring}
                         autoInference={autoInference}
                         inferenceResult={inferenceResult}
+                        models={models}
                         onLoadModel={handleLoadModel}
                         onInference={handleInference}
                         onAutoInference={handleAutoInference}
