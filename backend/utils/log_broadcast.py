@@ -1,6 +1,10 @@
 """
 日志广播系统 - 将日志通过 Socket.IO 发送到前端
 支持按命名空间隔离
+
+注意：logging handler 的 emit 可能在没有 event loop 的线程中被调用
+因此日志广播主要用于简单的开始/结束事件
+训练进度通过 TrainingCallbacks.on_epoch_end 发送
 """
 from __future__ import annotations
 
@@ -11,14 +15,21 @@ from typing import Any
 
 # 全局 Socket.IO 服务器引用
 _sio_server = None
+# 主线程的 event loop（用于跨线程调度）
+_main_loop = None
 # 按命名空间跟踪状态: { namespace: { sids: set(), ... } }
 _namespace_states: dict[str, dict[str, Any]] = {}
 
 
 def set_broadcast_sio(sio_server, namespace: str = "/"):
     """设置 Socket.IO 服务器用于广播日志"""
-    global _sio_server
+    global _sio_server, _main_loop
     _sio_server = sio_server
+    # 保存主线程的 loop
+    try:
+        _main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
     # 初始化命名空间状态
     if namespace not in _namespace_states:
         _namespace_states[namespace] = {
@@ -37,6 +48,17 @@ def remove_connected_sid(sid: str, namespace: str = "/"):
     """移除连接的sid"""
     if namespace in _namespace_states:
         _namespace_states[namespace]["sids"].discard(sid)
+
+
+def emit_log_message(log_entry: dict, namespace: str = "/", sid: str = None):
+    """手动发送日志消息（供 TrainingCallbacks 等调用）"""
+    if _sio_server is None:
+        return
+    target_sid = sid or _namespace_states.get(namespace, {}).get("sids", set())
+    if isinstance(target_sid, set) and target_sid:
+        target_sid = next(iter(target_sid))
+    if target_sid:
+        _sio_server.emit("log_message", log_entry, room=target_sid, namespace=namespace)
 
 
 class SocketIOHandler(logging.Handler):
@@ -66,33 +88,35 @@ class SocketIOHandler(logging.Handler):
                 sids = ns_state.get("sids", set())
                 for sid in sids:
                     try:
-                        # 正确调度异步 emit
-                        loop = asyncio.get_event_loop()
-                        asyncio.ensure_future(
-                            _sio_server.emit(
-                                "log_message",
-                                log_entry,
-                                room=sid,
-                                namespace=namespace,
-                            )
-                        )
+                        self._emit_async(log_entry, namespace, sid)
                     except Exception:
                         pass
         except Exception:
             pass
 
+    def _emit_async(self, log_entry: dict, namespace: str, sid: str):
+        """通过主线程的 loop 异步发送"""
+        if _main_loop is None:
+            return
+        def _do_emit():
+            asyncio.ensure_future(
+                _sio_server.emit(
+                    "log_message",
+                    log_entry,
+                    room=sid,
+                    namespace=namespace,
+                )
+            )
+        _main_loop.call_soon_threadsafe(_do_emit)
+
     def format_log(self, record: logging.LogRecord) -> dict[str, Any]:
         """格式化日志记录为字典"""
-        # 获取时间戳（本地时间）
         timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
-
-        # 格式化消息
         try:
             message = record.getMessage()
         except Exception:
             message = str(record.msg)
 
-        # 添加异常信息（如果有）
         if record.exc_info:
             import traceback
             exc_text = "".join(traceback.format_exception(*record.exc_info))
@@ -120,7 +144,6 @@ def setup_socket_logging(level: int = logging.WARNING):
     if _socket_handler is not None:
         return
 
-    # 创建处理器
     _socket_handler = SocketIOHandler()
     _socket_handler.setLevel(level)
     formatter = logging.Formatter("%(message)s")
@@ -130,7 +153,7 @@ def setup_socket_logging(level: int = logging.WARNING):
     for logger_name in SocketIOHandler.BROADCAST_LOGGERS:
         logger = logging.getLogger(logger_name)
         logger.addHandler(_socket_handler)
-        logger.setLevel(logging.INFO)  # 确保这些模块输出 INFO
+        logger.setLevel(logging.INFO)
 
 
 def remove_socket_logging():

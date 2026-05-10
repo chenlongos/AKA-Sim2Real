@@ -3,10 +3,10 @@ ACT 模型训练脚本
 用于从采集的数据训练ACT模型并导出为HuggingFace格式
 """
 
-import os
 import sys
 import json
 import argparse
+import logging
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -23,6 +23,11 @@ import base64
 # 添加项目路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# 设置 logging
+logger = logging.getLogger("backend.services.training.orchestrator")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 from policies.models.act.modeling_act import ACTModel, ACTConfig
 from policies.models.act.ACTDataset import ACTDataset
@@ -129,9 +134,9 @@ def train(
     Returns:
         训练好的模型
     """
-    print("=" * 50)
-    print("开始训练ACT模型")
-    print("=" * 50)
+    print("=" * 20)
+    logger.info("开始训练ACT模型")
+    print("=" * 20)
 
     # 加载数据
     data = load_dataset(data_dir)
@@ -250,16 +255,16 @@ def train(
         avg_l1 = total_l1_loss / num_batches
         if config.use_cvae:
             avg_kl = total_kl_loss / num_batches
-            print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f} (L1: {avg_l1:.6f}, KL: {avg_kl:.6f})")
+            logger.info(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f} (L1: {avg_l1:.6f}, KL: {avg_kl:.6f})")
         else:
-            print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
+            logger.info(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
 
         # 保存检查点
         if (epoch + 1) % 10 == 0:
             checkpoint_path = Path(output_dir) / f"checkpoint_epoch_{epoch + 1}.pt"
             checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(model.state_dict(), checkpoint_path)
-            print(f"  保存检查点: {checkpoint_path}")
+            logger.info(f"  保存检查点: {checkpoint_path}")
 
     # 计算并保存 CVAE latent 统计
     if config.use_cvae and len(all_mu) > 0:
@@ -270,9 +275,9 @@ def train(
         latent_mu_mean = all_mu_tensor.mean(dim=0)
         latent_log_sigma_mean = all_log_sigma_tensor.mean(dim=0)
 
-        print(f"\nCVAE Latent 统计:")
-        print(f"  mu mean: {latent_mu_mean.mean().item():.4f}")
-        print(f"  log_sigma mean: {latent_log_sigma_mean.mean().item():.4f}")
+        logger.info(f"\nCVAE Latent 统计:")
+        logger.info(f"  mu mean: {latent_mu_mean.mean().item():.4f}")
+        logger.info(f"  log_sigma mean: {latent_log_sigma_mean.mean().item():.4f}")
 
         # 保存模型 + latent 统计
         final_path = Path(output_dir) / "final_model.pt"
@@ -283,12 +288,12 @@ def train(
             'config': act_config_to_dict(config),
         }
         torch.save(checkpoint, final_path)
-        print(f"\n模型已保存到: {final_path}")
-        print(f"  (包含 CVAE inference latent 统计)")
+        logger.info(f"\n模型已保存到: {final_path}")
+        logger.info(f"  (包含 CVAE inference latent 统计)")
     else:
         final_path = Path(output_dir) / "final_model.pt"
         torch.save(model.state_dict(), final_path)
-        print(f"\n模型已保存到: {final_path}")
+        logger.info(f"\n模型已保存到: {final_path}")
 
     return model
 
