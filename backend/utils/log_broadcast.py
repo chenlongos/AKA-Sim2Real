@@ -40,39 +40,35 @@ def remove_connected_sid(sid: str, namespace: str = "/"):
 
 
 class SocketIOHandler(logging.Handler):
-    """将日志发送到前端的日志处理器"""
+    """将日志发送到前端的日志处理器 - 仅广播关键事件"""
 
-    # 需要过滤的日志消息前缀
-    FILTERED_PREFIXES = [
-        "已重置 ACT 推理时序上下文",
-        "[on_action] 用户控制，退出推理模式:",
-        "[游戏循环] frame=",
-    ]
+    # 只广播这些模块的日志（白名单）
+    BROADCAST_LOGGERS = {
+        "backend.services.training.orchestrator",
+        "backend.sio_handlers.domains.episode.events",
+        "backend.api.domains.training.routes",
+        "backend.api.domains.episode.routes",
+    }
 
     def emit(self, record: logging.LogRecord):
         if _sio_server is None:
             return
 
+        # 只广播白名单中的日志
+        if record.name not in self.BROADCAST_LOGGERS:
+            return
+
         try:
-            # 格式化消息以检查是否需要过滤
-            try:
-                message = record.getMessage()
-            except Exception:
-                message = str(record.msg)
-
-            # 检查是否需要过滤
-            for prefix in self.FILTERED_PREFIXES:
-                if message.startswith(prefix):
-                    return
-
             log_entry = self.format_log(record)
 
-            # 给每个命名空间的每个连接单独发送日志
+            # 只发给同一命名空间的连接
             for namespace, ns_state in _namespace_states.items():
                 sids = ns_state.get("sids", set())
                 for sid in sids:
                     try:
-                        asyncio.create_task(
+                        # 正确调度异步 emit
+                        loop = asyncio.get_event_loop()
+                        asyncio.ensure_future(
                             _sio_server.emit(
                                 "log_message",
                                 log_entry,
@@ -83,7 +79,6 @@ class SocketIOHandler(logging.Handler):
                     except Exception:
                         pass
         except Exception:
-            # 避免日志处理失败影响主程序
             pass
 
     def format_log(self, record: logging.LogRecord) -> dict[str, Any]:
@@ -118,25 +113,24 @@ class SocketIOHandler(logging.Handler):
 _socket_handler: SocketIOHandler | None = None
 
 
-def setup_socket_logging(level: int = logging.INFO):
+def setup_socket_logging(level: int = logging.WARNING):
     """设置 Socket.IO 日志广播"""
     global _socket_handler
 
     if _socket_handler is not None:
         return
 
-    root_logger = logging.getLogger()
-
-    # 创建并添加 Socket.IO 处理器
+    # 创建处理器
     _socket_handler = SocketIOHandler()
     _socket_handler.setLevel(level)
-
-    # 使用简单的格式（由 format_log 处理详细格式）
     formatter = logging.Formatter("%(message)s")
     _socket_handler.setFormatter(formatter)
 
-    root_logger.addHandler(_socket_handler)
-    logging.info("Socket.IO 日志广播已启用")
+    # 直接添加到需要广播的模块的 logger
+    for logger_name in SocketIOHandler.BROADCAST_LOGGERS:
+        logger = logging.getLogger(logger_name)
+        logger.addHandler(_socket_handler)
+        logger.setLevel(logging.INFO)  # 确保这些模块输出 INFO
 
 
 def remove_socket_logging():

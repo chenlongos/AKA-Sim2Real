@@ -23,8 +23,21 @@ from backend.config import config
 from backend.sio_handlers import SimNamespace, RealNamespace, MujocoNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime, start_mujoco_game_loop
 from backend.utils import set_broadcast_sio, setup_socket_logging
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
+# 配置日志 - 生产环境只记录关键事件
+logging.basicConfig(
+    level=logging.WARNING,  # 默认WARNING以上才记录
+    format="%(levelname)s:%(name)s:%(message)s"
+)
+
+# 只对关键模块保持INFO级别
+for logger_name in [
+    "backend.services.training.orchestrator",
+    "backend.sio_handlers.domains.episode.events",
+    "backend.api.domains.training.routes",
+    "uvicorn",
+]:
+    logging.getLogger(logger_name).setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 runtime = inference.get_act_runtime()
 api.set_act_runtime(runtime)
@@ -37,14 +50,6 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     logger.info("AKA-Sim Backend 启动")
     logger.info("=" * 50)
-
-    # 尝试加载模型
-    # TODO 没必要
-    try:
-        runtime.load_model()
-    except Exception as e:
-        logger.warning(f"模型加载失败: {e}")
-        logger.warning("将以无模型模式运行")
 
     # 启动两个命名空间的状态广播
     start_game_loop(sio, namespace="/sim")
