@@ -21,8 +21,9 @@ import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 import {showToast} from "../../lib/toast.ts";
-import {PATHS, getTrainPath, getModelPath} from "../../lib/constants.ts";
+import {getDatasetPath, getTrainPath, getModelPath} from "../../lib/constants.ts";
 import {KEY_TO_ACTION} from "../SimPage/actionMapping.ts";
+import {useSimCarStore} from "../../stores/simCarStore.ts";
 
 const RealPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -68,6 +69,7 @@ const RealPage = () => {
     const [datasets, setDatasets] = useState<string[]>([])
     const [models, setModels] = useState<string[]>([])
     const [selectedModel, setSelectedModel] = useState<string>("")
+    const userId = useSimCarStore.getState().userId
     const [carIP, setCarIP] = useState("")
     const [carConnected, setCarConnected] = useState(false)
     const clockOffsetMsRef = useRef(0)
@@ -163,7 +165,7 @@ const RealPage = () => {
         // 加载用户的数据集列表
         const loadDatasets = async () => {
             try {
-                const result = await listDatasetDirs("default")
+                const result = await listDatasetDirs(userId)
                 if (result.datasets && result.datasets.length > 0) {
                     setDatasets(result.datasets)
                     if (!datasetName || !result.datasets.includes(datasetName)) {
@@ -175,21 +177,6 @@ const RealPage = () => {
             }
         }
         loadDatasets()
-
-        // 加载模型列表
-        const loadModels = async () => {
-            try {
-                const result = await listModels("default", datasetName)
-                if (result.models) {
-                    setModels(result.models)
-                } else {
-                    setModels([])
-                }
-            } catch {
-                setModels([])
-            }
-        }
-        loadModels()
 
         return () => {
             realSocket.off("connected")
@@ -204,6 +191,25 @@ const RealPage = () => {
             unsubscribeTrainingProgress()
         }
     }, [])
+
+    // 加载模型列表（当 userId 或 datasetName 变化时重新加载）
+    useEffect(() => {
+        setIsModelLoaded(false)
+        setSelectedModel("")
+        const loadModels = async () => {
+            try {
+                const result = await listModels(userId, datasetName)
+                if (result.models) {
+                    setModels(result.models)
+                } else {
+                    setModels([])
+                }
+            } catch {
+                setModels([])
+            }
+        }
+        loadModels()
+    }, [userId, datasetName])
 
     useEffect(() => {
         if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
@@ -461,20 +467,6 @@ const RealPage = () => {
         setIsModelLoaded(false)
         setSelectedModel("")
         getEpisodes(realSocket)
-        // 重新加载模型列表
-        const loadModels = async () => {
-            try {
-                const result = await listModels("default", name)
-                if (result.models) {
-                    setModels(result.models)
-                } else {
-                    setModels([])
-                }
-            } catch {
-                setModels([])
-            }
-        }
-        loadModels()
     }
 
     const handleEndEpisode = () => {
@@ -486,13 +478,14 @@ const RealPage = () => {
 
     const handleStartTraining = async () => {
         try {
+            const userId = useSimCarStore.getState().userId
             const result = await startTraining({
-                data_dir: `output/dataset/${datasetName}`,
-                output_dir: getTrainPath("default", datasetName),
+                data_dir: getDatasetPath(userId, datasetName),
+                output_dir: getTrainPath(userId, datasetName),
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? getModelPath("default", datasetName) : undefined,
+                resume_from: resumeTraining ? getModelPath(userId, datasetName) : undefined,
             })
             if (!result.success) {
                 showToast.error(result.message || '训练失败')
@@ -512,8 +505,10 @@ const RealPage = () => {
 
     const handleLoadModel = async (modelName: string) => {
         try {
-            const modelPath = `output/train/default/${modelName}/model.pt`
-            const result = await loadTrainedModel(`output/dataset/${datasetName}`, modelPath)
+            const userId = useSimCarStore.getState().userId
+            const dataDir = getDatasetPath(userId, datasetName)
+            const modelPath = `output/train/${userId}/${modelName}/model.pt`
+            const result = await loadTrainedModel(dataDir, modelPath)
             if (result.success) {
                 setIsModelLoaded(true)
                 setSelectedModel(modelName)
@@ -761,6 +756,7 @@ const RealPage = () => {
 
                 const data = await collectImage({
                     image: imageData,
+                    user_id: userId,
                     dataset_name: datasetName,
                     timestamp: captureTimestampMs,
                     state: {
@@ -828,7 +824,7 @@ const RealPage = () => {
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
                         datasetName={datasetName}
-                        userId="default"
+                        userId={userId}
                         datasets={datasets}
                         onStartTraining={handleStartTraining}
                         onStopTraining={handleStopTraining}

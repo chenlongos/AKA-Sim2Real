@@ -138,7 +138,7 @@ def start_game_loop(
     sim_controller: SimController | None = None,
     namespace: str = "/",
 ):
-    """启动游戏循环 - 支持指定命名空间"""
+    """启动循环 - 支持指定命名空间"""
     if namespace == "/sim":
         runtime_state = runtime or _sim_runtime_state
         controller = sim_controller or _get_sim_controller()
