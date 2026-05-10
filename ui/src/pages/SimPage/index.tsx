@@ -320,6 +320,11 @@ const SimPage = () => {
         }
     }
 
+    const handleUnloadModel = () => {
+        setIsModelLoaded(false)
+        setSelectedModel("")
+    }
+
     const doInference = useCallback(async () => {
         // 获取最新的 carState（避免闭包问题）
         const currentCarState = useSimCarStore.getState().carState
@@ -555,11 +560,13 @@ const SimPage = () => {
 
                     <InferenceControl
                         isModelLoaded={isModelLoaded}
+                        selectedModel={selectedModel}
                         isInferring={isInferring}
                         autoInference={autoInference}
                         inferenceResult={inferenceResult}
                         models={models}
                         onLoadModel={handleLoadModel}
+                        onUnloadModel={handleUnloadModel}
                         onInference={handleInference}
                         onAutoInference={handleAutoInference}
                     />

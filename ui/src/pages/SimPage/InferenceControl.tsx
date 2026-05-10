@@ -1,21 +1,25 @@
 interface InferenceControlProps {
     isModelLoaded: boolean;
+    selectedModel: string;
     isInferring: boolean;
     autoInference: boolean;
     inferenceResult: string[];
     models: string[];
     onLoadModel: (modelName: string) => void;
+    onUnloadModel: () => void;
     onInference: () => void;
     onAutoInference: () => void;
 }
 
 export const InferenceControl = ({
     isModelLoaded,
+    selectedModel,
     isInferring,
     autoInference,
     inferenceResult,
     models,
     onLoadModel,
+    onUnloadModel,
     onInference,
     onAutoInference,
 }: InferenceControlProps) => {
@@ -96,6 +100,11 @@ export const InferenceControl = ({
                 )
             ) : (
                 <div className="space-y-2">
+                    {/* 已加载模型显示 */}
+                    <div className="flex items-center justify-between px-3 py-2 bg-slate-900/50 rounded border border-slate-700">
+                        <span className="text-xs text-slate-400">当前模型</span>
+                        <span className="text-sm text-emerald-400 font-mono">{selectedModel}</span>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                         <button
                             onClick={onInference}
@@ -122,6 +131,12 @@ export const InferenceControl = ({
                             {autoInference ? '停止自动' : '自动推理'}
                         </button>
                     </div>
+                    <button
+                        onClick={onUnloadModel}
+                        className="w-full py-2 text-xs text-slate-400 hover:text-slate-300 border border-slate-700 rounded-lg transition-all"
+                    >
+                        切换模型
+                    </button>
                 </div>
             )}
         </div>

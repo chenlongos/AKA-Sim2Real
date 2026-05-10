@@ -527,6 +527,11 @@ const RealPage = () => {
         }
     }
 
+    const handleUnloadModel = () => {
+        setIsModelLoaded(false)
+        setSelectedModel("")
+    }
+
     const doInference = async (sessionId?: number) => {
         if (sessionId !== undefined && sessionId !== autoInferenceSessionRef.current) {
             return
@@ -840,11 +845,13 @@ const RealPage = () => {
 
                     <InferenceControl
                         isModelLoaded={isModelLoaded}
+                        selectedModel={selectedModel}
                         isInferring={isInferring}
                         autoInference={autoInference}
                         inferenceResult={inferenceResult}
                         models={models}
                         onLoadModel={handleLoadModel}
+                        onUnloadModel={handleUnloadModel}
                         onInference={handleInference}
                         onAutoInference={handleAutoInference}
                     />
