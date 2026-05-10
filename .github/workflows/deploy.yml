@@ -93,5 +93,8 @@ jobs:
           script: |
             echo "START"
             date
-            pkill -f uvicorn || true
-            echo "END"
+            PID=$(pgrep -f uvicorn) && kill -9 $PID 2>/dev/null || echo "No uvicorn"
+            sleep 1
+            nohup /opt/aka-sim/venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 > /opt/aka-sim/app.log 2>&1 &
+            sleep 3
+            echo "Backend started"
