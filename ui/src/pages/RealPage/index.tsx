@@ -329,7 +329,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
                 return 0
             }
             const sign = value >= 0 ? 1 : -1
-            return sign * Math.round(Math.abs(value))
+            return sign * Math.round(Math.abs(value) * 100)
         }
 
         const leftCommand = mapVelocityToMotorCommand(left)
@@ -354,8 +354,8 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         const controller = new AbortController()
         latestAutoCommandAbortRef.current = controller
 
-        const leftCommand = Math.sign(left) * Math.round(Math.abs(left))
-        const rightCommand = Math.sign(right) * Math.round(Math.abs(right))
+        const leftCommand = Math.sign(left) * Math.round(Math.abs(left) * 100)
+        const rightCommand = Math.sign(right) * Math.round(Math.abs(right) * 100)
         setInferenceResult([`v=[${left.toFixed(2)}, ${right.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=0s`])
 
         void sendInferenceActionToCar(left, right, 0, {signal: controller.signal})
@@ -727,10 +727,10 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
 
         collectTimerRef.current = window.setInterval(async () => {
             if (collectInFlightRef.current) return
-            if (!carIP) return
+            if (!isRecording || !carIP) return
 
-            const captureTimestampMs = Date.now()
             collectInFlightRef.current = true
+            const captureTimestampMs = Date.now()
             try {
                 const allStatus = await cameraAllStatus(carIP, captureTimestampMs)
                 if (typeof allStatus.left_speed !== 'number' || typeof allStatus.right_speed !== 'number') {
