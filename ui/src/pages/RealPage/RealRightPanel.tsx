@@ -1,6 +1,7 @@
-import {forwardRef, useImperativeHandle, useRef} from "react";
+import {forwardRef, useImperativeHandle, useRef, useState} from "react";
 import type {CarState} from "../../models/types.ts";
 import {LogConsole} from "../SimPage/LogConsole.tsx";
+import {MjpegStreamView, type MjpegStreamViewRef} from "./MjpegStreamView.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
 import {getActionsFromMotorStatus, cameraAllStatus} from "../../api/realCar";
 
@@ -14,7 +15,7 @@ interface RealRightPanelProps {
     carIP: string;
     onCarIPChange: (ip: string) => void;
     carConnected: boolean;
-    fpvCameraRef?: React.RefObject<RealCameraViewRef | null>;
+    fpvCameraRef?: React.RefObject<MjpegStreamViewRef | null>;
     cameraDevices: CameraDeviceOption[];
     fpvCameraId: string;
     onFpvCameraChange: (deviceId: string) => void;
@@ -27,12 +28,15 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
     carIP,
     onCarIPChange,
     carConnected,
+    fpvCameraRef,
     cameraDevices,
     fpvCameraId,
     onFpvCameraChange,
     fpvCameraError,
 }, ref) => {
-    const fpvCameraViewRef = useRef<RealCameraViewRef | null>(null);
+    const fpvCameraViewRef = fpvCameraRef || useRef<MjpegStreamViewRef | null>(null);
+    const localCameraViewRef = useRef<RealCameraViewRef | null>(null);
+    const [useCarCamera, setUseCarCamera] = useState(true);
     const currentActions = getActionsFromMotorStatus({
         left_speed: carState.vel_left,
         right_speed: carState.vel_right,
@@ -40,9 +44,12 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
 
     useImperativeHandle(ref, () => ({
         getImageData: () => {
-            return fpvCameraViewRef.current?.getImageData();
+            if (carIP && useCarCamera) {
+                return fpvCameraViewRef.current?.getImageData();
+            }
+            return localCameraViewRef.current?.getImageData();
         }
-    }), []);
+    }), [carIP, useCarCamera]);
 
     return (
         <div className="flex flex-col h-full gap-3 min-h-0 overflow-hidden">
@@ -73,19 +80,54 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
                     )}
                 </div>
 
-                {/* 摄像头视图 */}
+{/* 摄像头视图 */}
                 <div className="mb-3">
-                    <RealCameraView
-                        ref={fpvCameraViewRef}
-                        title="右侧摄像头 / 第一人称"
-                        description="数据采集与后续推理输入统一使用这一路画面。"
-                        devices={cameraDevices}
-                        selectedDeviceId={fpvCameraId}
-                        onDeviceChange={onFpvCameraChange}
-                        cameraError={fpvCameraError}
-                        isRecording={isRecording}
-                        collectTarget
-                    />
+                    {carIP && (
+                        <div className="flex gap-2 mb-2">
+                            <button
+                                onClick={() => setUseCarCamera(true)}
+                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                                    useCarCamera
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                }`}
+                            >
+                                小车摄像头
+                            </button>
+                            <button
+                                onClick={() => setUseCarCamera(false)}
+                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                                    !useCarCamera
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                }`}
+                            >
+                                本地摄像头
+                            </button>
+                        </div>
+                    )}
+                    {carIP && useCarCamera ? (
+                        <MjpegStreamView
+                            ref={fpvCameraViewRef}
+                            carIP={carIP}
+                            title="小车摄像头 / 第一人称"
+                            description="数据采集与后续推理输入统一使用这一路画面。"
+                            isRecording={isRecording}
+                            collectTarget
+                        />
+                    ) : (
+                        <RealCameraView
+                            ref={localCameraViewRef}
+                            title={carIP ? "本地摄像头 / 第一人称" : "摄像头 / 第一人称"}
+                            description={carIP ? "切换至小车摄像头获取小车视角。" : "数据采集与后续推理输入统一使用这一路画面。"}
+                            devices={cameraDevices}
+                            selectedDeviceId={fpvCameraId}
+                            onDeviceChange={onFpvCameraChange}
+                            cameraError={fpvCameraError}
+                            isRecording={isRecording}
+                            collectTarget
+                        />
+                    )}
                 </div>
 
                 {/* 速度显示 */}

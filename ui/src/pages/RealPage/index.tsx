@@ -19,6 +19,7 @@ import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
+import {MjpegStreamView, type MjpegStreamViewRef} from "./MjpegStreamView.tsx";
 import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
 import {showToast} from "../../lib/toast.ts";
 import {getDatasetPath, getTrainPath, getModelPath} from "../../lib/constants.ts";
@@ -54,7 +55,7 @@ const RealPage = () => {
     const latestAutoCommandAbortRef = useRef<AbortController | null>(null)
     const latestAutoCommandSeqRef = useRef(0)
     const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
-    const fpvCameraViewRef = useRef<RealRightPanelRef | null>(null)
+const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     const collectTimerRef = useRef<number | null>(null)
     const collectInFlightRef = useRef(false)
     const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
