@@ -14,7 +14,7 @@ import {
     onTrainingProgress,
 } from "../../api/socket.ts";
 import {startTraining, stopTraining, loadTrainedModel, collectImage, listDatasetDirs, listModels} from "../../api/api";
-import {carHeartbeat, carTimeSync, motorStatusAt, motorDirect, carControl, isCarApiSuccess} from "../../api/realCar";
+import {carHeartbeat, motorDirect, carControl, isCarApiSuccess, cameraAllStatus} from "../../api/realCar";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
@@ -72,8 +72,6 @@ const RealPage = () => {
     const userId = useSimCarStore.getState().userId
     const [carIP, setCarIP] = useState("")
     const [carConnected, setCarConnected] = useState(false)
-    const clockOffsetMsRef = useRef(0)
-    const clockRttMsRef = useRef(0)
 
     // 监听后端车辆状态更新
     useEffect(() => {
@@ -293,46 +291,12 @@ const RealPage = () => {
         checkCarHeartbeat(ip)
     }
 
-    useEffect(() => {
-        // 向小车计算数据同步延迟时间
-        if (!carIP) {
-            clockOffsetMsRef.current = 0
-            clockRttMsRef.current = 0
-            return
-        }
-
-        let cancelled = false
-
-        const syncClock = async () => {
-            const sendTime = Date.now()
-            const data = await carTimeSync(carIP)
-            const recvTime = Date.now()
-            if (cancelled || !isCarApiSuccess(data) || typeof data.device_time_ms !== "number") {
-                return
-            }
-
-            const midpoint = Math.round((sendTime + recvTime) / 2)
-            clockOffsetMsRef.current = data.device_time_ms - midpoint
-            clockRttMsRef.current = recvTime - sendTime
-        }
-
-        syncClock().catch(() => {})
-        const timer = window.setInterval(() => {
-            syncClock().catch(() => {})
-        }, 3000)
-
-        return () => {
-            cancelled = true
-            window.clearInterval(timer)
-        }
-    }, [carIP])
-
     const getRealtimeInferenceState = async (): Promise<[number, number]> => {
         if (!carIP) {
             throw new Error("请先输入小车IP")
         }
 
-        const data = await motorStatusAt(carIP, Date.now(), clockOffsetMsRef.current)
+        const data = await cameraAllStatus(carIP, Date.now())
         const velLeft = data?.left_speed
         const velRight = data?.right_speed
         if (typeof velLeft !== "number" || typeof velRight !== "number") {
@@ -742,17 +706,18 @@ const RealPage = () => {
 
         collectTimerRef.current = window.setInterval(async () => {
             if (collectInFlightRef.current) return
-
-            const imageData = fpvCameraViewRef.current?.getImageData()
-            if (!imageData || !carIP) return
+            if (!carIP) return
 
             const captureTimestampMs = Date.now()
             collectInFlightRef.current = true
             try {
-                const motorStatus = await motorStatusAt(carIP, captureTimestampMs, clockOffsetMsRef.current)
-                if (typeof motorStatus.left_speed !== 'number' || typeof motorStatus.right_speed !== 'number') {
-                    throw new Error("motor_status_at 返回格式不正确")
+                const allStatus = await cameraAllStatus(carIP, captureTimestampMs)
+                if (typeof allStatus.left_speed !== 'number' || typeof allStatus.right_speed !== 'number') {
+                    throw new Error("cameraAllStatus 返回格式不正确")
                 }
+
+                const imageData = allStatus.image ? `data:image/jpeg;base64,${allStatus.image}` : fpvCameraViewRef.current?.getImageData()
+                if (!imageData) return
 
                 const data = await collectImage({
                     image: imageData,
@@ -760,12 +725,12 @@ const RealPage = () => {
                     dataset_name: datasetName,
                     timestamp: captureTimestampMs,
                     state: {
-                        vel_left: motorStatus.left_speed,
-                        vel_right: motorStatus.right_speed,
+                        vel_left: allStatus.left_speed,
+                        vel_right: allStatus.right_speed,
                     },
                     action: [
-                        typeof motorStatus.left_target === 'number' ? motorStatus.left_target : 0,
-                        typeof motorStatus.right_target === 'number' ? motorStatus.right_target : 0,
+                        typeof allStatus.left_target === 'number' ? allStatus.left_target : 0,
+                        typeof allStatus.right_target === 'number' ? allStatus.right_target : 0,
                     ],
                 })
                 if (data.count !== undefined) {

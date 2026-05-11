@@ -2,7 +2,7 @@ import {forwardRef, useImperativeHandle, useRef} from "react";
 import type {CarState} from "../../models/types.ts";
 import {LogConsole} from "../SimPage/LogConsole.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
-import {getActionsFromMotorStatus, motorStatusAt} from "../../api/realCar";
+import {getActionsFromMotorStatus, cameraAllStatus} from "../../api/realCar";
 
 export interface RealRightPanelRef {
     getImageData: () => string | undefined;
@@ -131,10 +131,10 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
                             return
                         }
                         try {
-                            const data = await motorStatusAt(carIP, Date.now(), 0)
-                            console.log('motor_status:', data)
+                            const data = await cameraAllStatus(carIP, Date.now())
+                            console.log('all_status:', data)
                         } catch (e) {
-                            console.error('获取电机状态失败:', e)
+                            console.error('获取小车状态失败:', e)
                         }
                     }}
                     className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-all"

@@ -27,31 +27,34 @@ const fetchCarApi = async <T>(
 };
 
 export const carHeartbeat = (carIP: string) =>
-  fetchCarApi<CarHeartbeatResponse>(carIP, 'heartbeat', {});
+  fetchCarApi<CarHeartbeatResponse>(carIP, 'system/heartbeat', {});
 
-export interface MotorStatusResponse {
-  ok?: boolean;
-  matched_timestamp_ms?: number;
-  delta_ms?: number;
-  source?: string;
+export interface CameraAllStatusResponse {
+  timestamp?: string;
   left_speed?: number;
   right_speed?: number;
   left_target?: number;
   right_target?: number;
-  prev_timestamp_ms?: number;
-  next_timestamp_ms?: number;
+  timestamp_ms?: number;
+  image?: string;
+  image_format?: string;
   error?: string;
   detail?: string;
   message?: string;
 }
 
-export const motorStatusAt = (carIP: string, captureTimeMs: number, offsetMs: number = 0) =>
-  fetchCarApi<MotorStatusResponse>(carIP, 'motor_status_at', { capture_time_ms: captureTimeMs, offset_ms: offsetMs });
+export const cameraAllStatus = (carIP: string, timestamp?: number) => {
+  const params: Record<string, string | number> = {};
+  if (timestamp !== undefined) {
+    params.timestamp = timestamp;
+  }
+  return fetchCarApi<CameraAllStatusResponse>(carIP, 'camera/all_status', params);
+};
 
 const MOTOR_ACTION_EPSILON = 1e-3;
 
 export const getActionsFromMotorStatus = (
-  motorStatus: Pick<MotorStatusResponse, 'left_speed' | 'right_speed'>,
+  motorStatus: Pick<CameraAllStatusResponse, 'left_speed' | 'right_speed'>,
 ) => {
   const left = motorStatus.left_speed;
   const right = motorStatus.right_speed;
@@ -83,18 +86,6 @@ export const getActionsFromMotorStatus = (
   return [];
 };
 
-export interface TimeSyncResponse {
-  ok?: boolean;
-  status?: string;
-  device_time_ms?: number;
-  error?: string;
-  detail?: string;
-  message?: string;
-}
-
-export const carTimeSync = (carIP: string) =>
-  fetchCarApi<TimeSyncResponse>(carIP, 'time_sync', {});
-
 export interface MotorDirectResponse {
   ok?: boolean;
   status?: string;
@@ -112,7 +103,7 @@ export const motorDirect = (
   right: number,
   duration: number = 0,
   options?: { signal?: AbortSignal },
-) => fetchCarApi<MotorDirectResponse>(carIP, 'motor_direct', { left, right, duration }, options);
+) => fetchCarApi<MotorDirectResponse>(carIP, 'motor/direct', { left, right, duration }, options);
 
 export interface CarControlResponse {
   ok?: boolean;
