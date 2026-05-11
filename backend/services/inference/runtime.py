@@ -80,18 +80,18 @@ class ACTInferenceRuntime:
 
         with torch.no_grad():
             state_tensor = self.preprocessor.normalize_state(state, self.stats, self.device)
-            logger.debug(f"[ACT推理] 输入state: {state}, 归一化后: {state_tensor.tolist()}")
+            logger.info(f"[ACT推理] 输入state: {state}, 归一化后: {state_tensor.tolist()}")
             image_tensor = self.process_image(image)
             action = self.model.get_action(
                 image_tensor,
                 state_tensor,
                 use_temporal_ensembling=False,
             )
-            logger.debug(f"[ACT推理] 模型原始输出: {action[0][0].tolist()}")
+            logger.info(f"[ACT推理] 模型原始输出: {action[0][0].tolist()}")
             if self.should_blend_current_action():
                 action = self.blend_current_action(action)
             action = self.preprocessor.denormalize_action(action, self.stats, self.device)
-            logger.debug(f"[ACT推理] 归一化后输出: {action[0][0].tolist()}")
+            logger.info(f"[ACT推理] 归一化后输出: {action[0][0].tolist()}")
             return action.cpu().numpy().tolist()
 
     def is_model_loaded(self) -> bool:

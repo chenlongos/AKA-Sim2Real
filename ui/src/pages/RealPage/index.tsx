@@ -497,8 +497,26 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             return
         }
 
-        const state = await getRealtimeInferenceState()
-        const imageBase64 = fpvCameraViewRef.current?.getImageData()
+        if (!carIP) {
+            throw new Error("请先输入小车IP")
+        }
+
+        const allStatus = await cameraAllStatus(carIP, Date.now())
+        const velLeft = allStatus.left_speed
+        const velRight = allStatus.right_speed
+        if (typeof velLeft !== "number" || typeof velRight !== "number") {
+            throw new Error("小车实时状态返回格式不正确")
+        }
+
+        setCarConnected(true)
+        setCarState((prev) => ({
+            ...prev,
+            vel_left: velLeft,
+            vel_right: velRight,
+        }))
+
+        const imageBase64 = allStatus.image ? `data:image/jpeg;base64,${allStatus.image}` : undefined
+        const state: [number, number] = [velLeft, velRight]
         const result = await runInferenceWithSocket(realSocket, state, imageBase64)
 
         if (sessionId !== undefined && (!autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current)) {
@@ -599,6 +617,8 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             inferenceInFlightRef.current = true
             try {
                 await doInference(sessionId)
+            } catch (error) {
+                console.error('Auto inference error:', error)
             } finally {
                 inferenceInFlightRef.current = false
             }

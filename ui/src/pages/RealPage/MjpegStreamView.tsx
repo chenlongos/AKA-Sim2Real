@@ -22,7 +22,7 @@ export const MjpegStreamView = forwardRef<MjpegStreamViewRef, MjpegStreamViewPro
     const imgRef = useRef<HTMLImageElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const [error, setError] = useState<string>();
-    const [streamUrl] = useState(`http://${carIP}/api/camera/stream`);
+    const streamUrl = `http://${carIP}/api/camera/stream`;
 
     useImperativeHandle(ref, () => ({
         getImageData: () => {
@@ -54,7 +54,7 @@ export const MjpegStreamView = forwardRef<MjpegStreamViewRef, MjpegStreamViewPro
             img.removeEventListener('error', handleError);
             img.removeEventListener('load', handleLoad);
         };
-    }, [streamUrl]);
+    }, []);
 
     return (
         <div className="flex flex-col gap-3 h-full">
