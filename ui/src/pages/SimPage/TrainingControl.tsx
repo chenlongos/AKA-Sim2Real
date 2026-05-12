@@ -5,7 +5,6 @@ interface TrainingControlProps {
     trainingEpochs: number;
     collectionFps: number;
     resumeTraining: boolean;
-    episodeCounts: Record<number, number>;
     currentEpisode: number;
     isRecording: boolean;
     datasetName: string;
@@ -30,7 +29,6 @@ export const TrainingControl = ({
     trainingEpochs,
     collectionFps,
     resumeTraining,
-    episodeCounts,
     currentEpisode,
     isRecording,
     datasetName,
@@ -172,21 +170,6 @@ export const TrainingControl = ({
                         )}
                     </div>
                 </div>
-
-                {/* 各轮次数据量 */}
-                {Object.keys(episodeCounts).length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-slate-700/50">
-                        <div className="text-xs text-emerald-400 mb-1">√ 数据集已上传</div>
-                        <div className="bg-slate-900/50 rounded-lg p-2 max-h-20 overflow-y-auto space-y-1">
-                            {Object.entries(episodeCounts).map(([ep, count]) => (
-                                <div key={ep} className="flex items-center justify-between text-xs">
-                                    <span className="text-slate-400">轮次 {ep}</span>
-                                    <span className="font-mono text-emerald-400">{count} 样本</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* 训练控制模块 */}
@@ -241,8 +224,8 @@ export const TrainingControl = ({
                 {!isTraining ? (
                     <button
                         onClick={onStartTraining}
-                        disabled={Object.keys(episodeCounts).length === 0 && collectedCount === 0}
-                        className={`w-full py-2.5 text-sm font-medium rounded-lg transition-all ${Object.keys(episodeCounts).length > 0 || collectedCount > 0
+                        disabled={collectedCount === 0 && datasets.length === 0}
+                        className={`w-full py-2.5 text-sm font-medium rounded-lg transition-all ${collectedCount > 0 || datasets.length > 0
                                 ? 'bg-linear-to-r from-violet-600 to-violet-700 hover:from-violet-500 hover:to-violet-600 text-white shadow-lg shadow-violet-900/20'
                                 : 'bg-slate-700 text-slate-500 cursor-not-allowed'
                             }`}

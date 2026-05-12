@@ -41,7 +41,6 @@ const RealPage = () => {
     const [trainingEpochs, setTrainingEpochs] = useState(50)
     const [collectionFps, setCollectionFps] = useState(20)
     const [currentEpisode, setCurrentEpisode] = useState(1)
-    const [episodeCounts, setEpisodeCounts] = useState<Record<number, number>>({})
     const [resumeTraining, setResumeTraining] = useState(false)
     const [isModelLoaded, setIsModelLoaded] = useState(false)
     const [inferenceResult, setInferenceResult] = useState<string[]>([])
@@ -93,14 +92,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             error?: string
         }) => {
             setCollectedCount(data.count)
-        })
-
-        realSocket.on("episode_info", (data: {
-            current_episode: number;
-            episodes: Record<number, number>;
-            buffer_size?: number
-        }) => {
-            setEpisodeCounts(data.episodes)
         })
 
         realSocket.on("episode_status", (data: {
@@ -183,7 +174,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             realSocket.off("car_state_update")
             realSocket.off("collection_count")
             realSocket.off("training_progress")
-            realSocket.off("episode_info")
             realSocket.off("episode_status")
             realSocket.off("episode_started")
             realSocket.off("episode_ended")
@@ -387,10 +377,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     }
 
     const handleStartEpisode = () => {
-        if (episodeCounts[currentEpisode] && episodeCounts[currentEpisode] > 0) {
-            finalizeEpisode(realSocket, userId, currentEpisode)
-            getEpisodes(realSocket, userId)
-        }
         startEpisode(realSocket, userId, currentEpisode, episodeTaskName)
     }
 
@@ -774,7 +760,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
                         trainingEpochs={trainingEpochs}
                         collectionFps={collectionFps}
                         resumeTraining={resumeTraining}
-                        episodeCounts={episodeCounts}
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
                         datasetName={datasetName}

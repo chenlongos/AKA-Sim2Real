@@ -38,7 +38,6 @@ const SimPage = () => {
     const [trainingEpochs, setTrainingEpochs] = useState(50)
     const [collectionFps, setCollectionFps] = useState(30)
     const [currentEpisode, setCurrentEpisode] = useState(1)
-    const [episodeCounts, setEpisodeCounts] = useState<Record<number, number>>({})
     const [resumeTraining, setResumeTraining] = useState(false)
     const [isModelLoaded, setIsModelLoaded] = useState(false)
     const [inferenceResult, setInferenceResult] = useState<string[]>([])
@@ -75,15 +74,6 @@ const SimPage = () => {
             if (data.error) {
                 showToast.error(`导出失败: ${data.error}`)
             }
-        })
-
-        // 监听轮次信息（只同步各轮次的数据量，不同步轮次号，由前端控制）
-        simSocket.on("episode_info", (data: {
-            current_episode: number;
-            episodes: Record<number, number>;
-            buffer_size?: number
-        }) => {
-            setEpisodeCounts(data.episodes)
         })
 
         // 监听 episode 状态
@@ -158,8 +148,6 @@ const SimPage = () => {
             simSocket.off("connected")
             simSocket.off("collection_count")
             simSocket.off("training_progress")
-            simSocket.off("episode_info")
-            simSocket.off("episode_status")
             simSocket.off("episode_started")
             simSocket.off("episode_ended")
             simSocket.off("episode_finalized")
@@ -240,13 +228,6 @@ const SimPage = () => {
     }
 
     const handleStartEpisode = () => {
-        // 检查是否有上一轮的数据需要保存
-        if (episodeCounts[currentEpisode] && episodeCounts[currentEpisode] > 0) {
-            finalizeEpisode(simSocket, userId, currentEpisode)
-            // 刷新轮次列表
-            getEpisodes(simSocket, userId)
-        }
-
         // 开始新录制（使用当前轮次，不改变轮次）
         startEpisode(simSocket, userId, currentEpisode, episodeTaskName)
     }
@@ -529,7 +510,6 @@ const SimPage = () => {
                         trainingEpochs={trainingEpochs}
                         collectionFps={collectionFps}
                         resumeTraining={resumeTraining}
-                        episodeCounts={episodeCounts}
                         currentEpisode={currentEpisode}
                         isRecording={isRecording}
                         datasetName={datasetName}
