@@ -8,7 +8,6 @@ import {
     runInferenceWithSocket,
     startEpisode,
     endEpisode,
-    finalizeEpisode,
     getEpisodeStatus,
     sendImageData,
     onTrainingProgress,
@@ -319,7 +318,7 @@ const SimPage = () => {
             const velRightTarget = actionValues[1]
 
             if (typeof velLeftTarget !== 'number' || typeof velRightTarget !== 'number') {
-                console.error("Invalid velocity values:", { velLeftTarget, velRightTarget, firstChunk })
+                console.error("Invalid velocity values:", { velLeftTarget, velRightTarget })
                 return
             }
 

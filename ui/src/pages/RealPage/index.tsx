@@ -9,7 +9,6 @@ import {
     runInferenceWithSocket,
     startEpisode,
     endEpisode,
-    finalizeEpisode,
     getEpisodeStatus,
     onTrainingProgress,
 } from "../../api/socket.ts";
@@ -488,7 +487,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             const velRightTarget = actionValues[1]
 
             if (typeof velLeftTarget !== 'number' || typeof velRightTarget !== 'number') {
-                console.error("Invalid velocity values:", {velLeftTarget, velRightTarget, firstChunk})
+                console.error("Invalid velocity values:", {velLeftTarget, velRightTarget})
                 return
             }
 
