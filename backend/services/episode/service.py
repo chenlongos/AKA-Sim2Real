@@ -193,13 +193,11 @@ class EpisodeService:
 
         current_episode_id = state.user_current_episode_id.get(user_id, 1)
 
-        if current_episode_id not in state.episode_samples:
-            state.episode_samples[current_episode_id] = []
-
-        state.episode_samples[current_episode_id].append(sample)
         state.add_frame_to_episode(user_id, current_episode_id, sample)
 
-        count = len(state.episode_samples[current_episode_id])
+        # 从用户隔离的 buffer 获取 count
+        user_buffer = state.user_episode_buffers.get(user_id, {}).get(current_episode_id, {})
+        count = len(user_buffer.get("samples", []))
         # 每50帧输出一次采集日志，避免太频繁
         if count % 50 == 0:
             logger.info(f"数据采集中: user={user_id}, episode={current_episode_id}, frames={count}")
