@@ -42,8 +42,18 @@ class ACTPreprocessor:
             return torch.randn(1, 1, 3, 224, 224).to(device)
 
     def normalize_state(self, state: list, stats: ACTNormalizationStats, device: str) -> torch.Tensor:
+        """使用 QUANTILES 归一化状态：2 * (x - q01) / (q99 - q01) - 1"""
         state_tensor = torch.tensor(state[:2], dtype=torch.float32).unsqueeze(0).to(device)
-        return (state_tensor - stats.state_mean.unsqueeze(0).to(device)) / (stats.state_std.unsqueeze(0).to(device) + 1e-8)
+        q01 = stats.state_q01.unsqueeze(0).to(device)
+        q99 = stats.state_q99.unsqueeze(0).to(device)
+        denom = q99 - q01
+        denom = torch.where(denom == 0, torch.tensor(1e-8, device=device), denom)
+        return 2 * (state_tensor - q01) / denom - 1
 
     def denormalize_action(self, action: torch.Tensor, stats: ACTNormalizationStats, device: str) -> torch.Tensor:
-        return action * stats.action_std.unsqueeze(0).to(device) + stats.action_mean.unsqueeze(0).to(device)
+        """使用 QUANTILES 反归一化动作：(x + 1) / 2 * (q99 - q01) + q01"""
+        q01 = stats.action_q01.unsqueeze(0).to(device)
+        q99 = stats.action_q99.unsqueeze(0).to(device)
+        denom = q99 - q01
+        denom = torch.where(denom == 0, torch.tensor(1e-8, device=device), denom)
+        return (action + 1) / 2 * denom + q01

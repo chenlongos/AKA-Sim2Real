@@ -6,6 +6,7 @@ import torch
 class ACTDataset(torch.utils.data.Dataset):
     """
     ACT 数据集 - 用于行为克隆训练
+    使用 QUANTILES 归一化 (1%/99% 百分位数)
     """
 
     def __init__(
@@ -15,17 +16,17 @@ class ACTDataset(torch.utils.data.Dataset):
         normalize_images: bool = True,
         image_mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
         image_std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
-        state_mean: Optional[torch.Tensor] = None,
-        state_std: Optional[torch.Tensor] = None,
-        action_mean: Optional[torch.Tensor] = None,
-        action_std: Optional[torch.Tensor] = None,
+        state_q01: Optional[torch.Tensor] = None,
+        state_q99: Optional[torch.Tensor] = None,
+        action_q01: Optional[torch.Tensor] = None,
+        action_q99: Optional[torch.Tensor] = None,
     ):
         """
         Args:
             data: 包含 'observation.image', 'observation.state', 'action' 的字典
             action_chunk_size: 动作分块大小
-            state_mean/std: 状态归一化参数
-            action_mean/std: 动作归一化参数
+            state_q01/q99: 状态百分位数归一化参数
+            action_q01/q99: 动作百分位数归一化参数
         """
         self.data = data
         self.action_chunk_size = action_chunk_size
@@ -35,11 +36,11 @@ class ACTDataset(torch.utils.data.Dataset):
         self.image_mean = torch.tensor(image_mean).view(1, 3, 1, 1)
         self.image_std = torch.tensor(image_std).view(1, 3, 1, 1)
 
-        # 状态和动作归一化参数
-        self.state_mean = state_mean
-        self.state_std = state_std
-        self.action_mean = action_mean
-        self.action_std = action_std
+        # QUANTILES 归一化参数
+        self.state_q01 = state_q01
+        self.state_q99 = state_q99
+        self.action_q01 = action_q01
+        self.action_q99 = action_q99
 
         action_tensor = data["action"]
         if action_tensor.ndim not in (2, 3):
@@ -101,13 +102,21 @@ class ACTDataset(torch.utils.data.Dataset):
         if self.normalize_images:
             images = (images - self.image_mean.to(images.device)) / self.image_std.to(images.device)
 
-        # 归一化状态
-        if self.state_mean is not None and self.state_std is not None:
-            state = (state - self.state_mean.to(state.device)) / (self.state_std.to(state.device) + 1e-8)
+        # 使用 QUANTILES 归一化状态: 2 * (x - q01) / (q99 - q01) - 1
+        if self.state_q01 is not None and self.state_q99 is not None:
+            q01 = self.state_q01.to(state.device)
+            q99 = self.state_q99.to(state.device)
+            denom = q99 - q01
+            denom = torch.where(denom == 0, torch.tensor(1e-8, device=state.device), denom)
+            state = 2 * (state - q01) / denom - 1
 
-        # 归一化动作
-        if self.action_mean is not None and self.action_std is not None:
-            action = (action - self.action_mean.to(action.device)) / (self.action_std.to(action.device) + 1e-8)
+        # 使用 QUANTILES 归一化动作: 2 * (x - q01) / (q99 - q01) - 1
+        if self.action_q01 is not None and self.action_q99 is not None:
+            q01 = self.action_q01.to(action.device)
+            q99 = self.action_q99.to(action.device)
+            denom = q99 - q01
+            denom = torch.where(denom == 0, torch.tensor(1e-8, device=action.device), denom)
+            action = 2 * (action - q01) / denom - 1
 
         return {
             "observation": {

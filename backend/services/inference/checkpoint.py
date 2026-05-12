@@ -20,10 +20,11 @@ if TYPE_CHECKING:
 
 @dataclass
 class ACTNormalizationStats:
-    state_mean: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
-    state_std: torch.Tensor = field(default_factory=lambda: torch.ones(2))
-    action_mean: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
-    action_std: torch.Tensor = field(default_factory=lambda: torch.ones(2))
+    # QUANTILES 归一化统计量
+    state_q01: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
+    state_q99: torch.Tensor = field(default_factory=lambda: torch.ones(2))
+    action_q01: torch.Tensor = field(default_factory=lambda: torch.zeros(2))
+    action_q99: torch.Tensor = field(default_factory=lambda: torch.ones(2))
 
 
 @dataclass
@@ -94,11 +95,20 @@ def load_stats(stats_dir: Optional[str]) -> ACTNormalizationStats:
     with open(stats_path, "r") as f:
         stats = json.load(f)
 
+    # 读取 QUANTILES 归一化参数
+    state_entry = stats.get("observation.state", {})
+    action_entry = stats.get("action", {})
+
+    state_q01 = torch.tensor(state_entry.get("q01", [0.0, 0.0]), dtype=torch.float32)
+    state_q99 = torch.tensor(state_entry.get("q99", [1.0, 1.0]), dtype=torch.float32)
+    action_q01 = torch.tensor(action_entry.get("q01", [0.0, 0.0]), dtype=torch.float32)
+    action_q99 = torch.tensor(action_entry.get("q99", [1.0, 1.0]), dtype=torch.float32)
+
     return ACTNormalizationStats(
-        state_mean=torch.tensor(stats.get("observation.state", {}).get("mean", [0.0, 0.0]), dtype=torch.float32),
-        state_std=torch.tensor(stats.get("observation.state", {}).get("std", [1.0, 1.0]), dtype=torch.float32),
-        action_mean=torch.tensor(stats.get("action", {}).get("mean", [0.0, 0.0]), dtype=torch.float32),
-        action_std=torch.tensor(stats.get("action", {}).get("std", [1.0, 1.0]), dtype=torch.float32),
+        state_q01=state_q01,
+        state_q99=state_q99,
+        action_q01=action_q01,
+        action_q99=action_q99,
     )
 
 

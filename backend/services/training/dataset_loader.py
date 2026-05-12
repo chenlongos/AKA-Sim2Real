@@ -65,15 +65,11 @@ def load_dataset(data_dir: str = "output/dataset") -> Dict[str, torch.Tensor]:
             states.append(torch.from_numpy(state_arr).float())
 
         for action_data in df["action"]:
-            if isinstance(action_data, np.ndarray):
-                action_arr = np.vstack(action_data).astype(np.float32)
-            elif isinstance(action_data, list):
-                if len(action_data) > 0 and isinstance(action_data[0], (list, np.ndarray)):
-                    action_arr = np.array(action_data, dtype=np.float32)
-                else:
-                    action_arr = np.array([action_data], dtype=np.float32)
-            else:
-                action_arr = np.array([[action_data]], dtype=np.float32)
+            # action 应该是 [action_dim] = [2] 的格式
+            action_arr = np.array(action_data, dtype=np.float32)
+            # 确保是 1D: [2] 而不是 [1, 2]
+            if action_arr.ndim > 1:
+                action_arr = action_arr.reshape(-1)
             actions.append(torch.from_numpy(action_arr).float())
 
     images = torch.stack(images)

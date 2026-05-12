@@ -1,6 +1,6 @@
 """
 ACT (Action Chunking Transformer) Model - 完全对齐 LeRobot
-支持 CVAE、多相机、完整的 Transformer 架构
+支持 CVAE、多相机、完整的 Transformer 架构、Temporal Ensembling
 """
 
 import math
@@ -12,6 +12,71 @@ from typing import Optional, Dict, Tuple, List
 from .configuration_act import ACTConfig
 
 logger = logging.getLogger(__name__)
+
+
+class ACTTemporalEnsembler:
+    """Temporal Ensembling - LeRobot ACT 官方实现
+
+    根据 Algorithm 2 of https://huggingface.co/papers/2304.13705
+
+    权重计算: w_i = exp(-temporal_ensemble_coeff * i)，其中 w0 是最旧的动作
+    权重归一化: 除以 Σw_i
+
+    系数工作原理:
+    - 设为 0: 所有动作均匀加权
+    - 设为正数: 更重视旧动作
+    - 设为负数: 更重视新动作
+
+    默认值 0.01 (LeRobot ACT 原版) 会更重视旧动作。
+    """
+
+    def __init__(self, temporal_ensemble_coeff: float, chunk_size: int) -> None:
+        self.chunk_size = chunk_size
+        self.ensemble_weights = torch.exp(-temporal_ensemble_coeff * torch.arange(chunk_size))
+        self.ensemble_weights_cumsum = torch.cumsum(self.ensemble_weights, dim=0)
+        self.reset()
+
+    def reset(self):
+        """重置在线计算变量"""
+        self.ensembled_actions = None
+        self.ensembled_actions_count = None
+
+    def update(self, actions: torch.Tensor) -> torch.Tensor:
+        """
+        输入: (batch, chunk_size, action_dim) 的动作序列
+        输出: (batch, action_dim) - 序列中的下一个动作
+
+        更新所有时间步的 temporal ensemble，并返回下一个动作。
+        """
+        self.ensemble_weights = self.ensemble_weights.to(device=actions.device)
+        self.ensemble_weights_cumsum = self.ensemble_weights_cumsum.to(device=actions.device)
+
+        if self.ensembled_actions is None:
+            # 第一次调用：用第一个时间步的动作序列初始化
+            self.ensembled_actions = actions.clone()
+            self.ensembled_actions_count = torch.ones(
+                (self.chunk_size, 1), dtype=torch.long, device=self.ensembled_actions.device
+            )
+        else:
+            # 在线更新: 对 (batch_size, chunk_size - 1, action_dim) 部分进行更新
+            self.ensembled_actions *= self.ensemble_weights_cumsum[self.ensembled_actions_count - 1]
+            self.ensembled_actions += actions[:, :-1] * self.ensemble_weights[self.ensembled_actions_count]
+            self.ensembled_actions /= self.ensemble_weights_cumsum[self.ensembled_actions_count]
+            self.ensembled_actions_count = torch.clamp(self.ensembled_actions_count + 1, max=self.chunk_size)
+
+            # 最后一个动作（没有先前的在线平均）需要拼接到末尾
+            self.ensembled_actions = torch.cat([self.ensembled_actions, actions[:, -1:]], dim=1)
+            self.ensembled_actions_count = torch.cat(
+                [self.ensembled_actions_count, torch.ones_like(self.ensembled_actions_count[-1:])]
+            )
+
+        # "消费"第一个动作
+        action, self.ensembled_actions, self.ensembled_actions_count = (
+            self.ensembled_actions[:, 0],
+            self.ensembled_actions[:, 1:],
+            self.ensembled_actions_count[1:],
+        )
+        return action
 
 
 def create_sinusoidal_pos_embedding(num_positions: int, dimension: int) -> torch.Tensor:
@@ -474,46 +539,52 @@ class ACTModel(nn.Module):
         images: torch.Tensor,
         state: torch.Tensor,
         use_temporal_ensembling: bool = False,
+        temporal_ensembler: "ACTTemporalEnsembler" = None,
         noise: float = 0.0,
     ) -> torch.Tensor:
         """
-        推理时获取动作
+        推理时获取动作 - 对齐 LeRobot
+
+        当 use_temporal_ensembling=True 时：
+        1. 每次推理得到完整的 chunk_size 步预测
+        2. 实际只执行第 1 步
+        3. 后续步保留，与下次推理的预测进行指数加权累积
+
+        需要外部传入 temporal_ensembler 实例，并在每个 episode 开始时调用 reset()。
 
         Args:
             images: 图像张量
             state: 状态张量
-            use_temporal_ensembling: 是否使用时序集成（多次推理取平均）
+            use_temporal_ensembling: 是否使用 temporal ensembling
+            temporal_ensembler: ACTTemporalEnsembler 实例（temporal ensembling 模式必须传入）
             noise: 添加到动作的噪声水平
 
         Returns:
-            预测的动作序列 [action_chunk_size, action_dim]
+            预测的单步动作 [action_dim]（而非完整的 chunk）
         """
         self.eval()
 
-        # 收集多次推理结果用于时序集成
-        all_actions = []
-
         with torch.no_grad():
-            num_ensembles = 3 if use_temporal_ensembling else 1
+            output = self.forward(
+                images,
+                state,
+                action_target=None,
+                infer_cvae=True
+            )
+            actions = output["action"]  # [batch, chunk_size, action_dim]
 
-            for _ in range(num_ensembles):
-                output = self.forward(
-                    images,
-                    state,
-                    action_target=None,
-                    infer_cvae=True
-                )
-                action = output["action"]
+            if noise > 0:
+                actions = actions + torch.randn_like(actions) * noise
 
-                if noise > 0:
-                    action = action + torch.randn_like(action) * noise
+            if use_temporal_ensembling and temporal_ensembler is not None:
+                # 使用 temporal ensembler 进行在线更新
+                action = temporal_ensembler.update(actions)
+            else:
+                # 不使用 temporal ensembling：只返回第一步
+                action = actions[:, 0]
 
-                all_actions.append(action)
+        return action
 
-        # 时序集成：取平均
-        if use_temporal_ensembling and len(all_actions) > 1:
-            final_action = torch.stack(all_actions).mean(dim=0)
-        else:
-            final_action = all_actions[0]
-
-        return final_action
+    def reset_temporal_ensembler(self, temporal_ensembler: "ACTTemporalEnsembler"):
+        """重置 temporal ensembler（每个 episode 开始时调用）"""
+        temporal_ensembler.reset()

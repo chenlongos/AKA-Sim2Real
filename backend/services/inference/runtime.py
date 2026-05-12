@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
@@ -16,9 +15,9 @@ from backend.services.inference.checkpoint import (
     load_checkpoint_bundle,
     load_stats,
 )
-from backend.services.inference.execution import TemporalEnsemblingPolicy
 from backend.services.inference.preprocess import ACTPreprocessor
 from policies.models.act.defaults import build_act_config
+from policies.models.act.modeling_act import ACTTemporalEnsembler
 
 if TYPE_CHECKING:
     from policies.models.act.modeling_act import ACTConfig, ACTModel
@@ -32,32 +31,27 @@ class ACTInferenceRuntime:
         self.device = get_default_device()
         self.stats = ACTNormalizationStats()
         self.preprocessor = ACTPreprocessor()
-        self.execution_policy = TemporalEnsemblingPolicy()
+        self.temporal_ensembler: Optional[ACTTemporalEnsembler] = None
+        self.action_chunk_size = 8  # 默认值，会在加载模型时更新
 
     def create_config(self, config_dict: Optional[dict] = None) -> "ACTConfig":
         return build_act_config(**(config_dict or {}))
 
     def reset_inference_context(self):
-        self.execution_policy.reset()
+        """重置推理上下文（每个 episode 开始时调用）"""
+        if self.temporal_ensembler is not None:
+            self.temporal_ensembler.reset()
 
-    def _temporal_decay(self) -> float:
+    def should_use_temporal_ensembling(self) -> bool:
+        """是否启用 temporal ensembling"""
         if self.model is None:
-            return 0.5
-        decay = float(getattr(self.model.config, "temporal_ensembling_weight", 0.5))
-        return min(max(decay, 1e-3), 1.0)
-
-    def blend_current_action(self, action_chunk: torch.Tensor) -> torch.Tensor:
-        self.execution_policy.update_decay(self._temporal_decay())
-        return self.execution_policy.blend(action_chunk)
-
-    def should_blend_current_action(self) -> bool:
-        flag = os.getenv("ACT_TEMPORAL_ENSEMBLING", "0").strip().lower()
-        return flag in {"1", "true", "yes", "on"}
+            return False
+        return bool(getattr(self.model.config, "use_temporal_ensembling", False))
 
     def _load_stats(self, stats_dir: Optional[str]):
         self.stats = load_stats(stats_dir)
-        logger.info("状态归一化: mean=%s, std=%s", self.stats.state_mean, self.stats.state_std)
-        logger.info("动作归一化: mean=%s, std=%s", self.stats.action_mean, self.stats.action_std)
+        logger.info("状态归一化 (QUANTILES): q01=%s, q99=%s", self.stats.state_q01, self.stats.state_q99)
+        logger.info("动作归一化 (QUANTILES): q01=%s, q99=%s", self.stats.action_q01, self.stats.action_q99)
 
     def load_model(self, model_path: str = None, stats_dir: str = None) -> "ACTModel":
         logger.info("加载 ACT 模型...")
@@ -66,6 +60,19 @@ class ACTInferenceRuntime:
         self.model = instantiate_model(bundle, self.device)
         self.reset_inference_context()
         self._load_stats(stats_dir)
+
+        # 初始化 temporal ensembler（如果启用）
+        if self.should_use_temporal_ensembling():
+            self.action_chunk_size = getattr(self.model.config, "action_chunk_size", 8)
+            coeff = float(getattr(self.model.config, "temporal_ensembling_coeff", 0.01))
+            self.temporal_ensembler = ACTTemporalEnsembler(
+                temporal_ensemble_coeff=coeff,
+                chunk_size=self.action_chunk_size,
+            )
+            logger.info(f"已初始化 Temporal Ensembler: coeff={coeff}, chunk_size={self.action_chunk_size}")
+        else:
+            self.temporal_ensembler = None
+
         logger.info("ACT 模型加载完成，使用设备: %s", self.device)
         return self.model
 
@@ -81,16 +88,18 @@ class ACTInferenceRuntime:
             state_tensor = self.preprocessor.normalize_state(state, self.stats, self.device)
             logger.info(f"[ACT推理] 输入state: {state}, 归一化后: {state_tensor.tolist()}")
             image_tensor = self.process_image(image)
+
+            use_temporal = self.should_use_temporal_ensembling()
             action = self.model.get_action(
                 image_tensor,
                 state_tensor,
-                use_temporal_ensembling=False,
+                use_temporal_ensembling=use_temporal,
+                temporal_ensembler=self.temporal_ensembler,
             )
-            logger.info(f"[ACT推理] 模型原始输出: {action[0][0].tolist()}")
-            if self.should_blend_current_action():
-                action = self.blend_current_action(action)
+
+            logger.info(f"[ACT推理] 模型原始输出: {action[0].tolist()}")
             action = self.preprocessor.denormalize_action(action, self.stats, self.device)
-            logger.info(f"[ACT推理] 归一化后输出: {action[0][0].tolist()}")
+            logger.info(f"[ACT推理] 归一化后输出: {action[0].tolist()}")
             return action.cpu().numpy().tolist()
 
     def is_model_loaded(self) -> bool:

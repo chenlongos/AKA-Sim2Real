@@ -14,6 +14,10 @@ class EpisodeEventsMixin:
         logger.info(f"收到开始采集请求: episode_id={episode_id}, task_name={task_name}")
 
         result = self.episode_service.start_episode(episode_id, task_name)
+
+        # 重置 ACT 推理上下文（temporal ensembling 需要）
+        self.sim_controller.reset_act_inference_context()
+
         await self.emit("episode_started", result)
 
     async def on_end_episode(self, sid: str, payload: dict):

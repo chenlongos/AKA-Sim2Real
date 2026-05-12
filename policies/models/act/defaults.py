@@ -10,7 +10,8 @@ from .configuration_act import ACTConfig
 DEFAULT_ACT_CONFIG: dict[str, Any] = {
     "state_dim": 2,
     "action_dim": 2,
-    "action_chunk_size": 8,
+    "action_chunk_size": 16,  # 建议使用更大的值（如 100）以获得更长的时间窗口
+    "n_action_steps": 1,     # Temporal Ensembling 模式下必须为 1
     "hidden_dim": 512,
     "num_attention_heads": 8,
     "num_encoder_layers": 4,
@@ -18,8 +19,8 @@ DEFAULT_ACT_CONFIG: dict[str, Any] = {
     "dim_feedforward": 3200,
     "use_cvae": True,
     "kl_weight": 0.1,
-    "use_temporal_ensembling": False,
-    "temporal_ensembling_weight": 0.5,
+    "use_temporal_ensembling": True,
+    "temporal_ensembling_coeff": 0.01,  # LeRobot ACT 原版值，建议不要改
     "use_spatial_softmax": True,
     "latent_dim": 32,
     "num_cameras": 1,
@@ -37,6 +38,7 @@ def act_config_to_dict(config: ACTConfig) -> dict[str, Any]:
         "state_dim": config.state_dim,
         "action_dim": config.action_dim,
         "action_chunk_size": config.action_chunk_size,
+        "n_action_steps": config.n_action_steps,
         "hidden_dim": config.hidden_dim,
         "num_attention_heads": config.num_attention_heads,
         "num_encoder_layers": config.num_encoder_layers,
@@ -46,7 +48,7 @@ def act_config_to_dict(config: ACTConfig) -> dict[str, Any]:
         "use_cvae": config.use_cvae,
         "kl_weight": config.kl_weight,
         "use_temporal_ensembling": config.use_temporal_ensembling,
-        "temporal_ensembling_weight": config.temporal_ensembling_weight,
+        "temporal_ensembling_coeff": config.temporal_ensembling_coeff,
         "use_spatial_softmax": config.use_spatial_softmax,
         "spatial_softmax_temperature": config.spatial_softmax_temperature,
         "num_cameras": config.num_cameras,

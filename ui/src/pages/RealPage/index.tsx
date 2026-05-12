@@ -491,18 +491,15 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         }
 
         if (result.success && result.action) {
-            const actionChunks = Array.isArray(result.action) ? result.action : [result.action]
-            if (actionChunks.length === 0 || !Array.isArray(actionChunks[0])) {
+            // 新格式：action = [left_vel, right_vel]（单步）
+            const actionValues = Array.isArray(result.action) ? result.action : [result.action]
+            if (actionValues.length < 2) {
                 console.error("Invalid action shape:", result.action)
                 return
             }
 
-            const firstChunk = Array.isArray(actionChunks[0][0])
-                ? actionChunks[0][0]
-                : actionChunks[0]
-
-            const velLeftTarget = firstChunk[0]
-            const velRightTarget = firstChunk[1]
+            const velLeftTarget = actionValues[0]
+            const velRightTarget = actionValues[1]
 
             if (typeof velLeftTarget !== 'number' || typeof velRightTarget !== 'number') {
                 console.error("Invalid velocity values:", {velLeftTarget, velRightTarget, firstChunk})

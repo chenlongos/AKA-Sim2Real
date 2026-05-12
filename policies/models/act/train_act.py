@@ -36,7 +36,7 @@ from policies.models.act.defaults import build_act_config, act_config_to_dict
 
 def load_dataset(data_dir: str = "dataset") -> Dict[str, torch.Tensor]:
     """
-    加载导出的数据集
+    加载导出的数据集（LeRobot 单步 action 格式）
 
     Args:
         data_dir: 数据集目录
@@ -50,12 +50,8 @@ def load_dataset(data_dir: str = "dataset") -> Dict[str, torch.Tensor]:
     with open(data_path / "meta" / "stats.json", "r") as f:
         stats = json.load(f)
 
-    state_mean = torch.tensor(stats["observation.state"]["mean"], dtype=torch.float32)
-    state_std = torch.tensor(stats["observation.state"]["std"], dtype=torch.float32)
-
     # 加载所有parquet文件
     import pandas as pd
-    import glob
 
     parquet_files = sorted(data_path.glob("data/chunk-*/file-*.parquet"))
     print(f"找到 {len(parquet_files)} 个数据文件")
@@ -84,15 +80,15 @@ def load_dataset(data_dir: str = "dataset") -> Dict[str, torch.Tensor]:
             state = torch.tensor(state_list, dtype=torch.float32)
             states.append(state)
 
-        # 加载动作
-        for action_list in df["action"]:
-            action = torch.tensor(action_list, dtype=torch.float32)
+        # 加载动作（单步 action：[action_dim]）
+        for action_data in df["action"]:
+            action = torch.tensor(action_data, dtype=torch.float32)
             actions.append(action)
 
-    # 转换为tensor
-    images = torch.stack(images)  # [N 224, , 3,224]
+    # 转换为tensor: [N, action_dim] 单步格式
+    images = torch.stack(images)  # [N, 3, 224, 224]
     states = torch.stack(states)  # [N, state_dim]
-    actions = torch.stack(actions)  # [N, action_chunk_size, action_dim]
+    actions = torch.stack(actions)  # [N, action_dim]
 
     print(f"加载完成: {len(images)} 个样本")
     print(f"  图像形状: {images.shape}")
@@ -141,18 +137,18 @@ def train(
     # 加载数据
     data = load_dataset(data_dir)
 
-    # 加载归一化统计
+    # 加载 QUANTILES 归一化统计
     stats_path = Path(data_dir) / "meta" / "stats.json"
-    state_mean, state_std, action_mean, action_std = None, None, None, None
+    state_q01, state_q99, action_q01, action_q99 = None, None, None, None
     if stats_path.exists():
         with open(stats_path, "r") as f:
             stats = json.load(f)
-        state_mean = torch.tensor(stats["observation.state"]["mean"], dtype=torch.float32)
-        state_std = torch.tensor(stats["observation.state"]["std"], dtype=torch.float32)
-        action_mean = torch.tensor(stats["action"]["mean"], dtype=torch.float32)
-        action_std = torch.tensor(stats["action"]["std"], dtype=torch.float32)
-        print(f"状态归一化: mean={state_mean}, std={state_std}")
-        print(f"动作归一化: mean={action_mean}, std={action_std}")
+        state_q01 = torch.tensor(stats["observation.state"]["q01"], dtype=torch.float32)
+        state_q99 = torch.tensor(stats["observation.state"]["q99"], dtype=torch.float32)
+        action_q01 = torch.tensor(stats["action"]["q01"], dtype=torch.float32)
+        action_q99 = torch.tensor(stats["action"]["q99"], dtype=torch.float32)
+        print(f"状态归一化 (QUANTILES): q01={state_q01}, q99={state_q99}")
+        print(f"动作归一化 (QUANTILES): q01={action_q01}, q99={action_q99}")
 
     # 创建配置
     config = build_act_config(
@@ -171,10 +167,10 @@ def train(
         data,
         action_chunk_size=action_chunk_size,
         normalize_images=True,
-        state_mean=state_mean,
-        state_std=state_std,
-        action_mean=action_mean,
-        action_std=action_std,
+        state_q01=state_q01,
+        state_q99=state_q99,
+        action_q01=action_q01,
+        action_q99=action_q99,
     )
 
     dataloader = DataLoader(

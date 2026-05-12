@@ -19,7 +19,7 @@ from PIL import Image
 # 默认配置
 DEFAULT_CHUNK_SIZE = 1000  # 每个 parquet 文件的最大样本数
 DEFAULT_CHUNK_SIZE_BYTES = 100 * 1024 * 1024  # 100MB 基于大小的分块
-ACTION_CHUNK_SIZE = 8  # 预测未来8帧的动作序列
+ACTION_CHUNK_SIZE = 8  # 推理时每次预测的动作步数（与存储格式无关）
 ACTION_DIM = 2  # [pwm_left, pwm_right] 每帧2维
 DEFAULT_FPS = 10
 
@@ -77,7 +77,7 @@ class LeRobotDatasetMetadata:
                 "image": {"dtype": "jpeg", "shape": [240, 320, 3]},
                 "state": {"dtype": "float32", "shape": [STATE_DIM]},
             },
-            "action": {"dtype": "float32", "shape": [ACTION_CHUNK_SIZE, ACTION_DIM]},
+            "action": {"dtype": "float32", "shape": [ACTION_DIM]},
         }
 
         # 元数据缓存
@@ -163,15 +163,16 @@ class LeRobotDatasetMetadata:
                 }
 
     def _build_stats_entry(self, key: str, values: np.ndarray) -> Dict[str, Any]:
-        """根据 batch 数据更新统计累积量并生成 stats.json 条目。"""
+        """根据 batch 数据更新统计累积量并生成 stats.json 条目。
+
+        使用 QUANTILES 归一化：q01 (1%) 和 q99 (99%) 百分位数
+        """
         if values.ndim == 1:
             values = values.reshape(-1, 1)
         elif values.ndim > 2:
             values = values.reshape(-1, values.shape[-1])
 
         batch_count = int(values.shape[0])
-        batch_sum = values.sum(axis=0, dtype=np.float64)
-        batch_sumsq = np.square(values, dtype=np.float64).sum(axis=0, dtype=np.float64)
         batch_min = values.min(axis=0).astype(np.float64)
         batch_max = values.max(axis=0).astype(np.float64)
 
@@ -179,34 +180,37 @@ class LeRobotDatasetMetadata:
         if existing is None:
             accum = {
                 "count": batch_count,
-                "sum": batch_sum,
-                "sumsq": batch_sumsq,
                 "min": batch_min,
                 "max": batch_max,
             }
         else:
             accum = {
                 "count": existing["count"] + batch_count,
-                "sum": existing["sum"] + batch_sum,
-                "sumsq": existing["sumsq"] + batch_sumsq,
                 "min": np.minimum(existing["min"], batch_min),
                 "max": np.maximum(existing["max"], batch_max),
             }
 
         self._stats_accumulators[key] = accum
 
-        mean = accum["sum"] / max(accum["count"], 1)
-        variance = np.maximum(accum["sumsq"] / max(accum["count"], 1) - np.square(mean), 0.0)
-        std = np.sqrt(variance) + 1e-6
+        # 累积 values 用于计算百分位数
+        values_key = f"{key}.values"
+        existing_values = self._stats_accumulators.get(values_key)
+        if existing_values is None:
+            self._stats_accumulators[values_key] = values.copy()
+        else:
+            self._stats_accumulators[values_key] = np.concatenate([existing_values, values], axis=0)
+
+        # 计算百分位数 q01 和 q99
+        all_values = self._stats_accumulators[values_key]
+        q01 = np.percentile(all_values, 1, axis=0).astype(np.float64)
+        q99 = np.percentile(all_values, 99, axis=0).astype(np.float64)
 
         return {
-            "count": accum["count"],
-            "sum": accum["sum"].tolist(),
-            "sumsq": accum["sumsq"].tolist(),
+            "count": int(accum["count"]),
             "min": accum["min"].tolist(),
             "max": accum["max"].tolist(),
-            "mean": mean.tolist(),
-            "std": std.tolist(),
+            "q01": q01.tolist(),
+            "q99": q99.tolist(),
         }
 
     def _ensure_dirs(self):
@@ -289,18 +293,8 @@ class LeRobotDatasetMetadata:
 
         states_array = np.array(all_states, dtype=np.float32)
 
-        # 将动作扩展为未来 chunk 帧的序列
-        # 每帧的动作重复 ACTION_CHUNK_SIZE 次，形成序列
-        actions_expanded = []
-        for i in range(len(all_actions)):
-            chunk_actions = []
-            for j in range(ACTION_CHUNK_SIZE):
-                future_idx = min(i + j, len(all_actions) - 1)
-                chunk_actions.append(all_actions[future_idx])
-            actions_expanded.append(chunk_actions)
-
-        # 动作数据：[num_samples, chunk_size, action_dim]
-        actions_array = np.array(actions_expanded, dtype=np.float32)
+        # 动作数据：[num_samples, action_dim]（单步格式，对齐 LeRobot）
+        actions_array = np.array(all_actions, dtype=np.float32)
 
         # 写入数据 parquet
         for chunk_idx in range((episode_start_idx // self.chunk_size), ((self._total_samples + num_frames) // self.chunk_size) + 1):

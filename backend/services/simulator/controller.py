@@ -9,18 +9,14 @@ logger = logging.getLogger(__name__)
 
 
 def extract_velocity_from_action(action: Any) -> tuple[float, float]:
-    """Extract the first frame wheel velocities from nested ACT outputs."""
-    if not isinstance(action, (list, tuple)) or len(action) == 0:
+    """Extract wheel velocities from ACT action output.
+
+    action 格式是单步 [left_vel, right_vel]
+    """
+    if not isinstance(action, (list, tuple)) or len(action) < 2:
         raise ValueError(f"无效 action 格式: {action}")
 
-    first = action[0]
-    if isinstance(first, (list, tuple)) and len(first) > 0 and isinstance(first[0], (list, tuple)):
-        first = first[0]
-
-    if not isinstance(first, (list, tuple)) or len(first) < 2:
-        raise ValueError(f"无法从 action 提取速度: {action}")
-
-    return float(first[0]), float(first[1])
+    return float(action[0]), float(action[1])
 
 
 class SimController:
