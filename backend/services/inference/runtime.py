@@ -39,7 +39,6 @@ class ACTInferenceRuntime:
 
     def reset_inference_context(self):
         self.execution_policy.reset()
-        logger.info("已重置 ACT 推理时序上下文")
 
     def _temporal_decay(self) -> float:
         if self.model is None:
