@@ -4,7 +4,7 @@ import type { CarState } from "../models/types.ts";
 
 // 运动学常量 (vel_left/vel_right 单位是 m/s)
 const ANGULAR_SCALE = 0.01;
-const MS_TO_PIXELS = 100;  // m/s 转 像素/帧
+const MS_TO_PIXELS = 10;  // m/s 转 像素/帧
 const MAP_WIDTH = 800;
 const MAP_HEIGHT = 600;
 

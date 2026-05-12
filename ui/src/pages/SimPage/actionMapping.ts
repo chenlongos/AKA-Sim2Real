@@ -1,8 +1,8 @@
 export const SIM_ACTION_TO_CONTINUOUS: Record<string, [number, number]> = {
-    forward: [0.02, 0.02],
-    backward: [-0.02, -0.02],
-    left: [-0.01, 0.01],
-    right: [0.01, -0.01],
+    forward: [0.2, 0.2],
+    backward: [-0.2, -0.2],
+    left: [-0.1, 0.1],
+    right: [0.1, -0.1],
     stop: [0, 0],
 };
 

@@ -100,7 +100,8 @@ class ACTInferenceRuntime:
             logger.info(f"[ACT推理] 模型原始输出: {action[0].tolist()}")
             action = self.preprocessor.denormalize_action(action, self.stats, self.device)
             logger.info(f"[ACT推理] 归一化后输出: {action[0].tolist()}")
-            return action.cpu().numpy().tolist()
+            # 返回单步 [left, right] 而非 [[left, right]]
+            return action[0].cpu().tolist()
 
     def is_model_loaded(self) -> bool:
         return self.model is not None

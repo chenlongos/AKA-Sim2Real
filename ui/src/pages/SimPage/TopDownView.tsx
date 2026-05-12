@@ -198,16 +198,16 @@ export const TopDownView = ({
                 </div>
             </div>
             <div className="flex gap-2.5 flex-wrap justify-center items-center">
-                <button onClick={() => setTargetVelocity(0.02, 0.02)}
+                <button onClick={() => setTargetVelocity(0.2, 0.2)}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 前进
                 </button>
-                <button onClick={() => setTargetVelocity(-0.02, 0.02)}
+                <button onClick={() => setTargetVelocity(-0.2, 0.2)}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 左转
                 </button>
-                <button onClick={() => setTargetVelocity(0.02, -0.02)}
+                <button onClick={() => setTargetVelocity(0.2, -0.2)}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 右转
                 </button>
-                <button onClick={() => setTargetVelocity(-0.02, -0.02)}
+                <button onClick={() => setTargetVelocity(-0.2, -0.2)}
                         className="px-3 py-1 bg-blue-500 text-sm text-white rounded hover:bg-blue-600">指令: 后退
                 </button>
                 <button onClick={handleResetCar}
