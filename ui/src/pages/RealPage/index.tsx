@@ -14,13 +14,13 @@ import {
     onTrainingProgress,
 } from "../../api/socket.ts";
 import {startTraining, stopTraining, loadTrainedModel, collectImage, listDatasetDirs, listModels} from "../../api/api";
-import {carHeartbeat, motorDirect, carControl, isCarApiSuccess, cameraAllStatus} from "../../api/realCar";
+import {carHeartbeat, motorDirect, carControl, isCarApiSuccess, carStatus} from "../../api/realCar";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
-import {MjpegStreamView, type MjpegStreamViewRef} from "./MjpegStreamView.tsx";
-import {RealRightPanel, type RealRightPanelRef} from "./RealRightPanel.tsx";
+import {type MjpegStreamViewRef} from "./MjpegStreamView.tsx";
+import {RealRightPanel} from "./RealRightPanel.tsx";
 import {showToast} from "../../lib/toast.ts";
 import {getDatasetPath, getTrainPath, getModelPath} from "../../lib/constants.ts";
 import {KEY_TO_ACTION} from "../SimPage/actionMapping.ts";
@@ -292,28 +292,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         checkCarHeartbeat(ip)
     }
 
-    const getRealtimeInferenceState = async (): Promise<[number, number]> => {
-        if (!carIP) {
-            throw new Error("请先输入小车IP")
-        }
-
-        const data = await cameraAllStatus(carIP, Date.now())
-        const velLeft = data?.left_speed
-        const velRight = data?.right_speed
-        if (typeof velLeft !== "number" || typeof velRight !== "number") {
-            throw new Error("小车实时状态返回格式不正确")
-        }
-
-        setCarConnected(true)
-        setCarState((prev) => ({
-            ...prev,
-            vel_left: velLeft,
-            vel_right: velRight,
-        }))
-
-        return [velLeft, velRight]
-    }
-
     const sendInferenceActionToCar = async (
         left: number,
         right: number,
@@ -329,7 +307,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
                 return 0
             }
             const sign = value >= 0 ? 1 : -1
-            return sign * Math.round(Math.abs(value) * 100)
+            return sign * Math.round(Math.abs(value) * 1.3)
         }
 
         const leftCommand = mapVelocityToMotorCommand(left)
@@ -354,8 +332,8 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         const controller = new AbortController()
         latestAutoCommandAbortRef.current = controller
 
-        const leftCommand = Math.sign(left) * Math.round(Math.abs(left) * 100)
-        const rightCommand = Math.sign(right) * Math.round(Math.abs(right) * 100)
+        const leftCommand = Math.sign(left) * Math.round(Math.abs(left) * 1)
+        const rightCommand = Math.sign(right) * Math.round(Math.abs(right) * 1)
         setInferenceResult([`v=[${left.toFixed(2)}, ${right.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=0s`])
 
         void sendInferenceActionToCar(left, right, 0, {signal: controller.signal})
@@ -501,9 +479,9 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             throw new Error("请先输入小车IP")
         }
 
-        const allStatus = await cameraAllStatus(carIP, Date.now())
-        const velLeft = allStatus.left_speed
-        const velRight = allStatus.right_speed
+        const allStatus = await carStatus(carIP)
+        const velLeft = allStatus?.left_speed
+        const velRight = allStatus?.right_speed
         if (typeof velLeft !== "number" || typeof velRight !== "number") {
             throw new Error("小车实时状态返回格式不正确")
         }
@@ -515,7 +493,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             vel_right: velRight,
         }))
 
-        const imageBase64 = allStatus.image ? `data:image/jpeg;base64,${allStatus.image}` : undefined
+        const imageBase64 = fpvCameraViewRef.current?.getImageData()
         const state: [number, number] = [velLeft, velRight]
         const result = await runInferenceWithSocket(realSocket, state, imageBase64)
 
@@ -714,16 +692,19 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     }, [carConnected, carIP])
 
     useEffect(() => {
+        console.log('[Collect Effect] isRecording:', isRecording, 'carIP:', carIP)
         if (collectTimerRef.current) {
             window.clearInterval(collectTimerRef.current)
             collectTimerRef.current = null
         }
 
         if (!isRecording) {
+            console.log('[Collect Effect] Skipping - not recording')
             return
         }
 
         const collectInterval = 1000 / Math.max(collectionFps, 1)
+        console.log('[Collect Effect] Starting interval:', collectInterval, 'ms')
 
         collectTimerRef.current = window.setInterval(async () => {
             if (collectInFlightRef.current) return
@@ -732,13 +713,17 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             collectInFlightRef.current = true
             const captureTimestampMs = Date.now()
             try {
-                const allStatus = await cameraAllStatus(carIP, captureTimestampMs)
+                const allStatus = await carStatus(carIP)
                 if (typeof allStatus.left_speed !== 'number' || typeof allStatus.right_speed !== 'number') {
-                    throw new Error("cameraAllStatus 返回格式不正确")
+                    throw new Error("carStatus 返回格式不正确")
                 }
 
-                const imageData = allStatus.image ? `data:image/jpeg;base64,${allStatus.image}` : fpvCameraViewRef.current?.getImageData()
-                if (!imageData) return
+                const imageData = fpvCameraViewRef.current?.getImageData()
+                console.log('[Collect] imageData:', imageData ? 'ok' : 'undefined', 'isRecording:', isRecording)
+                if (!imageData) {
+                    collectInFlightRef.current = false
+                    return
+                }
 
                 const data = await collectImage({
                     image: imageData,
@@ -765,6 +750,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         }, collectInterval)
 
         return () => {
+            console.log('[Collect Effect] Cleaning up interval')
             if (collectTimerRef.current) {
                 window.clearInterval(collectTimerRef.current)
                 collectTimerRef.current = null

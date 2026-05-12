@@ -3,7 +3,7 @@ import type {CarState} from "../../models/types.ts";
 import {LogConsole} from "../SimPage/LogConsole.tsx";
 import {MjpegStreamView, type MjpegStreamViewRef} from "./MjpegStreamView.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
-import {getActionsFromMotorStatus, cameraAllStatus} from "../../api/realCar";
+import {getActionsFromMotorStatus, carStatus} from "../../api/realCar";
 
 export interface RealRightPanelRef {
     getImageData: () => string | undefined;
@@ -173,8 +173,8 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
                             return
                         }
                         try {
-                            const data = await cameraAllStatus(carIP, Date.now())
-                            console.log('all_status:', data)
+                            const data = await carStatus(carIP)
+                            console.log('car_status:', data)
                         } catch (e) {
                             console.error('获取小车状态失败:', e)
                         }

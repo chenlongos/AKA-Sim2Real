@@ -51,6 +51,20 @@ export const cameraAllStatus = (carIP: string, timestamp?: number) => {
   return fetchCarApi<CameraAllStatusResponse>(carIP, 'camera/all_status', params);
 };
 
+export interface CarStatusResponse {
+  left_speed?: number;
+  right_speed?: number;
+  left_target?: number;
+  right_target?: number;
+  error?: string;
+  detail?: string;
+  message?: string;
+}
+
+export const carStatus = (carIP: string) => {
+  return fetchCarApi<CarStatusResponse>(carIP, 'camera/speed', {});
+};
+
 const MOTOR_ACTION_EPSILON = 1e-3;
 
 export const getActionsFromMotorStatus = (

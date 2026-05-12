@@ -1,4 +1,4 @@
-import {forwardRef, useImperativeHandle, useRef, useEffect, useState} from "react";
+import {forwardRef, useImperativeHandle, useRef, useEffect, useState, useCallback} from "react";
 
 export interface MjpegStreamViewRef {
     getImageData: () => string | undefined;
@@ -22,39 +22,68 @@ export const MjpegStreamView = forwardRef<MjpegStreamViewRef, MjpegStreamViewPro
     const imgRef = useRef<HTMLImageElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const [error, setError] = useState<string>();
+    const [ready, setReady] = useState(false);
     const streamUrl = `http://${carIP}/api/camera/stream`;
+
+    const captureFrame = useCallback(() => {
+        const img = imgRef.current;
+        const canvas = canvasRef.current;
+        if (!img || !canvas || img.naturalWidth === 0) return undefined;
+
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return undefined;
+
+        ctx.drawImage(img, 0, 0);
+        return canvas.toDataURL('image/jpeg', 0.8);
+    }, []);
 
     useImperativeHandle(ref, () => ({
         getImageData: () => {
-            const img = imgRef.current;
-            const canvas = canvasRef.current;
-            if (!img || !canvas || !img.complete || img.naturalWidth === 0) return undefined;
-
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return undefined;
-
-            ctx.drawImage(img, 0, 0);
-            return canvas.toDataURL('image/jpeg', 0.8);
+            if (!ready) return undefined;
+            return captureFrame();
         }
-    }), []);
+    }), [ready, captureFrame]);
 
     useEffect(() => {
         const img = imgRef.current;
         if (!img) return;
 
-        const handleError = () => setError('摄像头连接失败');
-        const handleLoad = () => setError(undefined);
+        const handleError = () => {
+            setError('摄像头连接失败');
+            setReady(false);
+        };
+        const handleLoad = () => {
+            setError(undefined);
+            setReady(true);
+        };
 
         img.addEventListener('error', handleError);
         img.addEventListener('load', handleLoad);
+
+        // MJPEG 流首次加载时 img.complete 可能已经为 true
+        if (img.complete && img.naturalWidth > 0) {
+            setReady(true);
+        }
 
         return () => {
             img.removeEventListener('error', handleError);
             img.removeEventListener('load', handleLoad);
         };
     }, []);
+
+    // 定期检查图片是否已加载（MPEG 流不会触发 load 事件）
+    useEffect(() => {
+        const checkImage = () => {
+            const img = imgRef.current;
+            if (img && img.naturalWidth > 0 && !ready) {
+                setReady(true);
+            }
+        };
+        const interval = setInterval(checkImage, 100);
+        return () => clearInterval(interval);
+    }, [ready]);
 
     return (
         <div className="flex flex-col gap-3 h-full">
@@ -82,6 +111,7 @@ export const MjpegStreamView = forwardRef<MjpegStreamViewRef, MjpegStreamViewPro
                         ref={imgRef}
                         src={streamUrl}
                         alt="Camera stream"
+                        crossOrigin="anonymous"
                         className="block h-full w-full object-contain"
                     />
                 </div>
