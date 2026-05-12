@@ -54,6 +54,7 @@ const RealPage = () => {
     const inferenceLoopTimeoutRef = useRef<number | null>(null)
     const latestAutoCommandAbortRef = useRef<AbortController | null>(null)
     const latestAutoCommandSeqRef = useRef(0)
+    const smoothedActionRef = useRef<[number, number]>([0, 0])
     const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
 const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     const collectTimerRef = useRef<number | null>(null)
@@ -307,7 +308,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
                 return 0
             }
             const sign = value >= 0 ? 1 : -1
-            return sign * Math.round(Math.abs(value) * 1.3)
+            return sign * Math.round(Math.abs(value))
         }
 
         const leftCommand = mapVelocityToMotorCommand(left)
@@ -325,31 +326,18 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     }
 
     const dispatchLatestAutoInferenceAction = useCallback((left: number, right: number) => {
-        latestAutoCommandSeqRef.current += 1
-        const commandSeq = latestAutoCommandSeqRef.current
+        const leftCommand = Math.round(left)
+        const rightCommand = Math.round(right)
+        setInferenceResult([`motor=[${leftCommand}, ${rightCommand}]`])
 
-        latestAutoCommandAbortRef.current?.abort()
-        const controller = new AbortController()
-        latestAutoCommandAbortRef.current = controller
-
-        const leftCommand = Math.sign(left) * Math.round(Math.abs(left) * 1)
-        const rightCommand = Math.sign(right) * Math.round(Math.abs(right) * 1)
-        setInferenceResult([`v=[${left.toFixed(2)}, ${right.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=0s`])
-
-        void sendInferenceActionToCar(left, right, 0, {signal: controller.signal})
-            .then(({leftCommand: appliedLeft, rightCommand: appliedRight}) => {
-                if (commandSeq !== latestAutoCommandSeqRef.current) {
-                    return
-                }
-                setInferenceResult([`v=[${left.toFixed(2)}, ${right.toFixed(2)}] -> motor=[${appliedLeft}, ${appliedRight}], duration=0s`])
+        motorDirect(carIP, leftCommand, rightCommand, 0)
+            .then((data) => {
+                setInferenceResult([`motor=[${data.left}, ${data.right}], duration=0s`])
             })
             .catch((error: unknown) => {
-                if (controller.signal.aborted) {
-                    return
-                }
                 console.error("Auto inference motor command failed:", error)
             })
-    }, [sendInferenceActionToCar])
+    }, [carIP])
 
     const stopInferenceAndCar = useCallback(() => {
         setAutoInference(false)
@@ -359,6 +347,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         latestAutoCommandSeqRef.current += 1
         latestAutoCommandAbortRef.current?.abort()
         latestAutoCommandAbortRef.current = null
+        smoothedActionRef.current = [0, 0]
 
         if (inferenceTimerRef.current) {
             clearInterval(inferenceTimerRef.current)
@@ -582,7 +571,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         }
 
         const sessionId = autoInferenceSessionRef.current
-        const inferenceFps = Math.min(Math.max(collectionFps * 1.2, 1), collectionFps + 5)
+        const inferenceFps = 5
         const inferenceInterval = 1000 / inferenceFps
         let cancelled = false
 
@@ -692,19 +681,16 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     }, [carConnected, carIP])
 
     useEffect(() => {
-        console.log('[Collect Effect] isRecording:', isRecording, 'carIP:', carIP)
         if (collectTimerRef.current) {
             window.clearInterval(collectTimerRef.current)
             collectTimerRef.current = null
         }
 
         if (!isRecording) {
-            console.log('[Collect Effect] Skipping - not recording')
             return
         }
 
         const collectInterval = 1000 / Math.max(collectionFps, 1)
-        console.log('[Collect Effect] Starting interval:', collectInterval, 'ms')
 
         collectTimerRef.current = window.setInterval(async () => {
             if (collectInFlightRef.current) return
@@ -750,7 +736,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         }, collectInterval)
 
         return () => {
-            console.log('[Collect Effect] Cleaning up interval')
             if (collectTimerRef.current) {
                 window.clearInterval(collectTimerRef.current)
                 collectTimerRef.current = null

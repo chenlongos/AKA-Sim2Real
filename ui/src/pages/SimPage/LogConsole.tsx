@@ -52,7 +52,6 @@ export const LogConsole = ({className = ""}: LogConsoleProps) => {
         let logIdCounter = 0;
 
         const handleLogMessage = (data: Omit<LogEntry, "id">) => {
-            console.log("收到日志消息:", data);
 
             const entry: LogEntry = {
                 ...data,
@@ -68,7 +67,6 @@ export const LogConsole = ({className = ""}: LogConsoleProps) => {
             });
         };
 
-        console.log("开始监听 log_message 事件");
         socket.on("log_message", handleLogMessage);
 
         // 测试：添加一条本地日志
