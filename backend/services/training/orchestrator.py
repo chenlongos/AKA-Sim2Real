@@ -18,7 +18,7 @@ from policies.models.act.modeling_act import ACTModel
 from backend.services.training.dataset import SimpleDataset
 from backend.services.training.dataset_loader import load_dataset
 from backend.services.training.progress import TrainingCallbacks
-from backend.services.training.state import training_state
+from backend.services.training.state import get_training_state, stop_training
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ def _extract_checkpoint_payload(checkpoint):
 
 def _train_model_sync(
     sio_server,
+    user_id: str,
     loop,
     data_dir: str = "output/dataset",
     output_dir: str = None,
@@ -41,17 +42,18 @@ def _train_model_sync(
     resume_from: str = None,
 ) -> Optional[ACTModel]:
     """训练 ACT 模型。"""
+    training_state = get_training_state(user_id)
     training_state["is_running"] = True
     training_state["epoch"] = 0
     training_state["total_epochs"] = epochs
     training_state["loss"] = 0.0
     training_state["progress"] = 0.0
 
-    callbacks = TrainingCallbacks(sio_server, loop=loop, namespace="/")
+    callbacks = TrainingCallbacks(sio_server, loop=loop, namespace="/", training_state=training_state)
 
     try:
         logger.info("=" * 20)
-        logger.info("开始训练ACT模型")
+        logger.info(f"开始训练ACT模型: user={user_id}")
         if resume_from:
             logger.info(f"从已有模型继续训练: {resume_from}")
         logger.info("=" * 20)
@@ -142,7 +144,7 @@ def _train_model_sync(
 
         if output_dir is None:
             project_root = Path(__file__).resolve().parents[4]
-            output_path = project_root / "output" / "train"
+            output_path = project_root / "output" / "train" / user_id
         else:
             output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -179,6 +181,7 @@ def _train_model_sync(
 
 async def train_model(
     sio_server,
+    user_id: str,
     data_dir: str = "output/dataset",
     output_dir: str = None,
     epochs: int = 50,
@@ -196,6 +199,7 @@ async def train_model(
         None,
         lambda: _train_model_sync(
             sio_server,
+            user_id,
             loop,
             data_dir=data_dir,
             output_dir=output_dir,

@@ -10,28 +10,29 @@ logger = logging.getLogger(__name__)
 
 
 class EpisodeService:
-    def start_episode(self, episode_id: int, task_name: str) -> dict:
-        logger.info(f"开始新 episode: {episode_id}, task: {task_name}")
-        state.start_episode(episode_id, task_name)
+    def start_episode(self, user_id: str, episode_id: int, task_name: str) -> dict:
+        logger.info(f"开始新 episode: user={user_id}, episode={episode_id}, task={task_name}")
+        state.start_episode(user_id, episode_id, task_name)
         return {
+            "user_id": user_id,
             "episode_id": episode_id,
             "task_name": task_name,
             "frame_count": 0,
         }
 
-    def end_episode(self, episode_id: int) -> dict:
-        logger.info(f"结束 episode: {episode_id}")
-        samples = state.end_episode(episode_id)
+    def end_episode(self, user_id: str, episode_id: int) -> dict:
+        logger.info(f"结束 episode: user={user_id}, episode={episode_id}")
+        samples = state.end_episode(user_id, episode_id)
 
         if not samples:
-            state.clear_episode_buffer(episode_id)
+            state.clear_episode_buffer(user_id, episode_id)
             return {
+                "user_id": user_id,
                 "episode_id": episode_id,
                 "frame_count": 0,
             }
 
-        # 从样本中提取 user_id 和 dataset_name 用于创建子目录
-        user_id = samples[0].get("user_id", "default") if samples else "default"
+        # 使用传入的 user_id 和 dataset_name 用于创建子目录
         dataset_name = samples[0].get("dataset_name", "default") if samples else "default"
         subdir = f"{user_id}/{dataset_name}"
 
@@ -39,14 +40,16 @@ class EpisodeService:
         try:
             from backend.services.episode.exporter import export_episode
 
+            task = state.user_episode_metadata.get(user_id, {}).get(episode_id, {}).get("task_name", "default")
             output_path = export_episode(
                 samples,
                 episode_id=episode_id,
-                task_name=state.episode_buffer.get(episode_id, {}).get("task_name", "default"),
+                task_name=task,
                 subdir=subdir,
             )
             logger.info(f"数据已导出到: {output_path}")
             result = {
+                "user_id": user_id,
                 "episode_id": episode_id,
                 "frame_count": len(samples),
                 "exported": True,
@@ -55,37 +58,39 @@ class EpisodeService:
         except Exception as exc:
             logger.error(f"导出失败: {exc}")
             result = {
+                "user_id": user_id,
                 "episode_id": episode_id,
                 "frame_count": len(samples),
                 "exported": False,
                 "error": str(exc),
             }
 
-        state.clear_episode_buffer(episode_id)
+        state.clear_episode_buffer(user_id, episode_id)
         return result
 
-    def finalize_episode(self, episode_id: int) -> dict | None:
-        logger.info(f"完成 episode: {episode_id}")
-        samples = state.get_episode_samples(episode_id)
+    def finalize_episode(self, user_id: str, episode_id: int) -> dict | None:
+        logger.info(f"完成 episode: user={user_id}, episode={episode_id}")
+        samples = state.get_episode_samples(user_id, episode_id)
         if not samples:
             return None
 
-        # 从样本中提取 user_id 和 dataset_name 用于创建子目录
-        user_id = samples[0].get("user_id", "default") if samples else "default"
+        # 使用传入的 user_id 和 dataset_name 用于创建子目录
         dataset_name = samples[0].get("dataset_name", "default") if samples else "default"
         subdir = f"{user_id}/{dataset_name}"
 
         try:
             from backend.services.episode.exporter import export_episode
 
+            task = state.user_episode_metadata.get(user_id, {}).get(episode_id, {}).get("task_name", "default")
             output_path = export_episode(
                 samples,
                 episode_id=episode_id,
-                task_name=state.episode_metadata.get(episode_id, {}).get("task_name", "default"),
+                task_name=task,
                 subdir=subdir,
             )
             logger.info(f"数据已导出到: {output_path}")
             return {
+                "user_id": user_id,
                 "episode_id": episode_id,
                 "frame_count": len(samples),
                 "output_path": output_path,
@@ -93,64 +98,70 @@ class EpisodeService:
         except Exception as exc:
             logger.error(f"导出失败: {exc}")
             return {
+                "user_id": user_id,
                 "episode_id": episode_id,
                 "frame_count": len(samples),
                 "error": str(exc),
             }
 
-    def set_episode(self, episode_id: int) -> dict:
+    def set_episode(self, user_id: str, episode_id: int) -> dict:
+        state._ensure_user_exists(user_id)
         if episode_id in state.episode_samples:
             state.episode_samples[episode_id] = []
-        state.clear_episode_buffer(episode_id)
-        if episode_id in state.episode_frame_index:
-            state.episode_frame_index[episode_id] = []
+        state.clear_episode_buffer(user_id, episode_id)
+        state.user_current_episode_id[user_id] = episode_id
 
         state.current_episode_id = episode_id
-        logger.info(f"设置当前采集轮次: {episode_id}, samples长度: {len(state.episode_samples.get(episode_id, []))}")
-        return self.get_episodes_info()
+        logger.info(f"设置当前采集轮次: user={user_id}, episode={episode_id}, samples长度: {len(state.episode_samples.get(episode_id, []))}")
+        return self.get_episodes_info(user_id)
 
-    def get_episodes_info(self) -> dict:
+    def get_episodes_info(self, user_id: str) -> dict:
+        state._ensure_user_exists(user_id)
         return {
-            "current_episode": state.current_episode_id,
-            "episodes": {k: len(v) for k, v in state.episode_samples.items()},
-            "buffer_size": state.get_current_buffer_size(state.current_episode_id),
+            "user_id": user_id,
+            "current_episode": state.user_current_episode_id.get(user_id, 1),
+            "episodes": {k: len(v) for k, v in state.user_episode_buffers.get(user_id, {}).items()},
+            "buffer_size": state.get_current_buffer_size(user_id),
         }
 
-    def delete_episode(self, episode_id: int | None) -> dict | None:
+    def delete_episode(self, user_id: str, episode_id: int | None) -> dict | None:
         if episode_id is None:
             return None
 
+        state._ensure_user_exists(user_id)
         if episode_id in state.episode_samples:
             del state.episode_samples[episode_id]
-        if episode_id in state.episode_buffer:
-            del state.episode_buffer[episode_id]
-        if episode_id in state.episode_metadata:
-            del state.episode_metadata[episode_id]
-        if episode_id in state.episode_frame_index:
-            del state.episode_frame_index[episode_id]
+        if episode_id in state.user_episode_buffers.get(user_id, {}):
+            del state.user_episode_buffers[user_id][episode_id]
+        if episode_id in state.user_episode_metadata.get(user_id, {}):
+            del state.user_episode_metadata[user_id][episode_id]
+        if episode_id in state.user_episode_frame_index.get(user_id, {}):
+            del state.user_episode_frame_index[user_id][episode_id]
 
-        return self.get_episodes_info()
+        return self.get_episodes_info(user_id)
 
-    def get_episode_status(self) -> dict:
-        episode_id = state.current_episode_id
+    def get_episode_status(self, user_id: str) -> dict:
+        state._ensure_user_exists(user_id)
+        episode_id = state.user_current_episode_id.get(user_id, 1)
         return {
+            "user_id": user_id,
             "episode_id": episode_id,
-            "is_recording": state.is_recording,
-            "frame_count": state.get_current_buffer_size(episode_id),
-            "task_name": state.episode_buffer.get(episode_id, {}).get("task_name", "default"),
+            "is_recording": state.user_is_recording.get(user_id, False),
+            "frame_count": state.get_current_buffer_size(user_id, episode_id),
+            "task_name": state.user_episode_buffers.get(user_id, {}).get(episode_id, {}).get("task_name", "default"),
         }
 
     async def collect_data(
         self,
         image_data: str,
-        user_id: str = None,
+        user_id: str,
         dataset_name: str = "default",
         *,
         timestamp: int | None = None,
         state_payload: dict[str, Any] | None = None,
         action_payload: list[float] | None = None,
     ) -> int | None:
-        if not state.is_recording:
+        if not state.is_user_recording(user_id):
             return None
 
         capture_timestamp = timestamp if timestamp is not None else int(time.time() * 1000)
@@ -171,8 +182,8 @@ class EpisodeService:
                 "vel_right": vel_right,
             },
             "capture_timestamp_ms": capture_timestamp,
-            "user_id": user_id,  # 记录是哪个用户的
-            "dataset_name": dataset_name,  # 记录数据集名称
+            "user_id": user_id,
+            "dataset_name": dataset_name,
         }
         if isinstance(action_payload, list) and len(action_payload) >= 2:
             left_target = action_payload[0]
@@ -180,15 +191,17 @@ class EpisodeService:
             if isinstance(left_target, (int, float)) and isinstance(right_target, (int, float)):
                 sample["action"] = [float(left_target), float(right_target)]
 
-        if state.current_episode_id not in state.episode_samples:
-            state.episode_samples[state.current_episode_id] = []
+        current_episode_id = state.user_current_episode_id.get(user_id, 1)
 
-        state.episode_samples[state.current_episode_id].append(sample)
-        state.add_frame_to_episode(state.current_episode_id, sample)
+        if current_episode_id not in state.episode_samples:
+            state.episode_samples[current_episode_id] = []
 
-        count = len(state.episode_samples[state.current_episode_id])
+        state.episode_samples[current_episode_id].append(sample)
+        state.add_frame_to_episode(user_id, current_episode_id, sample)
+
+        count = len(state.episode_samples[current_episode_id])
         # 每50帧输出一次采集日志，避免太频繁
         if count % 50 == 0:
-            logger.info(f"数据采集中: user={user_id}, episode={state.current_episode_id}, frames={count}")
+            logger.info(f"数据采集中: user={user_id}, episode={current_episode_id}, frames={count}")
 
         return count

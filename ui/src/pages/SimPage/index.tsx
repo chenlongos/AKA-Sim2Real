@@ -150,9 +150,9 @@ const SimPage = () => {
         })
 
         // 获取初始轮次信息
-        getEpisodes(simSocket)
+        getEpisodes(simSocket, userId)
         // 获取初始 episode 状态
-        getEpisodeStatus(simSocket)
+        getEpisodeStatus(simSocket, userId)
 
         return () => {
             simSocket.off("connected")
@@ -228,13 +228,13 @@ const SimPage = () => {
         setCollectedCount(0)
 
         // 先设置目标轮次（后端会清空该轮次的数据）
-        setEpisode(simSocket, episodeId)
+        setEpisode(simSocket, userId, episodeId)
 
         // 如果是回退到之前的轮次，删除之前轮次的数据
         if (episodeId < episodeToDelete) {
-            deleteEpisode(simSocket, episodeToDelete)
+            deleteEpisode(simSocket, userId, episodeToDelete)
             // 刷新轮次列表
-            getEpisodes(simSocket)
+            getEpisodes(simSocket, userId)
         }
         setCurrentEpisode(episodeId)
     }
@@ -242,30 +242,30 @@ const SimPage = () => {
     const handleStartEpisode = () => {
         // 检查是否有上一轮的数据需要保存
         if (episodeCounts[currentEpisode] && episodeCounts[currentEpisode] > 0) {
-            finalizeEpisode(simSocket, currentEpisode)
+            finalizeEpisode(simSocket, userId, currentEpisode)
             // 刷新轮次列表
-            getEpisodes(simSocket)
+            getEpisodes(simSocket, userId)
         }
 
         // 开始新录制（使用当前轮次，不改变轮次）
-        startEpisode(simSocket, currentEpisode, episodeTaskName)
+        startEpisode(simSocket, userId, currentEpisode, episodeTaskName)
     }
 
     const handleSelectDataset = (name: string) => {
         setDatasetName(name)
         // 切换数据集后重新加载该数据集的 episode 信息
-        getEpisodes(simSocket)
+        getEpisodes(simSocket, userId)
     }
 
     const handleEndEpisode = () => {
         // 结束录制并自动保存数据（endEpisode会自动导出，所以不需要再调用finalizeEpisode）
-        endEpisode(simSocket, currentEpisode)
+        endEpisode(simSocket, userId, currentEpisode)
         // 轮次自动+1
         setCurrentEpisode(currentEpisode + 1)
         // 重置帧数
         setCollectedCount(0)
         // 刷新轮次列表
-        getEpisodes(simSocket)
+        getEpisodes(simSocket, userId)
     }
 
     const handleStartTraining = async () => {

@@ -11,7 +11,7 @@ class CollectImagePayload(BaseModel):
     """前端直接采集图像到当前 episode。"""
 
     image: str = Field(..., min_length=1)
-    user_id: str | None = None
+    user_id: str
     dataset_name: str = "default"
     timestamp: int | None = None
     state: Dict[str, Any] | None = None

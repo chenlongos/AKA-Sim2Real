@@ -65,38 +65,38 @@ export const sendImageData = (
 }
 
 // 设置当前采集轮次
-export const setEpisode = (socket: Socket, episodeId: number) => {
-    socket.emit('set_episode', episodeId);
+export const setEpisode = (socket: Socket, userId: string, episodeId: number) => {
+    socket.emit('set_episode', { user_id: userId, episode_id: episodeId });
 }
 
 // 获取所有轮次信息
-export const getEpisodes = (socket: Socket) => {
-    socket.emit('get_episodes');
+export const getEpisodes = (socket: Socket, userId: string) => {
+    socket.emit('get_episodes', { user_id: userId });
 }
 
 // 删除指定轮次的数据
-export const deleteEpisode = (socket: Socket, episodeId: number) => {
-    socket.emit('delete_episode', { episode_id: episodeId });
+export const deleteEpisode = (socket: Socket, userId: string, episodeId: number) => {
+    socket.emit('delete_episode', { user_id: userId, episode_id: episodeId });
 }
 
 // 开始新的 episode
-export const startEpisode = (socket: Socket, episodeId: number, taskName: string = "default") => {
-    socket.emit('start_episode', { episode_id: episodeId, task_name: taskName });
+export const startEpisode = (socket: Socket, userId: string, episodeId: number, taskName: string = "default") => {
+    socket.emit('start_episode', { user_id: userId, episode_id: episodeId, task_name: taskName });
 }
 
 // 结束当前 episode
-export const endEpisode = (socket: Socket, episodeId?: number) => {
-    socket.emit('end_episode', { episode_id: episodeId });
+export const endEpisode = (socket: Socket, userId: string, episodeId?: number) => {
+    socket.emit('end_episode', { user_id: userId, episode_id: episodeId });
 }
 
 // 完成 episode 并保存到磁盘
-export const finalizeEpisode = (socket: Socket, episodeId?: number) => {
-    socket.emit('finalize_episode', { episode_id: episodeId });
+export const finalizeEpisode = (socket: Socket, userId: string, episodeId?: number) => {
+    socket.emit('finalize_episode', { user_id: userId, episode_id: episodeId });
 }
 
 // 获取当前 episode 状态
-export const getEpisodeStatus = (socket: Socket) => {
-    socket.emit('get_episode_status');
+export const getEpisodeStatus = (socket: Socket, userId: string) => {
+    socket.emit('get_episode_status', { user_id: userId });
 }
 
 export const runInferenceWithSocket = (

@@ -17,7 +17,7 @@ episode_service = EpisodeService()
 
 
 @router.get("/dirs")
-async def list_dataset_dirs(user_id: str = "default"):
+async def list_dataset_dirs(user_id: str):
     """列出用户下的所有数据集目录"""
     project_root = Path(__file__).resolve().parents[4]
     user_dataset_path = project_root / "output" / "dataset" / user_id
@@ -34,7 +34,7 @@ async def list_dataset_dirs(user_id: str = "default"):
 
 
 @router.get("/models")
-async def list_models(user_id: str = "default", dataset_name: str = "default"):
+async def list_models(user_id: str, dataset_name: str = "default"):
     """列出用户下的所有训练模型（返回文件夹名）"""
     project_root = Path(__file__).resolve().parents[4]
     # 训练输出在 output/train/{user_id}/ 下
@@ -55,10 +55,14 @@ async def list_models(user_id: str = "default", dataset_name: str = "default"):
 @router.post("/collect")
 async def collect_image(payload: CollectImagePayload):
     """将前端直接采集到的图像写入当前 episode。"""
+    user_id = payload.user_id
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+
     try:
         count = await episode_service.collect_data(
             payload.image,
-            user_id=payload.user_id,
+            user_id=user_id,
             dataset_name=payload.dataset_name,
             timestamp=payload.timestamp,
             state_payload=payload.state,
@@ -69,7 +73,7 @@ async def collect_image(payload: CollectImagePayload):
 
         return {
             "success": True,
-            "episode_id": state.current_episode_id,
+            "episode_id": state.user_current_episode_id.get(user_id, 1),
             "count": count,
         }
     except HTTPException:

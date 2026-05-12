@@ -159,8 +159,8 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             })
         })
 
-        getEpisodes(realSocket)
-        getEpisodeStatus(realSocket)
+        getEpisodes(realSocket, userId)
+        getEpisodeStatus(realSocket, userId)
 
         // 加载用户的数据集列表
         const loadDatasets = async () => {
@@ -377,35 +377,35 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         }
 
         setCollectedCount(0)
-        setEpisode(realSocket, episodeId)
+        setEpisode(realSocket, userId, episodeId)
 
         if (episodeId < episodeToDelete) {
-            deleteEpisode(realSocket, episodeToDelete)
-            getEpisodes(realSocket)
+            deleteEpisode(realSocket, userId, episodeToDelete)
+            getEpisodes(realSocket, userId)
         }
         setCurrentEpisode(episodeId)
     }
 
     const handleStartEpisode = () => {
         if (episodeCounts[currentEpisode] && episodeCounts[currentEpisode] > 0) {
-            finalizeEpisode(realSocket, currentEpisode)
-            getEpisodes(realSocket)
+            finalizeEpisode(realSocket, userId, currentEpisode)
+            getEpisodes(realSocket, userId)
         }
-        startEpisode(realSocket, currentEpisode, episodeTaskName)
+        startEpisode(realSocket, userId, currentEpisode, episodeTaskName)
     }
 
     const handleSelectDataset = (name: string) => {
         setDatasetName(name)
         setIsModelLoaded(false)
         setSelectedModel("")
-        getEpisodes(realSocket)
+        getEpisodes(realSocket, userId)
     }
 
     const handleEndEpisode = () => {
-        endEpisode(realSocket, currentEpisode)
+        endEpisode(realSocket, userId, currentEpisode)
         setCurrentEpisode(currentEpisode + 1)
         setCollectedCount(0)
-        getEpisodes(realSocket)
+        getEpisodes(realSocket, userId)
     }
 
     const handleStartTraining = async () => {
