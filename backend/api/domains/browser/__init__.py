@@ -144,3 +144,21 @@ async def delete_model_folder(user_id: str, model_path: str):
     shutil.rmtree(full_path)
     logger.info(f"已删除模型文件夹: {full_path}")
     return {"success": True}
+
+
+@router.delete("/dataset")
+async def delete_dataset_folder(user_id: str, dataset_name: str):
+    """删除指定数据集文件夹"""
+    project_root = _get_project_root()
+    full_path = project_root / "output" / "dataset" / user_id / dataset_name
+
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="数据集不存在")
+
+    dataset_root = project_root / "output" / "dataset" / user_id
+    if not str(full_path.resolve()).startswith(str(dataset_root.resolve())):
+        raise HTTPException(status_code=403, detail="无效路径")
+
+    shutil.rmtree(full_path)
+    logger.info(f"已删除数据集文件夹: {full_path}")
+    return {"success": True}

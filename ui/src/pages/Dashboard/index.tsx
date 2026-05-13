@@ -139,13 +139,6 @@ const DashboardPage = () => {
     }
   }
 
-  const resetDataset = () => {
-    setSelectedDataset("")
-    setDatasetContent([])
-    setCurrentPath("")
-    setBreadcrumbs([])
-  }
-
   return (
     <div className="min-h-screen bg-slate-950 p-6">
       <div className="max-w-5xl mx-auto">
@@ -187,7 +180,28 @@ const DashboardPage = () => {
           <div className="space-y-4">
             {/* Dataset Selector */}
             <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-              <label className="block text-xs text-slate-400 mb-2">选择数据集</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs text-slate-400">选择数据集</label>
+                {selectedDataset && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`确定删除数据集 "${selectedDataset}"？此操作不可恢复！`)) return
+                      try {
+                        await api.delete(`browser/dataset?user_id=${encodeURIComponent(userId)}&dataset_name=${encodeURIComponent(selectedDataset)}`)
+                        showToast.success("数据集已删除")
+                        setSelectedDataset("")
+                        setDatasetContent([])
+                        setDatasets(datasets.filter(d => d.name !== selectedDataset))
+                      } catch {
+                        showToast.error("删除失败")
+                      }
+                    }}
+                    className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg"
+                  >
+                    删除当前数据集
+                  </button>
+                )}
+              </div>
               <select
                 value={selectedDataset}
                 onChange={(e) => {
