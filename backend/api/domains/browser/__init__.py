@@ -2,10 +2,11 @@
 AKA-Sim 后端 - 数据浏览器 API
 """
 
+import json
 import logging
 import shutil
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, HTTPException
 
@@ -18,21 +19,6 @@ def _get_project_root() -> Path:
 
 
 # ============ 数据集相关 ============
-
-class DatasetItem:
-    """数据集项（文件夹）"""
-    def __init__(self, name: str, path: str, episode_count: int = 0):
-        self.name = name
-        self.path = path
-        self.episode_count = episode_count
-
-
-class ModelItem:
-    """模型项（文件夹）"""
-    def __init__(self, name: str, path: str):
-        self.name = name
-        self.path = path
-
 
 @router.get("/dataset")
 async def browse_datasets(user_id: str) -> List[dict]:
@@ -50,10 +36,8 @@ async def browse_datasets(user_id: str) -> List[dict]:
         meta_path = item / "meta"
         episode_count = 0
         if meta_path.exists():
-            # 尝试读取 meta/info.json 获取 episode 数
             info_path = meta_path / "info.json"
             if info_path.exists():
-                import json
                 try:
                     with open(info_path) as f:
                         info = json.load(f)
@@ -69,33 +53,75 @@ async def browse_datasets(user_id: str) -> List[dict]:
     return result
 
 
-@router.get("/dataset/{dataset_name}/model")
-async def browse_models(user_id: str, dataset_name: str) -> List[dict]:
-    """浏览指定数据集下的所有模型（以文件夹形式）"""
+@router.get("/dataset/{dataset_name}/content")
+async def browse_dataset_content(user_id: str, dataset_name: str, path: str = "") -> dict:
+    """浏览指定数据集下的内容（子文件夹）"""
+    project_root = _get_project_root()
+    dataset_path = project_root / "output" / "dataset" / user_id / dataset_name
+
+    if not dataset_path.exists():
+        raise HTTPException(status_code=404, detail="数据集不存在")
+
+    # 安全检查：防止目录遍历
+    if ".." in path:
+        raise HTTPException(status_code=403, detail="无效路径")
+
+    current_path = Path(path) if path else Path(".")
+    full_path = dataset_path / current_path
+
+    if not full_path.exists() or not full_path.is_dir():
+        raise HTTPException(status_code=404, detail="路径不存在")
+
+    items = []
+    for item in sorted(full_path.iterdir()):
+        items.append({
+            "name": item.name,
+            "path": str(item.relative_to(dataset_path)),
+            "is_dir": item.is_dir(),
+        })
+
+    return {
+        "dataset_name": dataset_name,
+        "path": str(current_path),
+        "children": items,
+    }
+
+
+# ============ 模型相关 ============
+
+@router.get("/model")
+async def browse_models(user_id: str, dataset_name: str = "") -> List[dict]:
+    """浏览用户的所有模型（按数据集分组）"""
     project_root = _get_project_root()
     train_path = project_root / "output" / "train" / user_id
 
     if not train_path.exists():
         return []
 
-    # 按 dataset_name 过滤
+    # 按 dataset_name 过滤或全部返回
     result = []
     for item in sorted(train_path.iterdir()):
         if not item.is_dir():
             continue
-        # 检查是否属于指定数据集
-        # 模型文件夹名格式: {dataset_name}___{model_name}
+        # 模型文件夹名格式: {dataset_name}___{model_name} 或直接是 {dataset_name}
         if "___" in item.name:
             parts = item.name.split("___", 1)
-            if len(parts) == 2 and parts[0] == dataset_name:
-                result.append({
-                    "name": parts[1],
-                    "path": str(item.relative_to(project_root)),
-                })
+            ds_name = parts[0]
+            model_name = parts[1]
+            if dataset_name and ds_name != dataset_name:
+                continue
+            result.append({
+                "name": model_name,
+                "dataset": ds_name,
+                "path": str(item.relative_to(project_root)),
+            })
         else:
-            # 兼容旧格式：直接以模型名为文件夹名
+            # 兼容旧格式：直接以数据集名为文件夹名
+            if dataset_name and item.name != dataset_name:
+                continue
             result.append({
                 "name": item.name,
+                "dataset": item.name,
                 "path": str(item.relative_to(project_root)),
             })
 
@@ -111,7 +137,6 @@ async def delete_model_folder(user_id: str, model_path: str):
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="模型不存在")
 
-    # 安全检查：确保在 output/train 目录下
     train_root = project_root / "output" / "train"
     if not str(full_path.resolve()).startswith(str(train_root.resolve())):
         raise HTTPException(status_code=403, detail="无效路径")

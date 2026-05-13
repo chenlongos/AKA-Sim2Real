@@ -9,19 +9,37 @@ interface DatasetItem {
   episode_count: number;
 }
 
+interface ContentItem {
+  name: string;
+  path: string;
+  is_dir: boolean;
+}
+
 interface ModelItem {
   name: string;
+  dataset: string;
   path: string;
 }
 
 const DashboardPage = () => {
   const userId = useSimCarStore((state) => state.userId)
+
+  // Dataset state
   const [datasets, setDatasets] = useState<DatasetItem[]>([])
-  const [selectedDataset, setSelectedDataset] = useState<DatasetItem | null>(null)
+  const [selectedDataset, setSelectedDataset] = useState<string>("")
+  const [datasetContent, setDatasetContent] = useState<ContentItem[]>([])
+  const [currentPath, setCurrentPath] = useState<string>("")
+  const [breadcrumbs, setBreadcrumbs] = useState<{name: string; path: string}[]>([])
+
+  // Model state
   const [models, setModels] = useState<ModelItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set())
 
+  // UI state
+  const [activeTab, setActiveTab] = useState<"dataset" | "model">("dataset")
+  const [loading, setLoading] = useState(true)
+
+  // Load datasets
   useEffect(() => {
     const loadDatasets = async () => {
       try {
@@ -36,20 +54,60 @@ const DashboardPage = () => {
     loadDatasets()
   }, [userId])
 
+  // Load dataset content
   useEffect(() => {
     if (!selectedDataset) return
-    const loadModels = async () => {
+    const loadContent = async () => {
       try {
         const result = await api.get(
-          `browser/dataset/${encodeURIComponent(selectedDataset.name)}/model?user_id=${encodeURIComponent(userId)}`
-        ).json<ModelItem[]>()
+          `browser/dataset/${encodeURIComponent(selectedDataset)}/content?user_id=${encodeURIComponent(userId)}`
+        ).json<{children: ContentItem[]; path: string}>()
+        setDatasetContent(result.children || [])
+        setCurrentPath(result.path)
+        setBreadcrumbs([{name: selectedDataset, path: result.path}])
+      } catch {
+        showToast.error("加载内容失败")
+      }
+    }
+    loadContent()
+  }, [selectedDataset, userId])
+
+  // Load models
+  useEffect(() => {
+    if (activeTab !== "model") return
+    const loadModels = async () => {
+      try {
+        const result = await api.get(`browser/model?user_id=${encodeURIComponent(userId)}`).json<ModelItem[]>()
         setModels(result || [])
       } catch {
         showToast.error("加载模型失败")
       }
     }
     loadModels()
-  }, [selectedDataset, userId])
+  }, [activeTab, userId])
+
+  const navigateToPath = async (path: string) => {
+    try {
+      const result = await api.get(
+        `browser/dataset/${encodeURIComponent(selectedDataset)}/content?user_id=${encodeURIComponent(userId)}&path=${encodeURIComponent(path)}`
+      ).json<{children: ContentItem[]; path: string}>()
+      setDatasetContent(result.children || [])
+      setCurrentPath(result.path)
+      // Update breadcrumbs
+      const parts = path.split("/")
+      const newBreadcrumbs = [{name: selectedDataset, path: selectedDataset}]
+      let accum = selectedDataset
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i]) {
+          accum += "/" + parts[i]
+          newBreadcrumbs.push({name: parts[i], path: accum})
+        }
+      }
+      setBreadcrumbs(newBreadcrumbs)
+    } catch {
+      showToast.error("加载失败")
+    }
+  }
 
   const toggleModelSelect = (path: string) => {
     setSelectedModels((prev) => {
@@ -63,7 +121,7 @@ const DashboardPage = () => {
     })
   }
 
-  const deleteSelected = async () => {
+  const deleteSelectedModels = async () => {
     if (selectedModels.size === 0) return
     if (!confirm(`确定删除 ${selectedModels.size} 个模型？`)) return
 
@@ -74,15 +132,18 @@ const DashboardPage = () => {
       showToast.success(`已删除 ${selectedModels.size} 个模型`)
       setSelectedModels(new Set())
       // Refresh models
-      if (selectedDataset) {
-        const result = await api.get(
-          `browser/dataset/${encodeURIComponent(selectedDataset.name)}/model?user_id=${encodeURIComponent(userId)}`
-        ).json<ModelItem[]>()
-        setModels(result || [])
-      }
+      const result = await api.get(`browser/model?user_id=${encodeURIComponent(userId)}`).json<ModelItem[]>()
+      setModels(result || [])
     } catch {
       showToast.error("删除失败")
     }
+  }
+
+  const resetDataset = () => {
+    setSelectedDataset("")
+    setDatasetContent([])
+    setCurrentPath("")
+    setBreadcrumbs([])
   }
 
   return (
@@ -98,116 +159,193 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-slate-400">加载中...</div>
-          </div>
-        ) : selectedDataset ? (
-          <div>
-            <button
-              onClick={() => {
-                setSelectedDataset(null)
-                setModels([])
-                setSelectedModels(new Set())
-              }}
-              className="flex items-center gap-1 text-slate-400 hover:text-slate-200 mb-4 text-sm"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7"/>
-              </svg>
-              返回数据集列表
-            </button>
+        {/* Tab Switcher */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setActiveTab("dataset")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === "dataset"
+                ? "bg-indigo-600 text-white"
+                : "bg-slate-800 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            数据集 (Dataset)
+          </button>
+          <button
+            onClick={() => setActiveTab("model")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === "model"
+                ? "bg-indigo-600 text-white"
+                : "bg-slate-800 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            模型 (Model)
+          </button>
+        </div>
 
+        {activeTab === "dataset" ? (
+          <div className="space-y-4">
+            {/* Dataset Selector */}
             <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                  <h2 className="text-lg font-semibold text-slate-200">{selectedDataset.name}</h2>
-                  <span className="text-xs text-slate-500 ml-2">{models.length} 个模型</span>
-                </div>
-                {selectedModels.size > 0 && (
+              <label className="block text-xs text-slate-400 mb-2">选择数据集</label>
+              <select
+                value={selectedDataset}
+                onChange={(e) => {
+                  setSelectedDataset(e.target.value)
+                  setDatasetContent([])
+                }}
+                className="w-full bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-500"
+              >
+                <option value="">-- 选择数据集 --</option>
+                {datasets.map((ds) => (
+                  <option key={ds.path} value={ds.name}>
+                    {ds.name} ({ds.episode_count} episodes)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Dataset Content */}
+            {selectedDataset && (
+              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">{selectedModels.size} 已选</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <h2 className="text-sm font-semibold text-slate-200">{selectedDataset}</h2>
+                  </div>
+                  {currentPath && currentPath !== selectedDataset && (
                     <button
-                      onClick={deleteSelected}
-                      className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg"
+                      onClick={() => {
+                        const parentPath = currentPath.split("/").slice(0, -1).join("/")
+                        navigateToPath(parentPath || selectedDataset)
+                      }}
+                      className="text-xs text-slate-400 hover:text-slate-200"
                     >
-                      删除选中
+                      返回上级
                     </button>
-                    <button
-                      onClick={() => setSelectedModels(new Set())}
-                      className="px-3 py-1.5 text-slate-400 hover:text-slate-200 text-xs"
-                    >
-                      取消
-                    </button>
+                  )}
+                </div>
+
+                {/* Breadcrumbs */}
+                {breadcrumbs.length > 1 && (
+                  <div className="flex items-center gap-1 mb-3 text-xs text-slate-500">
+                    {breadcrumbs.map((bc, i) => (
+                      <span key={bc.path} className="flex items-center gap-1">
+                        {i > 0 && <span>/</span>}
+                        <button
+                          onClick={() => navigateToPath(bc.path)}
+                          className={`hover:text-slate-300 ${i === breadcrumbs.length - 1 ? "text-slate-300" : ""}`}
+                        >
+                          {bc.name}
+                        </button>
+                      </span>
+                    ))}
                   </div>
                 )}
-              </div>
 
-              {models.length > 0 ? (
-                <div className="space-y-2">
-                  {models.map((m) => (
-                    <div
-                      key={m.path}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedModels.has(m.path)
-                          ? "bg-red-900/20 border-red-700/50"
-                          : "bg-slate-900/50 border-slate-700 hover:border-slate-600"
-                      }`}
-                      onClick={() => toggleModelSelect(m.path)}
-                    >
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center ${
-                        selectedModels.has(m.path) ? "bg-red-600 border-red-600" : "border-slate-600"
-                      }`}>
-                        {selectedModels.has(m.path) && (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <path d="M20 6L9 17l-5-5"/>
+                {datasetContent.length > 0 ? (
+                  <div className="space-y-1">
+                    {datasetContent.map((item) => (
+                      <div
+                        key={item.path}
+                        onClick={() => {
+                          if (item.is_dir) {
+                            navigateToPath(item.path)
+                          }
+                        }}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                          item.is_dir
+                            ? "hover:bg-slate-700/50 text-slate-200"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {item.is_dir ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+                            <polyline points="13,2 13,9 20,9"/>
                           </svg>
                         )}
+                        <span className="text-sm">{item.name}</span>
                       </div>
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                      </svg>
-                      <div>
-                        <div className="text-sm text-slate-200">{m.name}</div>
-                        <div className="text-xs text-slate-500 font-mono">{m.path}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-slate-500 text-sm">暂无模型</p>
-              )}
-            </div>
-          </div>
-        ) : datasets.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-slate-400">暂无数据</p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-sm">暂无内容</p>
+                )}
+              </div>
+            )}
           </div>
         ) : (
-          <div className="space-y-3">
-            {datasets.map((ds) => (
-              <div
-                key={ds.path}
-                onClick={() => setSelectedDataset(ds)}
-                className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 cursor-pointer hover:border-slate-600 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                  <div className="flex-1">
-                    <h2 className="text-sm font-semibold text-slate-200">{ds.name}</h2>
-                    <p className="text-xs text-slate-500">{ds.episode_count} episodes</p>
-                  </div>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 18l6-6-6-6"/>
-                  </svg>
-                </div>
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <h2 className="text-sm font-semibold text-slate-200">模型列表</h2>
+                <span className="text-xs text-slate-500 ml-2">{models.length} 个模型</span>
               </div>
-            ))}
+              {selectedModels.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">{selectedModels.size} 已选</span>
+                  <button
+                    onClick={deleteSelectedModels}
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg"
+                  >
+                    删除选中
+                  </button>
+                  <button
+                    onClick={() => setSelectedModels(new Set())}
+                    className="px-3 py-1.5 text-slate-400 hover:text-slate-200 text-xs"
+                  >
+                    取消
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="text-center py-8 text-slate-400">加载中...</div>
+            ) : models.length > 0 ? (
+              <div className="space-y-1">
+                {models.map((m) => (
+                  <div
+                    key={m.path}
+                    onClick={() => toggleModelSelect(m.path)}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                      selectedModels.has(m.path)
+                        ? "bg-red-900/20 border border-red-700/50"
+                        : "hover:bg-slate-700/50 border border-transparent"
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center ${
+                      selectedModels.has(m.path) ? "bg-red-600 border-red-600" : "border-slate-600"
+                    }`}>
+                      {selectedModels.has(m.path) && (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                      )}
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <div className="flex-1">
+                      <div className="text-sm text-slate-200">{m.name}</div>
+                      <div className="text-xs text-slate-500">{m.dataset}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-500 text-sm text-center py-8">暂无模型</p>
+            )}
           </div>
         )}
       </div>
