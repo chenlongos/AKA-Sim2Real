@@ -54,6 +54,7 @@ const RealPage = () => {
     const latestAutoCommandAbortRef = useRef<AbortController | null>(null)
     const latestAutoCommandSeqRef = useRef(0)
     const smoothedActionRef = useRef<[number, number]>([0, 0])
+    const latestGripperRef = useRef<number | undefined>(undefined)
     const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
     const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     const [middleViewSource, setMiddleViewSource] = useState<"topdown" | "fpv">("topdown")
@@ -339,24 +340,24 @@ const RealPage = () => {
     const dispatchLatestAutoInferenceAction = useCallback((left: number, right: number, gripper: number = 0) => {
         const leftCommand = Math.round(left)
         const rightCommand = Math.round(right)
-        const gripperCmd = gripper > 0.5 ? 'grab' : 'release'
 
-        setInferenceResult([`motor=[${leftCommand}, ${rightCommand}] gripper=${gripperCmd}`])
+        setInferenceResult([`motor=[${leftCommand}, ${rightCommand}] gripper=${gripper > 0.5 ? 'grab' : 'release'}`])
 
         // 发送电机控制
         motorDirect(carIP, leftCommand, rightCommand, 0)
             .then((data) => {
-                setInferenceResult([`motor=[${data.left}, ${data.right}] gripper=${gripperCmd}`])
+                setInferenceResult([`motor=[${data.left}, ${data.right}] gripper=${gripper > 0.5 ? 'grab' : 'release'}`])
             })
             .catch((error: unknown) => {
                 console.error("Auto inference motor command failed:", error)
             })
 
-        // 发送夹爪控制
-        carControl(carIP, gripperCmd, 50)
-            .catch((error: unknown) => {
-                console.error("Auto inference gripper command failed:", error)
-            })
+        // 检测夹爪状态变化，只在 0→1 时发送 grab
+        const prevGripper = latestGripperRef.current
+        latestGripperRef.current = gripper
+        if (prevGripper !== undefined && prevGripper <= 0.5 && gripper > 0.5) {
+            carControl(carIP, 'grab', 0).catch(() => {})
+        }
     }, [carIP])
 
     const stopInferenceAndCar = useCallback(() => {
@@ -368,6 +369,7 @@ const RealPage = () => {
         latestAutoCommandAbortRef.current?.abort()
         latestAutoCommandAbortRef.current = null
         smoothedActionRef.current = [0, 0]
+        latestGripperRef.current = undefined
 
         if (inferenceTimerRef.current) {
             clearInterval(inferenceTimerRef.current)
@@ -534,8 +536,13 @@ const RealPage = () => {
                     velRightTarget,
                     0,
                 )
-                const gripperCmd = gripperTarget > 0.5 ? 'grab' : 'release'
-                const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] gripper=${gripperCmd} -> motor=[${leftCommand}, ${rightCommand}]`
+                // 单步推理也用状态变化检测
+                const prevGripper = latestGripperRef.current
+                latestGripperRef.current = gripperTarget
+                if (prevGripper !== undefined && prevGripper <= 0.5 && gripperTarget > 0.5) {
+                    carControl(carIP, 'grab', 0).catch(() => {})
+                }
+                const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] gripper=${gripperTarget > 0.5 ? 'grab' : 'release'} -> motor=[${leftCommand}, ${rightCommand}]`
                 setInferenceResult([velStr])
                 return
             }
