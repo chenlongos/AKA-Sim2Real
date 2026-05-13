@@ -44,9 +44,9 @@ export interface TrainingResponse {
   message?: string;
 }
 
-export const startTraining = (params: TrainingParams) =>
+export const startTraining = (userId: string, params: TrainingParams) =>
   api
-    .post('train', { json: params })
+    .post(`train?user_id=${encodeURIComponent(userId)}`, { json: params })
     .json<TrainingResponse>();
 
 export interface StopTrainingResponse {
@@ -54,9 +54,9 @@ export interface StopTrainingResponse {
   message?: string;
 }
 
-export const stopTraining = () =>
+export const stopTraining = (userId: string) =>
   api
-    .post('train/stop')
+    .post(`train/stop?user_id=${encodeURIComponent(userId)}`)
     .json<StopTrainingResponse>();
 
 // ============ 推理相关 ============

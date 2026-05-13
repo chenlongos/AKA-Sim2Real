@@ -397,7 +397,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
     const handleStartTraining = async () => {
         try {
             const userId = useSimCarStore.getState().userId
-            const result = await startTraining({
+            const result = await startTraining(userId, {
                 data_dir: getDatasetPath(userId, datasetName),
                 output_dir: getTrainPath(userId, datasetName),
                 epochs: trainingEpochs,
@@ -415,7 +415,8 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
 
     const handleStopTraining = async () => {
         try {
-            await stopTraining()
+            const userId = useSimCarStore.getState().userId
+            await stopTraining(userId)
         } catch {
             showToast.error('停止训练失败')
         }

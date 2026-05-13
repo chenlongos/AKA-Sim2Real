@@ -251,7 +251,7 @@ const SimPage = () => {
     const handleStartTraining = async () => {
         try {
             const userId = useSimCarStore.getState().userId
-            const result = await startTraining({
+            const result = await startTraining(userId, {
                 data_dir: getDatasetPath(userId, datasetName),
                 output_dir: getTrainPath(userId, datasetName),
                 epochs: trainingEpochs,
@@ -269,7 +269,7 @@ const SimPage = () => {
 
     const handleStopTraining = async () => {
         try {
-            await stopTraining()
+            await stopTraining(userId)
         } catch {
             showToast.error('停止训练失败')
         }
