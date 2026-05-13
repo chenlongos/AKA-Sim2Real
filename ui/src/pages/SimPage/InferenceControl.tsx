@@ -1,3 +1,5 @@
+import {useCallback, useState} from "react"
+
 interface InferenceControlProps {
     isModelLoaded: boolean;
     selectedModel: string;
@@ -9,6 +11,7 @@ interface InferenceControlProps {
     onUnloadModel: () => void;
     onInference: () => void;
     onAutoInference: () => void;
+    onRefreshModels: () => void;
 }
 
 export const InferenceControl = ({
@@ -22,7 +25,20 @@ export const InferenceControl = ({
     onUnloadModel,
     onInference,
     onAutoInference,
+    onRefreshModels,
 }: InferenceControlProps) => {
+    const [isRefreshing, setIsRefreshing] = useState(false)
+
+    const handleRefreshModels = useCallback(async () => {
+        if (isRefreshing) return
+        setIsRefreshing(true)
+        try {
+            await onRefreshModels()
+        } finally {
+            setTimeout(() => setIsRefreshing(false), 500)
+        }
+    }, [isRefreshing, onRefreshModels])
+
     const inferenceActionLabel = inferenceResult.length > 0
         ? inferenceResult.join(", ")
         : autoInference
@@ -38,6 +54,17 @@ export const InferenceControl = ({
             <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-3">
                 <span className="w-2 h-2 bg-cyan-500 rounded-full"/>
                 推理控制
+                <div className="flex-1"/>
+                <button
+                    onClick={handleRefreshModels}
+                    className={`text-slate-400 hover:text-slate-200 transition-colors ${isRefreshing ? 'animate-spin' : ''}`}
+                    title="刷新模型列表"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                        <path d="M21 3v5h-5"/>
+                    </svg>
+                </button>
             </h3>
 
             {/* 模型状态 */}

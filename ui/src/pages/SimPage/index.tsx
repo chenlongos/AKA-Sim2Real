@@ -181,6 +181,7 @@ const SimPage = () => {
     useEffect(() => {
         setIsModelLoaded(false)
         setSelectedModel("")
+        setIsModelLoaded(false)
         const loadModels = async () => {
             try {
                 const result = await listModels(userId, datasetName)
@@ -195,6 +196,17 @@ const SimPage = () => {
         }
         loadModels()
     }, [userId, datasetName])
+
+    const handleRefreshModels = async () => {
+        try {
+            const result = await listModels(userId, datasetName)
+            if (result.models) {
+                setModels(result.models)
+            }
+        } catch {
+            // ignore
+        }
+    }
 
     const sendCommand = (action: [number, number]) => {
         sendActionVector(simSocket, action)
@@ -539,6 +551,7 @@ const SimPage = () => {
                         onUnloadModel={handleUnloadModel}
                         onInference={handleInference}
                         onAutoInference={handleAutoInference}
+                        onRefreshModels={handleRefreshModels}
                     />
                 </div>
 

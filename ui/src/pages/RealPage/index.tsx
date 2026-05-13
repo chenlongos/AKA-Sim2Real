@@ -211,6 +211,17 @@ const RealPage = () => {
         loadModels()
     }, [userId, datasetName])
 
+    const handleRefreshModels = async () => {
+        try {
+            const result = await listModels(userId, datasetName)
+            if (result.models) {
+                setModels(result.models)
+            }
+        } catch {
+            // ignore
+        }
+    }
+
     useEffect(() => {
         if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
             setCameraPermissionError("当前浏览器不支持摄像头访问")
@@ -806,6 +817,7 @@ const RealPage = () => {
                         onUnloadModel={handleUnloadModel}
                         onInference={handleInference}
                         onAutoInference={handleAutoInference}
+                        onRefreshModels={handleRefreshModels}
                     />
                 </div>
 
