@@ -663,7 +663,13 @@ const RealPage = () => {
             const action = keyActionMap[e.code]
             if (action && carConnected && carIP && !keys.current[e.code]) {
                 keys.current[e.code] = true
-                carControl(carIP, action, 50).catch(() => {})
+                // G 键按下 = 夹取
+                if (action === 'grab') {
+                    carControl(carIP, 'grab', 50).catch(() => {})
+                } else if (action !== 'grab') {
+                    // 其他方向键才发送 stop
+                    carControl(carIP, action, 50).catch(() => {})
+                }
             }
         }
 
@@ -686,7 +692,6 @@ const RealPage = () => {
                 }
                 return
             }
-            // G 和 R 键抬起时不执行 stop，只清除按键状态
             keys.current[e.code] = false
         }
 
@@ -737,7 +742,7 @@ const RealPage = () => {
                     action: [
                         typeof allStatus.left_target === 'number' ? allStatus.left_target : 0,
                         typeof allStatus.right_target === 'number' ? allStatus.right_target : 0,
-                        allStatus.gripper_status === 'closed' ? 1 : 0,
+                        allStatus.gripper_target === 1 ? 1 : 0,
                     ],
                 })
             } catch (error: unknown) {
