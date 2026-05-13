@@ -27,33 +27,6 @@ export const listModels = (userId: string, datasetName: string) =>
     .get(`dataset/models?user_id=${encodeURIComponent(userId)}&dataset_name=${encodeURIComponent(datasetName)}`)
     .json<ModelsResponse>();
 
-// ============ 数据采集 ============
-
-export interface CollectImageRequest {
-  image: string;
-  user_id?: string;
-  dataset_name?: string;
-  timestamp?: number;
-  state?: {
-    vel_left: number;
-    vel_right: number;
-  };
-  action?: [number, number];
-}
-
-export interface CollectImageResponse {
-  success?: boolean;
-  count?: number;
-  error?: string;
-  detail?: string;
-  message?: string;
-}
-
-export const collectImage = (data: CollectImageRequest) =>
-  api
-    .post('dataset/collect', { json: data })
-    .json<CollectImageResponse>();
-
 // ============ 训练相关 ============
 
 export interface TrainingParams {

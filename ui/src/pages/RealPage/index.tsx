@@ -10,9 +10,10 @@ import {
     startEpisode,
     endEpisode,
     getEpisodeStatus,
+    sendImageData,
     onTrainingProgress,
 } from "../../api/socket.ts";
-import {startTraining, stopTraining, loadTrainedModel, collectImage, listDatasetDirs, listModels} from "../../api/api";
+import {startTraining, stopTraining, loadTrainedModel, listDatasetDirs, listModels} from "../../api/api";
 import {carHeartbeat, motorDirect, carControl, isCarApiSuccess, carStatus} from "../../api/realCar";
 import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
@@ -679,7 +680,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             if (!isRecording || !carIP) return
 
             collectInFlightRef.current = true
-            const captureTimestampMs = Date.now()
             try {
                 const allStatus = await carStatus(carIP)
                 if (typeof allStatus.left_speed !== 'number' || typeof allStatus.right_speed !== 'number') {
@@ -693,11 +693,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
                     return
                 }
 
-                const data = await collectImage({
-                    image: imageData,
-                    user_id: userId,
-                    dataset_name: datasetName,
-                    timestamp: captureTimestampMs,
+                sendImageData(realSocket, imageData, userId, datasetName, {
                     state: {
                         vel_left: allStatus.left_speed,
                         vel_right: allStatus.right_speed,
@@ -707,9 +703,6 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
                         typeof allStatus.right_target === 'number' ? allStatus.right_target : 0,
                     ],
                 })
-                if (data.count !== undefined) {
-                    setCollectedCount(data.count)
-                }
             } catch (error: unknown) {
                 console.error("Collect image failed:", error)
             } finally {
