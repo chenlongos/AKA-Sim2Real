@@ -25,7 +25,7 @@ import {SIMULATION, getDatasetPath, getTrainPath, getModelPath} from "../../lib/
 
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
-    const lastSentActionVectorRef = useRef<[number, number]>([0, 0])
+    const lastSentActionVectorRef = useRef<[number, number, number]>([0, 0, 0])
     const firstPersonViewRef = useRef<RightPanelRef>(null)
     const carState = useSimCarStore((state) => state.carState)
     const [obstacles, setObstacles] = useState<Obstacle[]>([
@@ -394,7 +394,7 @@ const SimPage = () => {
         return actions
     }, [])
 
-    const getCurrentActionVector = useCallback((): [number, number] => {
+    const getCurrentActionVector = useCallback((): [number, number, number] => {
         return getContinuousActionFromDiscreteActions(getCurrentActions())
     }, [getCurrentActions])
 
@@ -402,7 +402,7 @@ const SimPage = () => {
     useEffect(() => {
         const clearKeysAndStop = () => {
             keys.current = {}
-            lastSentActionVectorRef.current = [0, 0]
+            lastSentActionVectorRef.current = [0, 0, 0]
             sendActionVector(simSocket, [0, 0])
         }
 
@@ -480,7 +480,7 @@ const SimPage = () => {
                     // 更新目标速度
                     store.setTargetVelocity(actionVector[0], actionVector[1])
                     // 发送命令到后端（用于日志和推理）
-                    sendCommand(actionVector)
+                    sendCommand([actionVector[0], actionVector[1]])
                     lastSentActionVectorRef.current = actionVector
                 }
                 lastSendTime = currentTime

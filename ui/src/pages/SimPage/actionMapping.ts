@@ -22,16 +22,18 @@ export const KEY_TO_ACTION = SIM_KEY_TO_ACTION;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-export const getContinuousActionFromDiscreteActions = (actions: string[]): [number, number] => {
+export const getContinuousActionFromDiscreteActions = (actions: string[]): [number, number, number] => {
     let left = 0;
     let right = 0;
+    let gripper = 0;
 
     for (const action of actions) {
         const mapped = SIM_ACTION_TO_CONTINUOUS[action];
         if (!mapped) continue;
         left += mapped[0];
         right += mapped[1];
+        if (action === 'grab') gripper = 1;
     }
 
-    return [clamp(left, -0.2, 0.2), clamp(right, -0.2, 0.2)];
+    return [clamp(left, -0.2, 0.2), clamp(right, -0.2, 0.2), gripper];
 };

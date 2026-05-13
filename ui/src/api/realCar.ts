@@ -56,6 +56,7 @@ export interface CarStatusResponse {
   right_speed?: number;
   left_target?: number;
   right_target?: number;
+  gripper_status?: string;
   error?: string;
   detail?: string;
   message?: string;
