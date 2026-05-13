@@ -427,7 +427,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
             const userId = useSimCarStore.getState().userId
             const dataDir = getDatasetPath(userId, datasetName)
             const modelPath = `output/train/${userId}/${modelName}/model.pt`
-            const result = await loadTrainedModel(dataDir, modelPath)
+            const result = await loadTrainedModel(userId, dataDir, modelPath)
             if (result.success) {
                 setIsModelLoaded(true)
                 setSelectedModel(modelName)
