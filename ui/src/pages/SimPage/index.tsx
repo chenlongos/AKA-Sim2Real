@@ -339,7 +339,9 @@ const SimPage = () => {
             // 设置目标速度，RAF 循环会持续应用物理
             useSimCarStore.getState().setTargetVelocity(velLeftTarget, velRightTarget)
 
-            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}]`
+            const gripperTarget = actionValues.length >= 3 ? actionValues[2] : 0
+            const gripperCmd = gripperTarget > 0.5 ? 'grab' : 'release'
+            const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] gripper=${gripperCmd}`
             setInferenceResult([velStr])
         } else if (!result.success) {
             throw new Error(result.error || '推理失败')
