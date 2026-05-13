@@ -78,6 +78,21 @@ const RealPage = () => {
 
     // 监听后端车辆状态更新
     useEffect(() => {
+        // 加载用户的数据集列表
+        const loadDatasets = async () => {
+            try {
+                const result = await listDatasetDirs(userId)
+                if (result.datasets && result.datasets.length > 0) {
+                    setDatasets(result.datasets)
+                    if (!datasetName || !result.datasets.includes(datasetName)) {
+                        setDatasetName(result.datasets[0])
+                    }
+                }
+            } catch {
+                // 忽略错误，使用默认数据集
+            }
+        }
+
         realSocket.on("connected", (data) => {
             console.log("Connected:", data)
             getCarState(realSocket)
@@ -122,6 +137,11 @@ const RealPage = () => {
         }) => {
             setIsRecording(false)
             setCollectedCount(data.frame_count)
+            if (!data.error) {
+                loadDatasets()
+            } else {
+                showToast.error(`保存失败: ${data.error}`)
+            }
         })
 
         realSocket.on("episode_finalized", (data: {
@@ -132,6 +152,9 @@ const RealPage = () => {
         }) => {
             if (data.error) {
                 showToast.error(`保存失败: ${data.error}`)
+            } else {
+                // 新数据采集完成，刷新数据集列表
+                loadDatasets()
             }
         })
 
@@ -154,21 +177,6 @@ const RealPage = () => {
 
         getEpisodes(realSocket, userId)
         getEpisodeStatus(realSocket, userId)
-
-        // 加载用户的数据集列表
-        const loadDatasets = async () => {
-            try {
-                const result = await listDatasetDirs(userId)
-                if (result.datasets && result.datasets.length > 0) {
-                    setDatasets(result.datasets)
-                    if (!datasetName || !result.datasets.includes(datasetName)) {
-                        setDatasetName(result.datasets[0])
-                    }
-                }
-            } catch {
-                // 忽略错误，使用默认数据集
-            }
-        }
         loadDatasets()
 
         return () => {

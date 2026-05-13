@@ -62,6 +62,21 @@ const SimPage = () => {
             console.log("Connected:", data)
         })
 
+        // 加载用户的数据集列表
+        const loadDatasets = async () => {
+            try {
+                const result = await listDatasetDirs(userId)
+                if (result.datasets && result.datasets.length > 0) {
+                    setDatasets(result.datasets)
+                    if (!datasetName || !result.datasets.includes(datasetName)) {
+                        setDatasetName(result.datasets[0])
+                    }
+                }
+            } catch {
+                // 忽略错误，使用默认数据集
+            }
+        }
+
         // 监听采集计数更新
         simSocket.on("collection_count", (data: {
             count: number;
@@ -104,7 +119,9 @@ const SimPage = () => {
         }) => {
             setIsRecording(false)
             setCollectedCount(data.frame_count)
-            if (data.error) {
+            if (!data.error) {
+                loadDatasets()
+            } else {
                 showToast.error(`导出失败: ${data.error}`)
             }
         })
@@ -118,6 +135,8 @@ const SimPage = () => {
         }) => {
             if (data.error) {
                 showToast.error(`保存失败: ${data.error}`)
+            } else {
+                loadDatasets()
             }
         })
 
@@ -142,6 +161,7 @@ const SimPage = () => {
         getEpisodes(simSocket, userId)
         // 获取初始 episode 状态
         getEpisodeStatus(simSocket, userId)
+        loadDatasets()
 
         return () => {
             simSocket.off("connected")
@@ -155,25 +175,7 @@ const SimPage = () => {
             unsubscribeTrainingProgress()
             resetSimCarState()
         }
-    }, [resetSimCarState])
-
-    // 加载用户的数据集列表
-    useEffect(() => {
-        const loadDatasets = async () => {
-            try {
-                const result = await listDatasetDirs(userId)
-                if (result.datasets && result.datasets.length > 0) {
-                    setDatasets(result.datasets)
-                    if (!datasetName || !result.datasets.includes(datasetName)) {
-                        setDatasetName(result.datasets[0])
-                    }
-                }
-            } catch {
-                // 忽略错误，使用默认数据集
-            }
-        }
-        loadDatasets()
-    }, [userId])
+    }, [resetSimCarState, userId])
 
     // 加载模型列表
     useEffect(() => {
