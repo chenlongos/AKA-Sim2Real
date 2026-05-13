@@ -19,7 +19,9 @@ export const initialSimCarState: CarState = {
 interface SimCarStore {
     userId: string;
     currentEpisode: number;
+    carIP: string;
     carState: CarState;
+    setCarIP: (ip: string) => void;
     setCarState: (carState: CarState) => void;
     resetCarState: () => void;
     setTargetVelocity: (velLeft: number, velRight: number) => void;
@@ -36,7 +38,9 @@ export const useSimCarStore = create<SimCarStore>()(
         (set, get) => ({
             userId: generateUserId(),
             currentEpisode: 1,
+            carIP: "",
             carState: initialSimCarState,
+            setCarIP: (ip) => set({ carIP: ip }),
             setCarState: (carState) => set({ carState }),
             resetCarState: () => set({ carState: initialSimCarState }),
             getCarState: () => get().carState,
@@ -98,6 +102,7 @@ export const useSimCarStore = create<SimCarStore>()(
             partialize: (state) => ({
                 userId: state.userId,
                 currentEpisode: state.currentEpisode,
+                carIP: state.carIP,
             }),
         }
     )

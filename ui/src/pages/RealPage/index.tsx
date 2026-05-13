@@ -72,7 +72,8 @@ const RealPage = () => {
     const [models, setModels] = useState<string[]>([])
     const [selectedModel, setSelectedModel] = useState<string>("")
     const userId = useSimCarStore.getState().userId
-    const [carIP, setCarIP] = useState("")
+    const carIP = useSimCarStore((state) => state.carIP)
+    const setCarIP = useSimCarStore((state) => state.setCarIP)
     const [carConnected, setCarConnected] = useState(false)
 
     // 监听后端车辆状态更新
