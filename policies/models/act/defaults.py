@@ -8,9 +8,9 @@ from .configuration_act import ACTConfig
 
 
 DEFAULT_ACT_CONFIG: dict[str, Any] = {
-    "state_dim": 2,
-    "action_dim": 2,
-    "action_chunk_size": 16,  # 建议使用更大的值（如 100）以获得更长的时间窗口
+    "state_dim": 2,  # [vel_left, vel_right] - 后续可扩展 gripper 状态
+    "action_dim": 2,  # [left_vel, right_vel, gripper_target]
+    "action_chunk_size": 50,  # 预测50步未来动作
     "n_action_steps": 1,     # Temporal Ensembling 模式下必须为 1
     "hidden_dim": 512,
     "num_attention_heads": 8,

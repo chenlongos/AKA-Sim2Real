@@ -19,7 +19,7 @@ import type {CarState} from "../../models/types.ts";
 import {TrainingControl} from "../SimPage/TrainingControl.tsx";
 import {InferenceControl} from "../SimPage/InferenceControl.tsx";
 import {RealCameraView, type CameraDeviceOption, type RealCameraViewRef} from "./RealCameraView.tsx";
-import {type MjpegStreamViewRef} from "./MjpegStreamView.tsx";
+import {type MjpegStreamViewRef, MjpegStreamView} from "./MjpegStreamView.tsx";
 import {RealRightPanel} from "./RealRightPanel.tsx";
 import {showToast} from "../../lib/toast.ts";
 import {getDatasetPath, getTrainPath, getModelPath} from "../../lib/constants.ts";
@@ -55,7 +55,8 @@ const RealPage = () => {
     const latestAutoCommandSeqRef = useRef(0)
     const smoothedActionRef = useRef<[number, number]>([0, 0])
     const topdownCameraViewRef = useRef<RealCameraViewRef | null>(null)
-const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
+    const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
+    const [middleViewSource, setMiddleViewSource] = useState<"topdown" | "fpv">("topdown")
     const collectTimerRef = useRef<number | null>(null)
     const collectInFlightRef = useRef(false)
     const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
@@ -555,7 +556,7 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
         }
 
         const sessionId = autoInferenceSessionRef.current
-        const inferenceFps = 5
+        const inferenceFps = 10
         const inferenceInterval = 1000 / inferenceFps
         let cancelled = false
 
@@ -784,19 +785,45 @@ const fpvCameraViewRef = useRef<MjpegStreamViewRef | null>(null)
                     />
                 </div>
 
-                {/* 中间 - 前方摄像头 */}
+                {/* 中间 - 视角选择 */}
                 <div className="flex-1 min-w-0 flex flex-col">
-                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 h-full">
-                        <RealCameraView
-                            ref={topdownCameraViewRef}
-                            title="前方摄像头 / 俯视视角"
-                            description="预留给前置摄像头，作为环境俯视观察。"
-                            devices={cameraDevices}
-                            selectedDeviceId={topdownCameraId}
-                            onDeviceChange={setTopdownCameraId}
-                            cameraError={cameraPermissionError}
-                            isRecording={isRecording}
-                        />
+                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 h-full flex flex-col">
+                        {/* 视角选择下拉 */}
+                        <div className="mb-3 flex items-center gap-3">
+                            <label className="text-xs text-slate-400">显示视角:</label>
+                            <select
+                                value={middleViewSource}
+                                onChange={(e) => setMiddleViewSource(e.target.value as "topdown" | "fpv")}
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500"
+                            >
+                                <option value="topdown">俯视视角 (前置摄像头)</option>
+                                <option value="fpv">第一人称视角 (小车摄像头)</option>
+                            </select>
+                        </div>
+
+                        {/* 视角内容 */}
+                        <div className="flex-1 min-h-0">
+                            {middleViewSource === "topdown" ? (
+                                <RealCameraView
+                                    ref={topdownCameraViewRef}
+                                    title="前方摄像头 / 俯视视角"
+                                    description="预留给前置摄像头，作为环境俯视观察。"
+                                    devices={cameraDevices}
+                                    selectedDeviceId={topdownCameraId}
+                                    onDeviceChange={setTopdownCameraId}
+                                    cameraError={cameraPermissionError}
+                                    isRecording={isRecording}
+                                />
+                            ) : (
+                                <MjpegStreamView
+                                    ref={fpvCameraViewRef}
+                                    carIP={carIP}
+                                    title="小车摄像头 / 第一人称视角"
+                                    description="小车摄像头实时画面。"
+                                    isRecording={isRecording}
+                                />
+                            )}
+                        </div>
                     </div>
                 </div>
 

@@ -68,7 +68,7 @@ def _train_model_sync(
         config = build_act_config(
             state_dim=2,
             action_dim=action_dim,
-            action_chunk_size=8,
+            action_chunk_size=50,
         )
         model = ACTModel(config)
 
