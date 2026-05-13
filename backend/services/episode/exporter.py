@@ -20,7 +20,7 @@ from PIL import Image
 DEFAULT_CHUNK_SIZE = 1000  # 每个 parquet 文件的最大样本数
 DEFAULT_CHUNK_SIZE_BYTES = 100 * 1024 * 1024  # 100MB 基于大小的分块
 ACTION_CHUNK_SIZE = 8  # 推理时每次预测的动作步数（与存储格式无关）
-ACTION_DIM = 2  # [pwm_left, pwm_right] 每帧2维
+ACTION_DIM = 3  # [pwm_left, pwm_right, gripper_target] 每帧3维
 DEFAULT_FPS = 10
 
 # 状态编码 (2维) - 左右轮速度（从 PWM 估计）
@@ -129,6 +129,7 @@ class LeRobotDatasetMetadata:
                 "total_frames": self._total_samples,
                 "total_episodes": self._total_episodes,
                 "chunk_size": self.chunk_size,
+                "action_dim": ACTION_DIM,
                 "features": self.features,
             }
         return self._info
@@ -287,8 +288,13 @@ class LeRobotDatasetMetadata:
                 and isinstance(sample_action[1], (int, float))
             ):
                 action_values = [float(sample_action[0]), float(sample_action[1])]
+                # 第三维 gripper_target（如果有）
+                if len(sample_action) >= 3 and isinstance(sample_action[2], (int, float)):
+                    action_values.append(float(sample_action[2]))
+                else:
+                    action_values.append(0.0)  # 默认释放
             else:
-                action_values = [0.0, 0.0]
+                action_values = [0.0, 0.0, 0.0]
             all_actions.append(action_values)
 
         states_array = np.array(all_states, dtype=np.float32)

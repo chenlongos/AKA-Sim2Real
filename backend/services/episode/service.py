@@ -189,7 +189,13 @@ class EpisodeService:
             left_target = action_payload[0]
             right_target = action_payload[1]
             if isinstance(left_target, (int, float)) and isinstance(right_target, (int, float)):
-                sample["action"] = [float(left_target), float(right_target)]
+                action = [float(left_target), float(right_target)]
+                # 第三个维度 gripper_target（0=释放, 1=夹取）
+                if len(action_payload) >= 3 and isinstance(action_payload[2], (int, float)):
+                    action.append(float(action_payload[2]))
+                else:
+                    action.append(0.0)  # 默认释放
+                sample["action"] = action
 
         current_episode_id = state.user_current_episode_id.get(user_id, 1)
 

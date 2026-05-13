@@ -87,7 +87,7 @@ def _train_model_sync(
         logger.info(f"模型参数量: {sum(p.numel() for p in model.parameters()):,}")
 
         stats = data.get("stats")
-        dataset = SimpleDataset(data, stats=stats)
+        dataset = SimpleDataset(data, stats=stats, action_chunk_size=50)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
         optimizer = optim.Adam(model.parameters(), lr=lr)

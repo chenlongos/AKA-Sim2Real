@@ -316,17 +316,26 @@ const RealPage = () => {
         }
     }
 
-    const dispatchLatestAutoInferenceAction = useCallback((left: number, right: number) => {
+    const dispatchLatestAutoInferenceAction = useCallback((left: number, right: number, gripper: number = 0) => {
         const leftCommand = Math.round(left)
         const rightCommand = Math.round(right)
-        setInferenceResult([`motor=[${leftCommand}, ${rightCommand}]`])
+        const gripperCmd = gripper > 0.5 ? 'grab' : 'release'
 
+        setInferenceResult([`motor=[${leftCommand}, ${rightCommand}] gripper=${gripperCmd}`])
+
+        // 发送电机控制
         motorDirect(carIP, leftCommand, rightCommand, 0)
             .then((data) => {
-                setInferenceResult([`motor=[${data.left}, ${data.right}], duration=0s`])
+                setInferenceResult([`motor=[${data.left}, ${data.right}] gripper=${gripperCmd}`])
             })
             .catch((error: unknown) => {
                 console.error("Auto inference motor command failed:", error)
+            })
+
+        // 发送夹爪控制
+        carControl(carIP, gripperCmd, 50)
+            .catch((error: unknown) => {
+                console.error("Auto inference gripper command failed:", error)
             })
     }, [carIP])
 
@@ -479,7 +488,7 @@ const RealPage = () => {
         }
 
         if (result.success && result.action) {
-            // 新格式：action = [left_vel, right_vel]（单步）
+            // 格式：action = [left_vel, right_vel, gripper_target]（单步）
             const actionValues = Array.isArray(result.action) ? result.action : [result.action]
             if (actionValues.length < 2) {
                 console.error("Invalid action shape:", result.action)
@@ -488,6 +497,7 @@ const RealPage = () => {
 
             const velLeftTarget = actionValues[0]
             const velRightTarget = actionValues[1]
+            const gripperTarget = actionValues.length >= 3 ? actionValues[2] : 0
 
             if (typeof velLeftTarget !== 'number' || typeof velRightTarget !== 'number') {
                 console.error("Invalid velocity values:", {velLeftTarget, velRightTarget})
@@ -504,12 +514,13 @@ const RealPage = () => {
                     velRightTarget,
                     0,
                 )
-                const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] -> motor=[${leftCommand}, ${rightCommand}], duration=1s`
+                const gripperCmd = gripperTarget > 0.5 ? 'grab' : 'release'
+                const velStr = `v=[${velLeftTarget.toFixed(2)}, ${velRightTarget.toFixed(2)}] gripper=${gripperCmd} -> motor=[${leftCommand}, ${rightCommand}]`
                 setInferenceResult([velStr])
                 return
             }
 
-            dispatchLatestAutoInferenceAction(velLeftTarget, velRightTarget)
+            dispatchLatestAutoInferenceAction(velLeftTarget, velRightTarget, gripperTarget)
         } else if (!result.success) {
             throw new Error(result.error || '推理失败1')
         }
@@ -614,6 +625,8 @@ const RealPage = () => {
             'KeyA': 'left',
             'ArrowRight': 'right',
             'KeyD': 'right',
+            'KeyG': 'grab',   // G = 夹取
+            'KeyR': 'release', // R = 放开
         }
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -653,6 +666,7 @@ const RealPage = () => {
                 }
                 return
             }
+            // G 和 R 键抬起时不执行 stop，只清除按键状态
             keys.current[e.code] = false
         }
 
@@ -703,6 +717,7 @@ const RealPage = () => {
                     action: [
                         typeof allStatus.left_target === 'number' ? allStatus.left_target : 0,
                         typeof allStatus.right_target === 'number' ? allStatus.right_target : 0,
+                        allStatus.gripper_status === 'closed' ? 1 : 0,
                     ],
                 })
             } catch (error: unknown) {
