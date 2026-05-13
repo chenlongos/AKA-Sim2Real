@@ -68,7 +68,7 @@ def _train_model_sync(
         config = build_act_config(
             state_dim=2,
             action_dim=action_dim,
-            action_chunk_size=50,
+            action_chunk_size=8,
         )
         model = ACTModel(config)
 
@@ -87,7 +87,7 @@ def _train_model_sync(
         logger.info(f"模型参数量: {sum(p.numel() for p in model.parameters()):,}")
 
         stats = data.get("stats")
-        dataset = SimpleDataset(data, stats=stats, action_chunk_size=50)
+        dataset = SimpleDataset(data, stats=stats, action_chunk_size=8)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
         optimizer = optim.Adam(model.parameters(), lr=lr)

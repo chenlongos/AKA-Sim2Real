@@ -32,7 +32,7 @@ class ACTInferenceRuntime:
         self.stats = ACTNormalizationStats()
         self.preprocessor = ACTPreprocessor()
         self.temporal_ensembler: Optional[ACTTemporalEnsembler] = None
-        self.action_chunk_size = 50  # 默认值，会在加载模型时更新
+        self.action_chunk_size = 8  # 默认值，会在加载模型时更新
 
     def create_config(self, config_dict: Optional[dict] = None) -> "ACTConfig":
         return build_act_config(**(config_dict or {}))
