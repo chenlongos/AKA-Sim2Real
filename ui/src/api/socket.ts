@@ -103,6 +103,7 @@ export const runInferenceWithSocket = (
     socket: Socket,
     state: number[],
     image?: string,
+    userId?: string,
     timeoutMs: number = 10000,
 ) => {
     return new Promise<{ success: boolean; action?: unknown; error?: string }>((resolve, reject) => {
@@ -118,7 +119,7 @@ export const runInferenceWithSocket = (
         };
 
         socket.on('act_infer_result', handleResult);
-        socket.emit('act_infer', { state, image });
+        socket.emit('act_infer', { state, image, user_id: userId });
     });
 };
 

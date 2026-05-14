@@ -319,7 +319,7 @@ const SimPage = () => {
         // 真实小车模式：状态输入是左右轮速度 [vel_left, vel_right]
         const state: [number, number] = [currentCarState.vel_left, currentCarState.vel_right]
         const imageBase64 = firstPersonViewRef.current?.getImageData()
-        const result = await runInferenceWithSocket(simSocket, state, imageBase64)
+        const result = await runInferenceWithSocket(simSocket, state, imageBase64, userId)
         if (result.success && result.action) {
             // 新格式：action = [left_vel, right_vel]（单步）
             const actionValues = Array.isArray(result.action) ? result.action : [result.action]

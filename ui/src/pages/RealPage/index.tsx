@@ -503,7 +503,7 @@ const RealPage = () => {
 
         const imageBase64 = fpvCameraViewRef.current?.getImageData()
         const state: [number, number] = [velLeft, velRight]
-        const result = await runInferenceWithSocket(realSocket, state, imageBase64)
+        const result = await runInferenceWithSocket(realSocket, state, imageBase64, userId)
 
         if (sessionId !== undefined && (!autoInferenceRef.current || sessionId !== autoInferenceSessionRef.current)) {
             return
