@@ -45,6 +45,7 @@ async def browse_datasets(user_id: str) -> List[dict]:
                 except Exception:
                     pass
         result.append({
+            "user_id": user_id,
             "name": item.name,
             "path": str(item.relative_to(project_root)),
             "episode_count": episode_count,
@@ -81,6 +82,7 @@ async def browse_dataset_content(user_id: str, dataset_name: str, path: str = ""
         })
 
     return {
+        "user_id": user_id,
         "dataset_name": dataset_name,
         "path": str(current_path),
         "children": items,
@@ -111,6 +113,7 @@ async def browse_models(user_id: str, dataset_name: str = "") -> List[dict]:
             if dataset_name and ds_name != dataset_name:
                 continue
             result.append({
+                "user_id": user_id,
                 "name": model_name,
                 "dataset": ds_name,
                 "path": str(item.relative_to(project_root)),
@@ -120,6 +123,7 @@ async def browse_models(user_id: str, dataset_name: str = "") -> List[dict]:
             if dataset_name and item.name != dataset_name:
                 continue
             result.append({
+                "user_id": user_id,
                 "name": item.name,
                 "dataset": item.name,
                 "path": str(item.relative_to(project_root)),

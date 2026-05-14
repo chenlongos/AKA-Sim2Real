@@ -228,6 +228,7 @@ const DashboardPage = () => {
                       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                     </svg>
                     <h2 className="text-sm font-semibold text-slate-200">{selectedDataset}</h2>
+                    <span className="text-xs text-slate-500 font-mono">{userId}</span>
                   </div>
                   {currentPath && currentPath !== selectedDataset && (
                     <button
