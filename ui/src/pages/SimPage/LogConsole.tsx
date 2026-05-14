@@ -16,6 +16,7 @@ interface LogEntry {
 
 interface LogConsoleProps {
     className?: string;
+    userId?: string;
 }
 
 const levelBgColors: Record<string, string> = {
@@ -25,7 +26,7 @@ const levelBgColors: Record<string, string> = {
     ERROR: "bg-red-900/30",
 };
 
-export const LogConsole = ({className = ""}: LogConsoleProps) => {
+export const LogConsole = ({className = "", userId}: LogConsoleProps) => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [shouldScroll, setShouldScroll] = useState(true);
     const logContainerRef = useRef<HTMLDivElement>(null);
@@ -52,6 +53,10 @@ export const LogConsole = ({className = ""}: LogConsoleProps) => {
         let logIdCounter = 0;
 
         const handleLogMessage = (data: Omit<LogEntry, "id">) => {
+            // 过滤：只显示包含当前 userId 的日志
+            if (userId && !data.message.includes(userId)) {
+                return;
+            }
 
             const entry: LogEntry = {
                 ...data,

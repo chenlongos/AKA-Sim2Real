@@ -10,6 +10,7 @@ export interface RealRightPanelRef {
 }
 
 interface RealRightPanelProps {
+    userId: string;
     carState: CarState;
     isRecording: boolean;
     carIP: string;
@@ -23,6 +24,7 @@ interface RealRightPanelProps {
 }
 
 export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>(({
+    userId,
     carState,
     isRecording,
     carIP,
@@ -199,7 +201,7 @@ export const RealRightPanel = forwardRef<RealRightPanelRef, RealRightPanelProps>
 
             {/* 日志控制台 */}
             <div className="flex-1 min-h-0">
-                <LogConsole className="h-full"/>
+                <LogConsole className="h-full" userId={userId}/>
             </div>
         </div>
     );

@@ -879,6 +879,7 @@ const RealPage = () => {
                 <div className="w-96 flex flex-col min-w-0">
                     <RealRightPanel
                         ref={fpvCameraViewRef}
+                        userId={userId}
                         carState={carState}
                         isRecording={isRecording}
                         carIP={carIP}

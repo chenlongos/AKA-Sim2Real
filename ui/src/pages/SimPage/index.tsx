@@ -571,6 +571,7 @@ const SimPage = () => {
                 <div className="w-96 flex flex-col min-w-0">
                     <RightPanel
                         ref={firstPersonViewRef}
+                        userId={userId}
                         obstacles={obstacles}
                         isRecording={isRecording}
                         collectionFps={collectionFps}

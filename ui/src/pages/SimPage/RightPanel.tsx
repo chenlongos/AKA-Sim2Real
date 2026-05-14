@@ -9,6 +9,7 @@ export interface RightPanelRef {
 }
 
 interface RightPanelProps {
+    userId: string;
     obstacles: Obstacle[];
     isRecording: boolean;
     collectionFps: number;
@@ -21,6 +22,7 @@ const RIGHT_PANEL_COLORS = {
 };
 
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
+    userId,
     obstacles,
     isRecording,
     collectionFps,
@@ -123,7 +125,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
 
             {/* 日志控制台 */}
             <div className="flex-1 min-h-0">
-                <LogConsole className="h-full"/>
+                <LogConsole className="h-full" userId={userId}/>
             </div>
         </div>
     );
