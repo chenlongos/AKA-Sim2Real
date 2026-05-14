@@ -79,14 +79,15 @@ class ACTInferenceRuntime:
     def process_image(self, image_input: Union[str, Image.Image, None]) -> torch.Tensor:
         return self.preprocessor.process_image(image_input, self.device)
 
-    def infer(self, state: list, image: Optional[Union[str, Image.Image]] = None) -> list:
+    def infer(self, state: list, image: Optional[Union[str, Image.Image]] = None, user_id: str = None) -> list:
+        prefix = f"[{user_id}] " if user_id else ""
         if self.model is None:
-            logger.warning("ACT 模型未加载，返回随机动作")
+            logger.warning(f"{prefix}ACT 模型未加载，返回随机动作")
             return [[0.0, 0.0]]
 
         with torch.no_grad():
             state_tensor = self.preprocessor.normalize_state(state, self.stats, self.device)
-            logger.info(f"[ACT推理] 输入state: {state}, 归一化后: {state_tensor.tolist()}")
+            logger.info(f"{prefix}[ACT推理] 输入state: {state}, 归一化后: {state_tensor.tolist()}")
             image_tensor = self.process_image(image)
 
             use_temporal = self.should_use_temporal_ensembling()
@@ -97,9 +98,9 @@ class ACTInferenceRuntime:
                 temporal_ensembler=self.temporal_ensembler,
             )
 
-            logger.info(f"[ACT推理] 模型原始输出: {action[0].tolist()}")
+            logger.info(f"{prefix}[ACT推理] 模型原始输出: {action[0].tolist()}")
             action = self.preprocessor.denormalize_action(action, self.stats, self.device)
-            logger.info(f"[ACT推理] 归一化后输出: {action[0].tolist()}")
+            logger.info(f"{prefix}[ACT推理] 归一化后输出: {action[0].tolist()}")
             # 返回单步 [left, right] 而非 [[left, right]]
             return action[0].cpu().tolist()
 
@@ -126,8 +127,8 @@ def load_act_model(model_path: str = None, stats_dir: str = None) -> "ACTModel":
     return _runtime.load_model(model_path=model_path, stats_dir=stats_dir)
 
 
-def act_inference(state: list, image: Optional[Union[str, Image.Image]] = None) -> list:
-    return _runtime.infer(state, image)
+def act_inference(state: list, image: Optional[Union[str, Image.Image]] = None, user_id: str = None) -> list:
+    return _runtime.infer(state, image, user_id)
 
 
 def is_model_loaded() -> bool:

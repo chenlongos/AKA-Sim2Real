@@ -43,8 +43,8 @@ class SimController:
         if not action:
             self.runtime.current_action_vector = None
 
-    def infer(self, inference_state: list[float], image: Any) -> Any:
-        action = self.runtime.act_runtime.infer(inference_state, image)
+    def infer(self, inference_state: list[float], image: Any, user_id: str = None) -> Any:
+        action = self.runtime.act_runtime.infer(inference_state, image, user_id)
 
         self.runtime.current_action_vector = None
         self.runtime.inference_mode = True
