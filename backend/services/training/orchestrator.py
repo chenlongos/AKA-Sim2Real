@@ -63,7 +63,7 @@ def _train_model_sync(
         raw_state_dim = data["observation.state"].shape[-1]
         state_dim = 2
 
-        logger.info(f"action_dim: {action_dim}, state_dim: {state_dim} (原始: {raw_state_dim})")
+        logger.info(f"[{user_id}] action_dim: {action_dim}, state_dim: {state_dim} (原始: {raw_state_dim})")
 
         config = build_act_config(
             state_dim=2,
@@ -80,11 +80,11 @@ def _train_model_sync(
                 if checkpoint_config:
                     logger.info(f"检测到 checkpoint 配置: {checkpoint_config}")
                 model.load_state_dict(state_dict)
-                logger.info(f"已加载已有模型: {resume_path}")
+                logger.info(f"[{user_id}] 已加载已有模型: {resume_path}")
             else:
                 logger.warning(f"指定的可模型文件不存在: {resume_path}，从头开始训练")
 
-        logger.info(f"模型参数量: {sum(p.numel() for p in model.parameters()):,}")
+        logger.info(f"[{user_id}] 模型参数量: {sum(p.numel() for p in model.parameters()):,}")
 
         stats = data.get("stats")
         dataset = SimpleDataset(data, stats=stats, action_chunk_size=8)
@@ -100,7 +100,7 @@ def _train_model_sync(
             device = "mps"
         device = torch.device(device)
         model = model.to(device)
-        logger.info(f"使用设备: {device}")
+        logger.info(f"[{user_id}] 设备: {device}")
 
         model.train()
         total_batches = len(dataloader)
@@ -140,7 +140,7 @@ def _train_model_sync(
 
             avg_loss = total_loss / total_batches
             callbacks.on_epoch_end(epoch, avg_loss)
-            logger.info(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
+            logger.info(f"[{user_id}] Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
 
         if output_dir is None:
             project_root = Path(__file__).resolve().parents[4]
