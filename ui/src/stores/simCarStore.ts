@@ -29,14 +29,27 @@ interface SimCarStore {
     getCarState: () => CarState;
 }
 
+const getUserFromURL = (): string | null => {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("userId");
+    } catch {
+        return null;
+    }
+};
+
 const generateUserId = () => {
     return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+const getInitialUserId = () => {
+    return getUserFromURL() ?? generateUserId();
 };
 
 export const useSimCarStore = create<SimCarStore>()(
     persist(
         (set, get) => ({
-            userId: generateUserId(),
+            userId: getInitialUserId(),
             currentEpisode: 1,
             carIP: "",
             carState: initialSimCarState,
@@ -104,6 +117,13 @@ export const useSimCarStore = create<SimCarStore>()(
                 currentEpisode: state.currentEpisode,
                 carIP: state.carIP,
             }),
+            merge: (persisted, current) => {
+                const urlUserId = getUserFromURL();
+                if (urlUserId) {
+                    return { ...current, ...(persisted as Partial<SimCarStore>), userId: urlUserId };
+                }
+                return { ...current, ...(persisted as Partial<SimCarStore>) };
+            },
         }
     )
 );

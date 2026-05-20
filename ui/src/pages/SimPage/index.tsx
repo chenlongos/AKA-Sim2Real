@@ -22,6 +22,7 @@ import {useSimCarStore} from "../../stores/simCarStore.ts";
 import {getContinuousActionFromDiscreteActions, SIM_KEY_TO_ACTION} from "./actionMapping.ts";
 import {showToast} from "../../lib/toast.ts";
 import {SIMULATION, getDatasetPath, getTrainPath, getModelPath} from "../../lib/constants.ts";
+import {init, send} from "../../services/reportService.ts";
 
 const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
@@ -54,9 +55,14 @@ const SimPage = () => {
     const [models, setModels] = useState<string[]>([])
     const [selectedModel, setSelectedModel] = useState<string>("")
     const userId = useSimCarStore.getState().userId
+    const episodeStartTimeRef = useRef<number>(0)
+    const trainingPathsRef = useRef<{ dataset_path: string; model_path: string }>({ dataset_path: "", model_path: "" })
 
     // 监听后端事件
     useEffect(() => {
+        init("sim");
+        send("action.enter");
+
         // 监听连接
         simSocket.on("connected", (data) => {
             console.log("Connected:", data)
@@ -107,6 +113,12 @@ const SimPage = () => {
             setIsRecording(true)
             setCollectedCount(0)
             setEpisodeTaskName(data.task_name)
+            episodeStartTimeRef.current = Date.now()
+            send("collection.episode_started", {
+                episode_id: data.episode_id,
+                task_name: data.task_name,
+                dataset_name: datasetName,
+            })
         })
 
         // 监听 episode 结束
@@ -119,6 +131,12 @@ const SimPage = () => {
         }) => {
             setIsRecording(false)
             setCollectedCount(data.frame_count)
+            const durationMs = episodeStartTimeRef.current ? Date.now() - episodeStartTimeRef.current : 0
+            send("collection.episode_ended", {
+                episode_id: data.episode_id,
+                frame_count: data.frame_count,
+                duration_ms: durationMs,
+            })
             if (!data.error) {
                 loadDatasets()
             } else {
@@ -133,6 +151,11 @@ const SimPage = () => {
             output_path?: string;
             error?: string
         }) => {
+            send("collection.episode_finalized", {
+                episode_id: data.episode_id,
+                frame_count: data.frame_count,
+                output_path: data.output_path || "",
+            })
             if (data.error) {
                 showToast.error(`保存失败: ${data.error}`)
             } else {
@@ -155,6 +178,22 @@ const SimPage = () => {
                 loss: data.loss,
                 progress: data.progress
             })
+
+            if (data.is_running && data.progress < 1) {
+                send("training.epoch_progress", {
+                    epoch: data.epoch,
+                    total_epochs: data.total_epochs,
+                    loss: data.loss,
+                    progress: data.progress,
+                })
+            } else if (!data.is_running && data.progress >= 1) {
+                send("training.completed", {
+                    total_epochs: data.total_epochs,
+                    final_loss: data.loss,
+                    dataset_path: trainingPathsRef.current.dataset_path,
+                    model_path: trainingPathsRef.current.model_path,
+                })
+            }
         })
 
         // 获取初始轮次信息
@@ -174,6 +213,7 @@ const SimPage = () => {
             simSocket.off("collection_resumed")
             unsubscribeTrainingProgress()
             resetSimCarState()
+            send("action.leave");
         }
     }, [resetSimCarState, userId])
 
@@ -228,6 +268,11 @@ const SimPage = () => {
         // 重置帧数
         setCollectedCount(0)
 
+        send("action.switch_episode", {
+            from_episode: episodeToDelete,
+            to_episode: episodeId,
+        })
+
         // 先设置目标轮次（后端会清空该轮次的数据）
         setEpisode(simSocket, userId, episodeId)
 
@@ -241,6 +286,11 @@ const SimPage = () => {
     }
 
     const handleStartEpisode = () => {
+        send("action.start_collection", {
+            episode_id: currentEpisode,
+            dataset_name: datasetName,
+            fps: collectionFps,
+        })
         // 开始新录制（使用当前轮次，不改变轮次）
         startEpisode(simSocket, userId, currentEpisode, episodeTaskName)
     }
@@ -252,6 +302,10 @@ const SimPage = () => {
     }
 
     const handleEndEpisode = () => {
+        send("action.end_collection", {
+            episode_id: currentEpisode,
+            frame_count: collectedCount,
+        })
         // 结束录制并自动保存数据（endEpisode会自动导出，所以不需要再调用finalizeEpisode）
         endEpisode(simSocket, userId, currentEpisode)
         // 轮次自动+1
@@ -265,13 +319,25 @@ const SimPage = () => {
     const handleStartTraining = async () => {
         try {
             const userId = useSimCarStore.getState().userId
+            const datasetPath = getDatasetPath(userId, datasetName)
+            const modelPath = getModelPath(userId, datasetName)
+            trainingPathsRef.current = { dataset_path: datasetPath, model_path: modelPath }
+
+            send("action.start_training", {
+                dataset_name: datasetName,
+                epochs: trainingEpochs,
+                batch_size: 8,
+                lr: 1e-4,
+                resume: resumeTraining,
+            })
+
             const result = await startTraining(userId, {
-                data_dir: getDatasetPath(userId, datasetName),
+                data_dir: datasetPath,
                 output_dir: getTrainPath(userId, datasetName),
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? getModelPath(userId, datasetName) : undefined,
+                resume_from: resumeTraining ? modelPath : undefined,
             })
             if (!result.success) {
                 showToast.error(result.message || '训练失败')
@@ -283,6 +349,14 @@ const SimPage = () => {
 
     const handleStopTraining = async () => {
         try {
+            send("action.stop_training", {
+                current_epoch: trainingProgress.epoch,
+                current_loss: trainingProgress.loss,
+            })
+            send("training.stopped", {
+                ended_epoch: trainingProgress.epoch,
+                last_loss: trainingProgress.loss,
+            })
             await stopTraining(userId)
         } catch {
             showToast.error('停止训练失败')
@@ -298,6 +372,7 @@ const SimPage = () => {
             if (result.success) {
                 setIsModelLoaded(true)
                 setSelectedModel(modelName)
+                send("action.load_model", { model_name: modelName })
                 showToast.success('模型加载成功')
             } else {
                 showToast.error('模型加载失败: ' + result.message)
@@ -537,7 +612,7 @@ const SimPage = () => {
                         onSetEpisode={handleSetEpisode}
                         onEndEpisode={handleEndEpisode}
                         onStartEpisode={handleStartEpisode}
-                        onResetCar={() => { resetSimCarState(); sendCommand([0, 0]); }}
+                        onResetCar={() => { send("action.reset_scene"); resetSimCarState(); sendCommand([0, 0]); }}
                         onSetDatasetName={setDatasetName}
                         onSelectDataset={handleSelectDataset}
                     />

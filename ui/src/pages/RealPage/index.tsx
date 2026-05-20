@@ -23,6 +23,7 @@ import {type MjpegStreamViewRef, MjpegStreamView} from "./MjpegStreamView.tsx";
 import {RealRightPanel} from "./RealRightPanel.tsx";
 import {showToast} from "../../lib/toast.ts";
 import {getDatasetPath, getTrainPath, getModelPath} from "../../lib/constants.ts";
+import {init, send} from "../../services/reportService.ts";
 import {KEY_TO_ACTION} from "../SimPage/actionMapping.ts";
 import {useSimCarStore} from "../../stores/simCarStore.ts";
 
@@ -76,9 +77,14 @@ const RealPage = () => {
     const carIP = useSimCarStore((state) => state.carIP)
     const setCarIP = useSimCarStore((state) => state.setCarIP)
     const [carConnected, setCarConnected] = useState(false)
+    const episodeStartTimeRef = useRef<number>(0)
+    const trainingPathsRef = useRef<{ dataset_path: string; model_path: string }>({ dataset_path: "", model_path: "" })
 
     // 监听后端车辆状态更新
     useEffect(() => {
+        init("real");
+        send("action.enter");
+
         // 加载用户的数据集列表
         const loadDatasets = async () => {
             try {
@@ -127,6 +133,12 @@ const RealPage = () => {
             setIsRecording(true)
             setCollectedCount(0)
             setEpisodeTaskName(data.task_name)
+            episodeStartTimeRef.current = Date.now()
+            send("collection.episode_started", {
+                episode_id: data.episode_id,
+                task_name: data.task_name,
+                dataset_name: datasetName,
+            })
         })
 
         realSocket.on("episode_ended", (data: {
@@ -138,6 +150,12 @@ const RealPage = () => {
         }) => {
             setIsRecording(false)
             setCollectedCount(data.frame_count)
+            const durationMs = episodeStartTimeRef.current ? Date.now() - episodeStartTimeRef.current : 0
+            send("collection.episode_ended", {
+                episode_id: data.episode_id,
+                frame_count: data.frame_count,
+                duration_ms: durationMs,
+            })
             if (!data.error) {
                 loadDatasets()
             } else {
@@ -151,6 +169,11 @@ const RealPage = () => {
             output_path?: string;
             error?: string
         }) => {
+            send("collection.episode_finalized", {
+                episode_id: data.episode_id,
+                frame_count: data.frame_count,
+                output_path: data.output_path || "",
+            })
             if (data.error) {
                 showToast.error(`保存失败: ${data.error}`)
             } else {
@@ -174,6 +197,22 @@ const RealPage = () => {
                 loss: data.loss,
                 progress: data.progress
             })
+
+            if (data.is_running && data.progress < 1) {
+                send("training.epoch_progress", {
+                    epoch: data.epoch,
+                    total_epochs: data.total_epochs,
+                    loss: data.loss,
+                    progress: data.progress,
+                })
+            } else if (!data.is_running && data.progress >= 1) {
+                send("training.completed", {
+                    total_epochs: data.total_epochs,
+                    final_loss: data.loss,
+                    dataset_path: trainingPathsRef.current.dataset_path,
+                    model_path: trainingPathsRef.current.model_path,
+                })
+            }
         })
 
         getEpisodes(realSocket, userId)
@@ -190,6 +229,7 @@ const RealPage = () => {
             realSocket.off("episode_ended")
             realSocket.off("episode_finalized")
             unsubscribeTrainingProgress()
+            send("action.leave");
         }
     }, [])
 
@@ -295,6 +335,7 @@ const RealPage = () => {
         const data = await carHeartbeat(ip)
         if (isCarApiSuccess(data) && heartbeatIPRef.current === ip) {
             setCarConnected(true)
+            send("action.connect_car", { car_ip: ip })
             return
         }
     }
@@ -398,6 +439,11 @@ const RealPage = () => {
             handleEndEpisode()
         }
 
+        send("action.switch_episode", {
+            from_episode: episodeToDelete,
+            to_episode: episodeId,
+        })
+
         setCollectedCount(0)
         setEpisode(realSocket, userId, episodeId)
 
@@ -409,6 +455,11 @@ const RealPage = () => {
     }
 
     const handleStartEpisode = () => {
+        send("action.start_collection", {
+            episode_id: currentEpisode,
+            dataset_name: datasetName,
+            fps: collectionFps,
+        })
         startEpisode(realSocket, userId, currentEpisode, episodeTaskName)
     }
 
@@ -420,6 +471,10 @@ const RealPage = () => {
     }
 
     const handleEndEpisode = () => {
+        send("action.end_collection", {
+            episode_id: currentEpisode,
+            frame_count: collectedCount,
+        })
         endEpisode(realSocket, userId, currentEpisode)
         setCurrentEpisode(currentEpisode + 1)
         setCollectedCount(0)
@@ -429,13 +484,25 @@ const RealPage = () => {
     const handleStartTraining = async () => {
         try {
             const userId = useSimCarStore.getState().userId
+            const datasetPath = getDatasetPath(userId, datasetName)
+            const modelPath = getModelPath(userId, datasetName)
+            trainingPathsRef.current = { dataset_path: datasetPath, model_path: modelPath }
+
+            send("action.start_training", {
+                dataset_name: datasetName,
+                epochs: trainingEpochs,
+                batch_size: 8,
+                lr: 1e-4,
+                resume: resumeTraining,
+            })
+
             const result = await startTraining(userId, {
-                data_dir: getDatasetPath(userId, datasetName),
+                data_dir: datasetPath,
                 output_dir: getTrainPath(userId, datasetName),
                 epochs: trainingEpochs,
                 batch_size: 8,
                 lr: 1e-4,
-                resume_from: resumeTraining ? getModelPath(userId, datasetName) : undefined,
+                resume_from: resumeTraining ? modelPath : undefined,
             })
             if (!result.success) {
                 showToast.error(result.message || '训练失败')
@@ -448,6 +515,14 @@ const RealPage = () => {
     const handleStopTraining = async () => {
         try {
             const userId = useSimCarStore.getState().userId
+            send("action.stop_training", {
+                current_epoch: trainingProgress.epoch,
+                current_loss: trainingProgress.loss,
+            })
+            send("training.stopped", {
+                ended_epoch: trainingProgress.epoch,
+                last_loss: trainingProgress.loss,
+            })
             await stopTraining(userId)
         } catch {
             showToast.error('停止训练失败')
@@ -463,6 +538,7 @@ const RealPage = () => {
             if (result.success) {
                 setIsModelLoaded(true)
                 setSelectedModel(modelName)
+                send("action.load_model", { model_name: modelName })
                 showToast.success('模型加载成功')
             } else {
                 showToast.error('模型加载失败: ' + result.message)
@@ -813,7 +889,7 @@ const RealPage = () => {
                         onSetEpisode={handleSetEpisode}
                         onEndEpisode={handleEndEpisode}
                         onStartEpisode={handleStartEpisode}
-                        onResetCar={() => resetCar(realSocket)}
+                        onResetCar={() => { send("action.reset_scene"); resetCar(realSocket); }}
                         onSetDatasetName={setDatasetName}
                         onSelectDataset={handleSelectDataset}
                     />
