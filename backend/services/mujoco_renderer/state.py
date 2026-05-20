@@ -15,13 +15,13 @@ class MujocoState:
         self._renderer = renderer
 
     def set_arm_position(self, qpos: list[float]) -> None:
-        """Set arm joint positions [yaw, pitch, roll, wrist]."""
+        """Set arm joint positions [yaw, pitch, roll, wrist...]."""
+        if len(qpos) >= 1:
+            self._renderer._data.qpos[11] = qpos[0]
+        if len(qpos) >= 2:
+            self._renderer._data.qpos[12] = qpos[1]
         if len(qpos) >= 3:
-            self._renderer._data.qpos[7] = qpos[0]
-        if len(qpos) >= 3:
-            self._renderer._data.qpos[8] = qpos[1]
-        if len(qpos) >= 4:
-            self._renderer._data.qpos[9] = qpos[2]
+            self._renderer._data.qpos[13] = qpos[2]
 
     def get_state(self) -> dict:
         """Get current state dict."""

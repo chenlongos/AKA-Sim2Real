@@ -145,6 +145,14 @@ export const sendMujocoCarAction = (socket: Socket, velLeft: number, velRight: n
     socket.emit('mujoco_car_action', { vel_left: velLeft, vel_right: velRight });
 }
 
+export const sendMujocoCameraMove = (socket: Socket, deltaAzimuth: number, deltaElevation: number) => {
+    socket.emit('mujoco_camera_move', { delta_azimuth: deltaAzimuth, delta_elevation: deltaElevation });
+}
+
+export const sendMujocoCameraZoom = (socket: Socket, delta: number) => {
+    socket.emit('mujoco_camera_zoom', { delta });
+}
+
 export const requestMujocoState = (socket: Socket) => {
     socket.emit('get_mujoco_state');
 }

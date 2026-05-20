@@ -1,5 +1,5 @@
-import {useEffect, useState} from "react";
-import {mujocoSocket, sendMujocoAction, sendMujocoCarAction, onMujocoStateUpdate} from "../../api/socket";
+import {useEffect, useState, useRef, useCallback} from "react";
+import {mujocoSocket, sendMujocoAction, sendMujocoCarAction, sendMujocoCameraMove, sendMujocoCameraZoom, onMujocoStateUpdate} from "../../api/socket";
 
 interface MujocoState {
     car_pos?: number[];
@@ -10,6 +10,8 @@ interface MujocoState {
 
 export const TopDownView = () => {
     const [image, setImage] = useState<string>("");
+    const [dragging, setDragging] = useState(false);
+    const lastPos = useRef<{x: number; y: number} | null>(null);
 
     useEffect(() => {
         const unsubscribe = onMujocoStateUpdate(mujocoSocket, (data) => {
@@ -18,15 +20,45 @@ export const TopDownView = () => {
         return unsubscribe;
     }, []);
 
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
+        setDragging(true);
+        lastPos.current = {x: e.clientX, y: e.clientY};
+    }, []);
+
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
+        if (!dragging || !lastPos.current) return;
+        const dx = e.clientX - lastPos.current.x;
+        const dy = e.clientY - lastPos.current.y;
+        lastPos.current = {x: e.clientX, y: e.clientY};
+        sendMujocoCameraMove(mujocoSocket, dx, dy);
+    }, [dragging]);
+
+    const handleMouseUp = useCallback(() => {
+        setDragging(false);
+        lastPos.current = null;
+    }, []);
+
+    const handleWheel = useCallback((e: React.WheelEvent) => {
+        sendMujocoCameraZoom(mujocoSocket, e.deltaY > 0 ? 1 : -1);
+    }, []);
+
     return (
         <div className="bg-slate-900 rounded-lg overflow-hidden">
             <div className="px-3 py-2 border-b border-slate-700 flex items-center gap-2">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full"/>
                 <span className="text-sm text-slate-300">俯视视角 (Top-Down)</span>
             </div>
-            <div className="relative">
+            <div
+                className="relative select-none"
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onWheel={handleWheel}
+                style={{cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none'}}
+            >
                 {image ? (
-                    <img src={image} alt="Top-Down View" className="w-full aspect-video object-cover"/>
+                    <img src={image} alt="Top-Down View" className="w-full aspect-video object-cover pointer-events-none"/>
                 ) : (
                     <div className="w-full aspect-video bg-slate-800 flex items-center justify-center">
                         <span className="text-slate-500">加载中...</span>

@@ -44,12 +44,34 @@ class MujocoEventsMixin:
         vel_right = data.get("vel_right", 0)
         service.set_car_action(vel_left, vel_right)
 
+    async def on_mujoco_camera_move(self, sid: str, data: dict):
+        """
+        处理鼠标拖拽旋转俯视相机
+        data: { delta_azimuth: float, delta_elevation: float }
+        """
+        service = get_mujoco_service()
+        delta_azimuth = data.get("delta_azimuth", 0)
+        delta_elevation = data.get("delta_elevation", 0)
+        service.update_topdown_camera(delta_azimuth, delta_elevation)
+
+    async def on_mujoco_camera_zoom(self, sid: str, data: dict):
+        """
+        处理鼠标滚轮缩放
+        data: { delta: float }
+        """
+        service = get_mujoco_service()
+        service.update_topdown_distance(data.get("delta", 0))
+
     async def on_get_mujoco_state(self, sid: str):
         """请求当前 MuJoCo 状态和图像"""
         service = get_mujoco_service()
         topdown, firstperson, state = service.render()
+        serializable_state = {
+            k: v.tolist() if hasattr(v, "tolist") else v
+            for k, v in state.items()
+        }
         await self.emit("mujoco_state_update", {
-            "topdown": topdown.tolist(),
-            "firstperson": firstperson.tolist(),
-            "state": state,
+            "topdown": topdown,
+            "firstperson": firstperson,
+            "state": serializable_state,
         })

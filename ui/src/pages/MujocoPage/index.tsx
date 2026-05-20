@@ -1,6 +1,6 @@
 import {useEffect, useState} from "react";
 import {mujocoSocket} from "../../api/socket";
-import {TopDownView, FirstPersonView, ArmControl} from "./CameraViews";
+import {TopDownView, FirstPersonView} from "./CameraViews";
 
 export default function MujocoPage() {
     const [connected, setConnected] = useState(false);
@@ -42,11 +42,6 @@ export default function MujocoPage() {
 
             {/* 主内容区 */}
             <div className="flex flex-1 overflow-hidden p-4 gap-4">
-                {/* 左侧控制面板 */}
-                <div className="w-72 flex flex-col gap-3 min-w-0">
-                    <ArmControl />
-                </div>
-
                 {/* 中间 - 俯视视角 */}
                 <div className="flex-1 min-w-0">
                     <TopDownView />

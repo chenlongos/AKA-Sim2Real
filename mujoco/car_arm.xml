@@ -1,7 +1,5 @@
 <mujoco>
-    <option timestep="0.001" integrator="RK4">
-        <flag contact="disable"/>
-    </option>
+    <option timestep="0.001" integrator="RK4"/>
 
     <default>
         <geom friction="1 0.1 0.1"/>
