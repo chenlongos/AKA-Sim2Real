@@ -8,6 +8,7 @@ import logging
 from io import BytesIO
 from typing import Optional
 
+import mujoco
 import numpy as np
 from PIL import Image
 
@@ -54,13 +55,21 @@ class MujocoService:
         return self._interval_ms
 
     def set_arm_action(self, yaw: float, pitch: float, roll: float) -> None:
-        """设置机械臂动作"""
+        """设置机械臂动作（仅设定力矩，由 game loop 统一步进）"""
         action = {
             "motor_yaw": yaw * 50,
             "motor_pitch": pitch * 50,
             "motor_roll": roll * 30,
         }
-        self._renderer.step(action)
+        for actuator_name, torque in action.items():
+            try:
+                actuator_id = mujoco.mj_name2id(
+                    self._renderer._model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_name
+                )
+                if actuator_id >= 0:
+                    self._renderer._data.actuator_force[actuator_id] = torque
+            except Exception:
+                pass
 
     def set_car_action(self, vel_left: float, vel_right: float) -> None:
         """设置小车差速动作"""
@@ -69,6 +78,14 @@ class MujocoService:
     def step(self) -> None:
         """单步模拟"""
         self._renderer.step()
+
+    def update_topdown_camera(self, delta_azimuth: float, delta_elevation: float) -> None:
+        """旋转俯视相机"""
+        self._renderer.update_topdown_camera(delta_azimuth, delta_elevation)
+
+    def update_topdown_distance(self, delta: float) -> None:
+        """缩放俯视相机"""
+        self._renderer.update_topdown_distance(delta)
 
     def render(self) -> tuple[str, str, dict]:
         """

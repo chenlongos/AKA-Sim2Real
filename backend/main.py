@@ -73,6 +73,7 @@ app = FastAPI(
 # Socket.IO 服务器
 sio = AsyncServer(
     async_mode="asgi",
+    cors_allowed_origins=config.CORS_ORIGINS,
     ping_timeout=60,
     ping_interval=25,
 )
