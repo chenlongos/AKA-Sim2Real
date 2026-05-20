@@ -19,6 +19,9 @@ class Config:
     ACTION_CHUNK_SIZE = int(os.getenv("ACTION_CHUNK_SIZE", "8"))
     HIDDEN_DIM = int(os.getenv("HIDDEN_DIM", "512"))
 
+    # CORS 配置
+    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "https://act.chenlongrobot.com")
+
     # 模拟配置
     MAP_WIDTH = 800
     MAP_HEIGHT = 600
