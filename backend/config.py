@@ -22,7 +22,7 @@ class Config:
     # CORS 配置（逗号分隔多个来源）
     CORS_ORIGINS = os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:5173,https://act.chenlongrobot.com"
+        "http://localhost:5175,https://act.chenlongrobot.com"
     ).split(",")
 
     # 模拟配置
