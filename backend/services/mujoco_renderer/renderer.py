@@ -86,7 +86,7 @@ class MujocoRenderer:
                 try:
                     actuator_id = self._actuator_name_to_id(actuator_name)
                     if actuator_id >= 0:
-                        self._data.actuator_force[actuator_id] = torque
+                        self._data.ctrl[actuator_id] = torque
                 except Exception:
                     pass
 
@@ -109,7 +109,7 @@ class MujocoRenderer:
             try:
                 actuator_id = self._actuator_name_to_id(actuator_name)
                 if actuator_id >= 0:
-                    self._data.actuator_force[actuator_id] = torque
+                    self._data.ctrl[actuator_id] = torque
             except Exception:
                 pass
 

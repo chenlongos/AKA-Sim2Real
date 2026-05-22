@@ -67,7 +67,7 @@ class MujocoService:
                     self._renderer._model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_name
                 )
                 if actuator_id >= 0:
-                    self._renderer._data.actuator_force[actuator_id] = torque
+                    self._renderer._data.ctrl[actuator_id] = torque
             except Exception:
                 pass
 

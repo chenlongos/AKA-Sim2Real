@@ -14,36 +14,38 @@
         <!-- Top-down camera anchor (world fixed) -->
         <body name="topdown_cam" pos="0 0 8">
             <camera name="topdown" euler="0 0 0" fovy="45"/>
+            <geom type="sphere" size="0.12" rgba="1 0.2 0.2 0.7" contype="0" conaffinity="0"/>
         </body>
 
         <!-- Car Body -->
-        <body name="car" pos="0 0 0.3">
+        <body name="car" pos="0 0 0.22">
             <!-- First-person camera on car -->
-            <camera name="firstperson" pos="0.15 0 0.2" euler="0 0 0" fovy="70"/>
+            <camera name="firstperson" pos="0.9 0 0.2" euler="0 0 0" fovy="110"/>
+            <geom type="sphere" pos="0.4 0 0.2" size="0.05" rgba="0.2 1 0.2 0.7" contype="0" conaffinity="0"/>
 
-            <!-- Car chassis -->
-            <geom type="box" size="0.3 0.5 0.15" rgba="0.2 0.6 0.8 1" mass="10"/>
+            <!-- Car chassis (X=long, Y=wide, Z=tall) -->
+            <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10"/>
 
             <!-- Wheels - hinge joints for differential drive -->
-            <body name="wheel_fl" pos="0.25 0.4 0" axisangle="1 0 0 1.5708">
+            <body name="wheel_fl" pos="0.4 0.3 -0.1">
                 <joint name="wheel_fl_joint" type="hinge" axis="0 1 0" range="-100 100"/>
-                <geom type="cylinder" size="0.12 0.05" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
-            <body name="wheel_fr" pos="0.25 -0.4 0" axisangle="1 0 0 1.5708">
+            <body name="wheel_fr" pos="0.4 -0.3 -0.1">
                 <joint name="wheel_fr_joint" type="hinge" axis="0 1 0" range="-100 100"/>
-                <geom type="cylinder" size="0.12 0.05" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
-            <body name="wheel_rl" pos="-0.25 0.4 0" axisangle="1 0 0 1.5708">
+            <body name="wheel_rl" pos="-0.4 0.3 -0.1">
                 <joint name="wheel_rl_joint" type="hinge" axis="0 1 0" range="-100 100"/>
-                <geom type="cylinder" size="0.12 0.05" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
-            <body name="wheel_rr" pos="-0.25 -0.4 0" axisangle="1 0 0 1.5708">
+            <body name="wheel_rr" pos="-0.4 -0.3 -0.1">
                 <joint name="wheel_rr_joint" type="hinge" axis="0 1 0" range="-100 100"/>
-                <geom type="cylinder" size="0.12 0.05" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
 
             <!-- Arm base mount -->
-            <body name="arm_base" pos="-0.15 0 0.15">
+            <body name="arm_base" pos="-0.2 0 0.15">
                 <!-- Arm joint 1 - base rotation (yaw) -->
                 <joint name="arm_yaw" type="hinge" axis="0 0 1" range="-3.14 3.14"/>
                 <geom type="box" size="0.1 0.1 0.15" rgba="0.7 0.3 0.3 1" mass="2"/>
