@@ -20,7 +20,7 @@ from backend.services import inference
 from backend import api
 from backend.api import router as api_router
 from backend.config import config
-from backend.sio_handlers import SimNamespace, RealNamespace, MujocoNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime, start_mujoco_game_loop
+from backend.sio_handlers import SimNamespace, RealNamespace, start_game_loop, set_act_runtime as set_sio_act_runtime
 from backend.utils import set_broadcast_sio, setup_socket_logging
 
 # 配置日志 - 生产环境只记录关键事件
@@ -54,7 +54,6 @@ async def lifespan(app: FastAPI):
     # 启动两个命名空间的状态广播
     start_game_loop(sio, namespace="/sim")
     start_game_loop(sio, namespace="/real")
-    start_mujoco_game_loop(sio, namespace="/mujoco")
 
     yield
 
@@ -87,7 +86,6 @@ sio = AsyncServer(**sio_kwargs)
 # 注册三个独立的命名空间
 sio.register_namespace(SimNamespace("/sim"))
 sio.register_namespace(RealNamespace("/real"))
-sio.register_namespace(MujocoNamespace("/mujoco"))
 
 # 设置sio_server到api模块
 api.set_sio_server(sio)
