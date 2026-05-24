@@ -7,6 +7,8 @@ const MJ_GEOM_SPHERE = 2;
 const MJ_GEOM_CYLINDER = 5;
 const MJ_GEOM_BOX = 6;
 
+const SUBSTEPS = 16;
+
 const T = new THREE.Matrix4().set(
   1, 0,  0, 0,
   0, 0,  1, 0,
@@ -40,9 +42,8 @@ function createGeomMesh(
   type: number,
   size: Float64Array,
   rgba: Float64Array,
-): THREE.Mesh {
-  let geometry: THREE.BufferGeometry;
-  let material: THREE.MeshStandardMaterial;
+): THREE.Object3D {
+  let mesh: THREE.Object3D;
 
   const alpha = rgba.length >= 4 ? rgba[3] : 1;
   const color = new THREE.Color(rgba[0], rgba[1], rgba[2]);
@@ -50,55 +51,122 @@ function createGeomMesh(
 
   switch (type) {
     case MJ_GEOM_PLANE: {
-      geometry = new THREE.PlaneGeometry(20, 20);
+      const geometry = new THREE.PlaneGeometry(20, 20);
       geometry.rotateX(-Math.PI / 2);
-      material = new THREE.MeshStandardMaterial({
+      const material = new THREE.MeshStandardMaterial({
         color,
         side: THREE.DoubleSide,
         roughness: 0.9,
         transparent,
         opacity: alpha,
       });
+      mesh = new THREE.Mesh(geometry, material);
       break;
     }
-    case MJ_GEOM_SPHERE:
-      geometry = new THREE.SphereGeometry(size[0], 32, 32);
-      material = new THREE.MeshStandardMaterial({
+    case MJ_GEOM_SPHERE: {
+      const geometry = new THREE.SphereGeometry(size[0], 32, 32);
+      const material = new THREE.MeshStandardMaterial({
         color,
         roughness: 0.4,
         transparent,
         opacity: alpha,
       });
+      mesh = new THREE.Mesh(geometry, material);
       break;
-    case MJ_GEOM_CYLINDER:
-      geometry = new THREE.CylinderGeometry(size[0], size[0], size[1] * 2, 32);
-      material = new THREE.MeshStandardMaterial({
+    }
+    case MJ_GEOM_CYLINDER: {
+      const radius = size[0];
+      const halfHeight = size[1];
+      const wheelGroup = new THREE.Group();
+
+      const cylGeom = new THREE.CylinderGeometry(radius, radius, halfHeight * 2, 32);
+      const cylMat = new THREE.MeshStandardMaterial({
         color,
         roughness: 0.5,
         metalness: 0.3,
         transparent,
         opacity: alpha,
       });
+      const cylMesh = new THREE.Mesh(cylGeom, cylMat);
+      cylMesh.castShadow = true;
+      cylMesh.receiveShadow = true;
+      wheelGroup.add(cylMesh);
+
+      // Cross-spokes to make rotation visible (cylinder rotating around own axis is invisible)
+      const spokeHalfLen = radius * 0.9;
+      const spokeThick = halfHeight * 0.3;
+      const spokeGeomX = new THREE.BoxGeometry(spokeHalfLen * 2, spokeThick, spokeThick);
+      const spokeGeomZ = new THREE.BoxGeometry(spokeThick, spokeThick, spokeHalfLen * 2);
+      const spokeMat = new THREE.MeshStandardMaterial({
+        color: 0x333333,
+        roughness: 0.5,
+        metalness: 0.4,
+      });
+      const spokeX = new THREE.Mesh(spokeGeomX, spokeMat);
+      const spokeZ = new THREE.Mesh(spokeGeomZ, spokeMat);
+      spokeX.castShadow = true;
+      spokeZ.castShadow = true;
+      wheelGroup.add(spokeX);
+      wheelGroup.add(spokeZ);
+
+      mesh = wheelGroup;
       break;
-    case MJ_GEOM_BOX:
-      geometry = new THREE.BoxGeometry(size[0] * 2, size[2] * 2, size[1] * 2);
-      material = new THREE.MeshStandardMaterial({
+    }
+    case MJ_GEOM_BOX: {
+      const geometry = new THREE.BoxGeometry(size[0] * 2, size[2] * 2, size[1] * 2);
+      const material = new THREE.MeshStandardMaterial({
         color,
         roughness: 0.5,
         metalness: 0.2,
         transparent,
         opacity: alpha,
       });
+      mesh = new THREE.Mesh(geometry, material);
       break;
-    default:
-      geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-      material = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+    }
+    default: {
+      const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+      const material = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+      mesh = new THREE.Mesh(geometry, material);
+    }
   }
 
-  const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+function toUint8Array(buf: unknown): Uint8Array | null {
+  if (typeof buf === "string") {
+    return new TextEncoder().encode(buf);
+  }
+  if (buf instanceof ArrayBuffer) {
+    return new Uint8Array(buf);
+  }
+  if (ArrayBuffer.isView(buf)) {
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+  return null;
+}
+
+function resolveName(names: unknown, addr: number): string {
+  const buf = toUint8Array(names);
+  if (!buf) return "";
+  let end = addr;
+  while (end < buf.length && buf[end] !== 0) end++;
+  return new TextDecoder().decode(buf.slice(addr, end));
+}
+
+function resolveCameraIndices(model: MjModel) {
+  let fpIdx = -1;
+  let tdIdx = -1;
+  const names = model.names;
+  for (let i = 0; i < model.ncam; i++) {
+    const name = resolveName(names, model.name_camadr[i]);
+    if (name === "firstperson") fpIdx = i;
+    else if (name === "topdown") tdIdx = i;
+  }
+  return { fpIdx, tdIdx };
 }
 
 interface Props {
@@ -117,43 +185,86 @@ export default function MujocoRenderer({
   onStep,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fpContainerRef = useRef<HTMLDivElement>(null);
+  const axesContainerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const meshesRef = useRef<THREE.Mesh[]>([]);
-  const frameCountRef = useRef(0);
+  const orbitCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const fpCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const axesCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const axesSceneRef = useRef<THREE.Scene | null>(null);
+  const axesGroupRef = useRef<THREE.Group | null>(null);
+  const mainRendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const fpRendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const axesRendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const meshesRef = useRef<THREE.Object3D[]>([]);
   const animRef = useRef(0);
   const draggingRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
-  const camStateRef = useRef({
+  const orbitStateRef = useRef({
     azimuth: 0.5,
     elevation: 0.4,
     distance: 6,
     target: new THREE.Vector3(0, 0.3, 0),
   });
+  const fpCamIdxRef = useRef(-1);
 
   const setupScene = useCallback(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const fpContainer = fpContainerRef.current;
+    if (!container || !fpContainer) return;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x2a2a4e);
 
     const w = container.clientWidth;
     const h = container.clientHeight;
-    const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 100);
-    camera.position.set(5, 4, 6);
-    camera.lookAt(0, 0.3, 0);
+    const orbitCamera = new THREE.PerspectiveCamera(50, w / h, 0.1, 100);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setClearColor(0x2a2a4e, 1);
-    renderer.setSize(w, h);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.domElement.style.position = "absolute";
-    renderer.domElement.style.top = "0";
-    renderer.domElement.style.left = "0";
-    container.appendChild(renderer.domElement);
+    const fpW = fpContainer.clientWidth || 320;
+    const fpH = fpContainer.clientHeight || 210;
+    const fpCamera = new THREE.PerspectiveCamera(110, fpW / fpH, 0.1, 100);
+
+    const mainRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    mainRenderer.setClearColor(0x2a2a4e, 1);
+    mainRenderer.setSize(w, h);
+    mainRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    mainRenderer.shadowMap.enabled = true;
+    mainRenderer.domElement.style.position = "absolute";
+    mainRenderer.domElement.style.top = "0";
+    mainRenderer.domElement.style.left = "0";
+    container.appendChild(mainRenderer.domElement);
+
+    const fpRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    fpRenderer.setClearColor(0x2a2a4e, 1);
+    fpRenderer.setSize(fpW, fpH);
+    fpRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    fpRenderer.shadowMap.enabled = true;
+    fpContainer.appendChild(fpRenderer.domElement);
+
+    // Axes gizmo (bottom-left)
+    const axesContainer = axesContainerRef.current;
+    let axesScene: THREE.Scene | null = null;
+    let axesCamera: THREE.PerspectiveCamera | null = null;
+    let axesRenderer: THREE.WebGLRenderer | null = null;
+    if (axesContainer) {
+      axesScene = new THREE.Scene();
+      const axesGroup = new THREE.Group();
+      axesGroup.add(new THREE.AxesHelper(1.0));
+      axesScene.add(axesGroup);
+      axesGroupRef.current = axesGroup;
+      const size = 120;
+      const halfSize = 1.3;
+      axesCamera = new THREE.OrthographicCamera(-halfSize, halfSize, halfSize, -halfSize, 0.1, 10);
+      axesCamera.position.set(0, 0, 3);
+      axesRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      axesRenderer.setClearColor(0x1a1a2e, 1);
+      axesRenderer.setSize(size, size);
+      axesRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      axesContainer.appendChild(axesRenderer.domElement);
+    }
+    axesCameraRef.current = axesCamera;
+    axesSceneRef.current = axesScene;
+    axesRendererRef.current = axesRenderer;
 
     const ambient = new THREE.AmbientLight(0xffffff, 1.0);
     scene.add(ambient);
@@ -174,13 +285,15 @@ export default function MujocoRenderer({
     scene.add(axes);
 
     sceneRef.current = scene;
-    cameraRef.current = camera;
-    rendererRef.current = renderer;
+    orbitCameraRef.current = orbitCamera;
+    fpCameraRef.current = fpCamera;
+    mainRendererRef.current = mainRenderer;
+    fpRendererRef.current = fpRenderer;
   }, []);
 
-  const updateCamera = useCallback(() => {
-    const camera = cameraRef.current;
-    const cs = camStateRef.current;
+  const updateOrbitCamera = useCallback(() => {
+    const camera = orbitCameraRef.current;
+    const cs = orbitStateRef.current;
     if (!camera) return;
 
     const az = cs.azimuth;
@@ -200,21 +313,37 @@ export default function MujocoRenderer({
     setupScene();
     const handleResize = () => {
       const container = containerRef.current;
-      const renderer = rendererRef.current;
-      const camera = cameraRef.current;
-      if (!container || !renderer || !camera) return;
+      const fpContainer = fpContainerRef.current;
+      const mainRenderer = mainRendererRef.current;
+      const fpRenderer = fpRendererRef.current;
+      const orbitCamera = orbitCameraRef.current;
+      const fpCamera = fpCameraRef.current;
+      if (!container || !mainRenderer || !orbitCamera) return;
+
       const w = container.clientWidth;
       const h = container.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      mainRenderer.setSize(w, h);
+      orbitCamera.aspect = w / h;
+      orbitCamera.updateProjectionMatrix();
+
+      if (fpContainer && fpRenderer && fpCamera) {
+        const fpW = fpContainer.clientWidth;
+        const fpH = fpContainer.clientHeight;
+        fpRenderer.setSize(fpW, fpH);
+        fpCamera.aspect = fpW / fpH;
+        fpCamera.updateProjectionMatrix();
+      }
     };
     window.addEventListener("resize", handleResize);
     return () => {
       window.removeEventListener("resize", handleResize);
       cancelAnimationFrame(animRef.current);
-      rendererRef.current?.domElement?.remove();
-      rendererRef.current?.dispose();
+      mainRendererRef.current?.domElement?.remove();
+      mainRendererRef.current?.dispose();
+      fpRendererRef.current?.domElement?.remove();
+      fpRendererRef.current?.dispose();
+      axesRendererRef.current?.domElement?.remove();
+      axesRendererRef.current?.dispose();
     };
   }, [setupScene]);
 
@@ -230,7 +359,6 @@ export default function MujocoRenderer({
     meshesRef.current.forEach((mesh) => scene.remove(mesh));
     meshesRef.current = [];
 
-    console.log(`[MujocoRenderer] Creating ${m.ngeom} geoms`);
     for (let i = 0; i < m.ngeom; i++) {
       const type = m.geom_type[i];
       const size = m.geom_size.slice(i * 3, i * 3 + 3) as Float64Array;
@@ -239,17 +367,24 @@ export default function MujocoRenderer({
       const mesh = createGeomMesh(type, size, rgba);
       scene.add(mesh);
       meshesRef.current.push(mesh);
-
-      if (i === 0) {
-        console.log(
-          `[MujocoRenderer] geom[0] type=${type} size=[${size[0].toFixed(2)},${size[1].toFixed(2)},${size[2].toFixed(2)}] rgba=[${rgba[0].toFixed(2)},${rgba[1].toFixed(2)},${rgba[2].toFixed(2)},${rgba[3].toFixed(2)}]`,
-        );
-      }
     }
-    console.log(`[MujocoRenderer] Created ${meshesRef.current.length} meshes`);
 
-    updateCamera();
-  }, [isLoaded, model, updateCamera]);
+    const { fpIdx, tdIdx } = resolveCameraIndices(m);
+    fpCamIdxRef.current = fpIdx;
+
+    const orbitCam = orbitCameraRef.current;
+    const fpCam = fpCameraRef.current;
+    if (tdIdx >= 0 && orbitCam) {
+      orbitCam.fov = m.cam_fovy[tdIdx];
+      orbitCam.updateProjectionMatrix();
+    }
+    if (fpIdx >= 0 && fpCam) {
+      fpCam.fov = m.cam_fovy[fpIdx];
+      fpCam.updateProjectionMatrix();
+    }
+
+    updateOrbitCamera();
+  }, [isLoaded, model, updateOrbitCamera]);
 
   useEffect(() => {
     let running = true;
@@ -260,18 +395,23 @@ export default function MujocoRenderer({
       const m = mujoco.current;
       const d = data.current;
       const scene = sceneRef.current;
+      const mainRenderer = mainRendererRef.current;
+      const fpRenderer = fpRendererRef.current;
+      const orbitCamera = orbitCameraRef.current;
+      const fpCamera = fpCameraRef.current;
 
       if (m && d && scene) {
         onStep();
 
-        if (frameCountRef.current === 0) {
-          const carGeomIdx = 2; // car chassis
-          const carPos = d.geom(carGeomIdx).xpos as Float64Array;
-          console.log(
-            `[MujocoRenderer] frame0 car chassis pos: [${carPos[0].toFixed(3)}, ${carPos[1].toFixed(3)}, ${carPos[2].toFixed(3)}]`,
-          );
-          frameCountRef.current = 1;
+        for (let s = 1; s < SUBSTEPS; s++) {
+          m.mj_step(model.current!, data.current!);
         }
+
+        // Track car body position for orbit camera target
+        const carBodyId = 1;
+        const carXpos = d.xpos.slice(carBodyId * 3, carBodyId * 3 + 3) as Float64Array;
+        orbitStateRef.current.target.set(carXpos[0], carXpos[2] + 0.3, -carXpos[1]);
+        updateOrbitCamera();
 
         for (let i = 0; i < meshesRef.current.length; i++) {
           const g = d.geom(i);
@@ -282,12 +422,33 @@ export default function MujocoRenderer({
           meshesRef.current[i].position.copy(position);
           meshesRef.current[i].quaternion.copy(quaternion);
         }
+
+        // First-person camera: use MuJoCo native camera world pose
+        const fpIdx = fpCamIdxRef.current;
+        if (fpCamera && fpIdx >= 0) {
+          const camPos = d.cam_xpos.slice(fpIdx * 3, fpIdx * 3 + 3) as Float64Array;
+          const camMat = d.cam_xmat.slice(fpIdx * 9, fpIdx * 9 + 9) as Float64Array;
+          const { position, quaternion } = mjToThree(camPos, camMat);
+          fpCamera.position.copy(position);
+          fpCamera.quaternion.copy(quaternion);
+        }
       }
 
-      const renderer = rendererRef.current;
-      const camera = cameraRef.current;
-      if (renderer && camera && scene) {
-        renderer.render(scene, camera);
+      if (mainRenderer && orbitCamera && scene) {
+        mainRenderer.render(scene, orbitCamera);
+      }
+      if (fpRenderer && fpCamera && scene) {
+        fpRenderer.render(scene, fpCamera);
+      }
+
+      // Axes gizmo: rotate the axes group to match orbit camera view
+      const axesCamera = axesCameraRef.current;
+      const axesScene = axesSceneRef.current;
+      const axesRenderer = axesRendererRef.current;
+      const axesGroup = axesGroupRef.current;
+      if (axesCamera && axesScene && axesRenderer && axesGroup && orbitCamera) {
+        axesGroup.quaternion.copy(orbitCamera.quaternion).invert();
+        axesRenderer.render(axesScene, axesCamera);
       }
 
       animRef.current = requestAnimationFrame(loop);
@@ -316,15 +477,15 @@ export default function MujocoRenderer({
       const dy = e.clientY - lastMouseRef.current.y;
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
 
-      camStateRef.current.azimuth -= dx * 0.005;
-      camStateRef.current.elevation += dy * 0.005;
-      camStateRef.current.elevation = Math.max(
+      orbitStateRef.current.azimuth -= dx * 0.005;
+      orbitStateRef.current.elevation += dy * 0.005;
+      orbitStateRef.current.elevation = Math.max(
         -1.5,
-        Math.min(1.5, camStateRef.current.elevation),
+        Math.min(1.5, orbitStateRef.current.elevation),
       );
-      updateCamera();
+      updateOrbitCamera();
     },
-    [updateCamera],
+    [updateOrbitCamera],
   );
 
   const handlePointerUp = useCallback(() => {
@@ -333,14 +494,14 @@ export default function MujocoRenderer({
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      camStateRef.current.distance += e.deltaY * 0.01;
-      camStateRef.current.distance = Math.max(
+      orbitStateRef.current.distance += e.deltaY * 0.01;
+      orbitStateRef.current.distance = Math.max(
         1,
-        Math.min(30, camStateRef.current.distance),
+        Math.min(30, orbitStateRef.current.distance),
       );
-      updateCamera();
+      updateOrbitCamera();
     },
-    [updateCamera],
+    [updateOrbitCamera],
   );
 
   return (
@@ -358,6 +519,15 @@ export default function MujocoRenderer({
           <p className="text-slate-400">Loading MuJoCo WASM...</p>
         </div>
       )}
+      <div
+        ref={axesContainerRef}
+        className="absolute bottom-3 left-3 w-[120px] h-[120px] z-10 rounded-md overflow-hidden border border-slate-600/50"
+      />
+      <div
+        ref={fpContainerRef}
+        className="absolute bottom-3 right-3 w-[300px] h-[200px] border-2 border-violet-500/60 rounded-md overflow-hidden shadow-lg shadow-violet-900/30 z-10"
+        style={{ pointerEvents: "none" }}
+      />
     </div>
   );
 }

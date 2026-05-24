@@ -1,10 +1,69 @@
+import { useEffect, useRef, useCallback } from "react";
 import { useMujoco } from "./useMujoco";
 import MujocoRenderer from "./MujocoRenderer";
 import { ControlPanel } from "./ControlPanel";
 
+const DRIVE_SPEED = 5;
+const TURN_SPEED = 3;
+
 export default function MujocoPage() {
   const { isLoaded, mujoco, model, data, step, setControl, reset } =
     useMujoco();
+  const keysRef = useRef<Set<string>>(new Set());
+
+  const applyDrive = useCallback(() => {
+    let leftVel = 0;
+    let rightVel = 0;
+
+    const k = keysRef.current;
+
+    if (k.has("KeyW") || k.has("ArrowUp")) {
+      leftVel += DRIVE_SPEED;
+      rightVel += DRIVE_SPEED;
+    }
+    if (k.has("KeyS") || k.has("ArrowDown")) {
+      leftVel -= DRIVE_SPEED;
+      rightVel -= DRIVE_SPEED;
+    }
+    if (k.has("KeyA") || k.has("ArrowLeft")) {
+      leftVel -= TURN_SPEED;
+      rightVel += TURN_SPEED;
+    }
+    if (k.has("KeyD") || k.has("ArrowRight")) {
+      leftVel += TURN_SPEED;
+      rightVel -= TURN_SPEED;
+    }
+
+    setControl("motor_wheel_fl", leftVel);
+    setControl("motor_wheel_rl", leftVel);
+    setControl("motor_wheel_fr", rightVel);
+    setControl("motor_wheel_rr", rightVel);
+  }, [setControl]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
+        e.preventDefault();
+        keysRef.current.add(e.code);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysRef.current.delete(e.code);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
+  // Apply drive controls every frame before mj_step
+  const stepWithDrive = useCallback(() => {
+    applyDrive();
+    step();
+  }, [applyDrive, step]);
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
@@ -42,7 +101,7 @@ export default function MujocoPage() {
             model={model}
             data={data}
             isLoaded={isLoaded}
-            onStep={step}
+            onStep={stepWithDrive}
           />
         </div>
 
@@ -53,6 +112,9 @@ export default function MujocoPage() {
             reset={reset}
             data={data}
           />
+          <p className="text-xs text-slate-500 mt-3 text-center">
+            WASD / Arrow keys to drive
+          </p>
         </div>
       </div>
     </div>

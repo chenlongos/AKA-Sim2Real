@@ -47,13 +47,29 @@ export function useMujoco() {
   }, []);
 
   const setControl = useCallback((name: string, value: number) => {
-    const m = mujocoRef.current;
     const model = modelRef.current;
     const data = dataRef.current;
-    if (!m || !model || !data) return;
-    const id = m.mj_name2id(model, m.mjtObj.mjOBJ_ACTUATOR, name);
-    if (id >= 0) {
-      data.ctrl[id] = value;
+    if (!model || !data) return;
+    const names = model.names;
+    let buf: Uint8Array;
+    if (typeof names === "string") {
+      buf = new TextEncoder().encode(names);
+    } else if (names instanceof ArrayBuffer) {
+      buf = new Uint8Array(names);
+    } else if (ArrayBuffer.isView(names)) {
+      buf = new Uint8Array(names.buffer, names.byteOffset, names.byteLength);
+    } else {
+      return;
+    }
+    const decoder = new TextDecoder();
+    for (let i = 0; i < model.nu; i++) {
+      const addr = model.name_actuatoradr[i];
+      let end = addr;
+      while (end < buf.length && buf[end] !== 0) end++;
+      if (decoder.decode(buf.slice(addr, end)) === name) {
+        data.ctrl[i] = value;
+        return;
+      }
     }
   }, []);
 
