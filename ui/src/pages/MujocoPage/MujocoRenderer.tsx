@@ -157,6 +157,25 @@ function resolveName(names: unknown, addr: number): string {
   return new TextDecoder().decode(buf.slice(addr, end));
 }
 
+function makeLabelSprite(text: string, color: string, scale: number = 0.4) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = color;
+  ctx.font = "bold 48px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 32, 32);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(scale, scale, 1);
+  return sprite;
+}
+
 function resolveCameraIndices(model: MjModel) {
   let fpIdx = -1;
   let tdIdx = -1;
@@ -250,6 +269,9 @@ export default function MujocoRenderer({
       axesScene = new THREE.Scene();
       const axesGroup = new THREE.Group();
       axesGroup.add(new THREE.AxesHelper(1.0));
+      axesGroup.add(makeLabelSprite("X", "#ff4444").translateX(1.15));
+      axesGroup.add(makeLabelSprite("Y", "#44ff44").translateY(1.15));
+      axesGroup.add(makeLabelSprite("Z", "#4444ff").translateZ(1.15));
       axesScene.add(axesGroup);
       axesGroupRef.current = axesGroup;
       const size = 120;
@@ -428,9 +450,19 @@ export default function MujocoRenderer({
         if (fpCamera && fpIdx >= 0) {
           const camPos = d.cam_xpos.slice(fpIdx * 3, fpIdx * 3 + 3) as Float64Array;
           const camMat = d.cam_xmat.slice(fpIdx * 9, fpIdx * 9 + 9) as Float64Array;
-          const { position, quaternion } = mjToThree(camPos, camMat);
-          fpCamera.position.copy(position);
-          fpCamera.quaternion.copy(quaternion);
+
+          const pos3 = new THREE.Vector3(camPos[0], camPos[2], -camPos[1]);
+
+          // MuJoCo camera looks along local -Z, up is local +Y
+          // cam_xmat columns are the camera's local axes in MuJoCo world coords
+          const lookMj = new THREE.Vector3(-camMat[2], -camMat[5], -camMat[8]);
+          const upMj = new THREE.Vector3(camMat[1], camMat[4], camMat[7]);
+          const look3 = new THREE.Vector3(lookMj.x, lookMj.z, -lookMj.y);
+          const up3 = new THREE.Vector3(upMj.x, upMj.z, -upMj.y);
+
+          fpCamera.position.copy(pos3);
+          fpCamera.up.copy(up3);
+          fpCamera.lookAt(pos3.clone().add(look3));
         }
       }
 
