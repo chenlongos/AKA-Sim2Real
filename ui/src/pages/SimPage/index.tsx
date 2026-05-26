@@ -473,6 +473,17 @@ const SimPage = () => {
         return getContinuousActionFromDiscreteActions(getCurrentActions())
     }, [getCurrentActions])
 
+    const handleCollect = useCallback((imageData: string) => {
+        const { carState: latestCarState, userId: latestUserId } = useSimCarStore.getState();
+        sendImageData(simSocket, imageData, latestUserId, datasetName, {
+            state: {
+                vel_left: latestCarState.vel_left,
+                vel_right: latestCarState.vel_right,
+            },
+            action: getCurrentActionVector(),
+        });
+    }, [datasetName, getCurrentActionVector])
+
     // 键盘事件处理
     useEffect(() => {
         const clearKeysAndStop = () => {
@@ -650,13 +661,7 @@ const SimPage = () => {
                         obstacles={obstacles}
                         isRecording={isRecording}
                         collectionFps={collectionFps}
-                        onCollect={(imageData) => sendImageData(simSocket, imageData, useSimCarStore.getState().userId, datasetName, {
-                            state: {
-                                vel_left: carState.vel_left,
-                                vel_right: carState.vel_right,
-                            },
-                            action: getCurrentActionVector(),
-                        })}
+                        onCollect={handleCollect}
                     />
                 </div>
             </div>

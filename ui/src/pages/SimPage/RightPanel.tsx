@@ -40,6 +40,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
     }), []);
 
     const lastCollectTimeRef = useRef(0);
+    const carStateRef = useRef(carState);
+    carStateRef.current = carState;
+    const obstaclesRef = useRef(obstacles);
+    obstaclesRef.current = obstacles;
+    const isRecordingRef = useRef(isRecording);
+    isRecordingRef.current = isRecording;
+    const onCollectRef = useRef(onCollect);
+    onCollectRef.current = onCollect;
+    const collectionFpsRef = useRef(collectionFps);
+    collectionFpsRef.current = collectionFps;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -50,7 +60,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
         ctx.imageSmoothingEnabled = false;
 
         let animationFrameId: number;
-        const collectInterval = 1000 / Math.max(collectionFps, 1);
         const FPS = 30;
         const frameInterval = 1000 / FPS;
         let lastTime = 0;
@@ -59,13 +68,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
             if (currentTime - lastTime >= frameInterval) {
                 lastTime = currentTime;
 
-                // 渲染
-                drawFirstPerson(ctx, carState, obstacles, {colors: RIGHT_PANEL_COLORS});
+                drawFirstPerson(ctx, carStateRef.current, obstaclesRef.current, {colors: RIGHT_PANEL_COLORS});
 
-                // 采集数据
-                if (isRecording && onCollect && currentTime - lastCollectTimeRef.current >= collectInterval) {
+                const collectInterval = 1000 / Math.max(collectionFpsRef.current, 1);
+                if (isRecordingRef.current && onCollectRef.current && currentTime - lastCollectTimeRef.current >= collectInterval) {
                     const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                    onCollect(imageData);
+                    onCollectRef.current(imageData);
                     lastCollectTimeRef.current = currentTime;
                 }
             }
@@ -78,7 +86,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
         return () => {
             window.cancelAnimationFrame(animationFrameId);
         };
-    }, [carState, obstacles, isRecording, collectionFps, onCollect]);
+    }, []);
 
     return (
         <div className="flex flex-col h-full gap-3">
