@@ -449,6 +449,9 @@ const SimPage = () => {
                 clearInterval(inferenceTimerRef.current)
                 inferenceTimerRef.current = null
             }
+            useSimCarStore.getState().setTargetVelocity(0, 0)
+            sendActionVector(simSocket, [0, 0])
+            lastSentActionVectorRef.current = [0, 0, 0]
         } else {
             setAutoInference(true)
             autoInferenceRef.current = true  // 同步更新 ref
@@ -650,13 +653,16 @@ const SimPage = () => {
                         obstacles={obstacles}
                         isRecording={isRecording}
                         collectionFps={collectionFps}
-                        onCollect={(imageData) => sendImageData(simSocket, imageData, useSimCarStore.getState().userId, datasetName, {
-                            state: {
-                                vel_left: carState.vel_left,
-                                vel_right: carState.vel_right,
-                            },
-                            action: getCurrentActionVector(),
-                        })}
+                        onCollect={(imageData) => {
+                            const { carState: latestCarState, userId: latestUserId } = useSimCarStore.getState();
+                            sendImageData(simSocket, imageData, latestUserId, datasetName, {
+                                state: {
+                                    vel_left: latestCarState.vel_left,
+                                    vel_right: latestCarState.vel_right,
+                                },
+                                action: getCurrentActionVector(),
+                            });
+                        }}
                     />
                 </div>
             </div>

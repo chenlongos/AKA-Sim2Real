@@ -40,6 +40,10 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
     }), []);
 
     const lastCollectTimeRef = useRef(0);
+    const carStateRef = useRef(carState);
+    carStateRef.current = carState;
+    const onCollectRef = useRef(onCollect);
+    onCollectRef.current = onCollect;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -50,7 +54,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
         ctx.imageSmoothingEnabled = false;
 
         let animationFrameId: number;
-        const collectInterval = 1000 / Math.max(collectionFps, 1);
         const FPS = 30;
         const frameInterval = 1000 / FPS;
         let lastTime = 0;
@@ -60,12 +63,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
                 lastTime = currentTime;
 
                 // 渲染
-                drawFirstPerson(ctx, carState, obstacles, {colors: RIGHT_PANEL_COLORS});
+                drawFirstPerson(ctx, carStateRef.current, obstacles, {colors: RIGHT_PANEL_COLORS});
 
                 // 采集数据
-                if (isRecording && onCollect && currentTime - lastCollectTimeRef.current >= collectInterval) {
+                const collectInterval = 1000 / Math.max(collectionFps, 1);
+                if (isRecording && onCollectRef.current && currentTime - lastCollectTimeRef.current >= collectInterval) {
                     const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                    onCollect(imageData);
+                    onCollectRef.current(imageData);
                     lastCollectTimeRef.current = currentTime;
                 }
             }
@@ -78,7 +82,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(({
         return () => {
             window.cancelAnimationFrame(animationFrameId);
         };
-    }, [carState, obstacles, isRecording, collectionFps, onCollect]);
+    }, [obstacles, isRecording, collectionFps]);
 
     return (
         <div className="flex flex-col h-full gap-3">
