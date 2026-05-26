@@ -346,6 +346,13 @@ const RealPage = () => {
         checkCarHeartbeat(ip)
     }
 
+    // 页面加载/刷新时，若 IP 已存在则自动发起心跳检测
+    useEffect(() => {
+        if (carIP) {
+            checkCarHeartbeat(carIP)
+        }
+    }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
     const sendInferenceActionToCar = async (
         left: number,
         right: number,
