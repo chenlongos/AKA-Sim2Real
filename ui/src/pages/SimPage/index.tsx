@@ -28,7 +28,7 @@ const SimPage = () => {
     const keys = useRef<Record<string, boolean>>({})
     const lastSentActionVectorRef = useRef<[number, number, number]>([0, 0, 0])
     const firstPersonViewRef = useRef<RightPanelRef>(null)
-    const carState = useSimCarStore((state) => state.carState)
+    useSimCarStore((state) => state.carState)
     const [obstacles, setObstacles] = useState<Obstacle[]>([
         {x: 300, y: 200, width: 80, height: 80},
     ])
