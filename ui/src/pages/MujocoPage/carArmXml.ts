@@ -23,19 +23,19 @@ export const CAR_ARM_XML = `<mujoco>
 
             <body name="wheel_fl" pos="0.4 0.3 -0.1">
                 <joint name="wheel_fl_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
             <body name="wheel_fr" pos="0.4 -0.3 -0.1">
                 <joint name="wheel_fr_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
             <body name="wheel_rl" pos="-0.4 0.3 -0.1">
                 <joint name="wheel_rl_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
             <body name="wheel_rr" pos="-0.4 -0.3 -0.1">
                 <joint name="wheel_rr_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" fromto="0 -0.05 0 0 0.05 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
             </body>
         </body>
     </worldbody>

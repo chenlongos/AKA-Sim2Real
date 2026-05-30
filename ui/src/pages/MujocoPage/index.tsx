@@ -10,7 +10,7 @@ export default function MujocoPage() {
   const { isLoaded, mujoco, model, data, step, setControl, reset } =
     useMujoco();
   const keysRef = useRef<Set<string>>(new Set());
-  const [showJointOverlay, setShowJointOverlay] = useState(true);
+  const [showJointOverlay, setShowJointOverlay] = useState(false);
 
   const applyDrive = useCallback(() => {
     let leftVel = 0;
