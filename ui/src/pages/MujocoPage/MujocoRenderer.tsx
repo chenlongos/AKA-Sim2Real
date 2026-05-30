@@ -92,23 +92,24 @@ function createGeomMesh(
       cylMesh.receiveShadow = true;
       wheelGroup.add(cylMesh);
 
-      // Cross-spokes in XZ plane (perpendicular to cylinder axis Y)
-      // After mjToThree, the cylinder axis (MuJoCo Y) maps to Three.js -Z; spokes rotate around Z
-      const spokeHalfLen = radius * 0.9;
-      const spokeThick = halfHeight * 0.3;
-      const spokeGeomX = new THREE.BoxGeometry(spokeHalfLen * 2, spokeThick, spokeThick);
-      const spokeGeomZ = new THREE.BoxGeometry(spokeThick, spokeThick, spokeHalfLen * 2);
-      const spokeMat = new THREE.MeshStandardMaterial({
-        color: 0x333333,
-        roughness: 0.5,
-        metalness: 0.4,
-      });
-      const spokeX = new THREE.Mesh(spokeGeomX, spokeMat);
-      const spokeZ = new THREE.Mesh(spokeGeomZ, spokeMat);
-      spokeX.castShadow = true;
-      spokeZ.castShadow = true;
-      wheelGroup.add(spokeX);
-      wheelGroup.add(spokeZ);
+      // Cross-spokes only for wheel-like cylinders (radius > halfHeight)
+      if (radius >= halfHeight) {
+        const spokeHalfLen = radius * 0.9;
+        const spokeThick = halfHeight * 0.3;
+        const spokeGeomX = new THREE.BoxGeometry(spokeHalfLen * 2, spokeThick, spokeThick);
+        const spokeGeomZ = new THREE.BoxGeometry(spokeThick, spokeThick, spokeHalfLen * 2);
+        const spokeMat = new THREE.MeshStandardMaterial({
+          color: 0x333333,
+          roughness: 0.5,
+          metalness: 0.4,
+        });
+        const spokeX = new THREE.Mesh(spokeGeomX, spokeMat);
+        const spokeZ = new THREE.Mesh(spokeGeomZ, spokeMat);
+        spokeX.castShadow = true;
+        spokeZ.castShadow = true;
+        wheelGroup.add(spokeX);
+        wheelGroup.add(spokeZ);
+      }
 
       mesh = wheelGroup;
       break;
