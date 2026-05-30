@@ -12,10 +12,10 @@ export const CAR_ARM_XML = `<mujoco>
 
         <body name="car" pos="0 0 0.22">
             <freejoint/>
-            <body name="camera_body" pos="1 0 0.5" euler="0 0 0">
-                <camera name="firstperson" pos="0 0 0" euler="0 0 0" fovy="110"/>
-                <geom type="box" pos="0 0 0" size="0.05 0.05 0.05" rgba="0 0 0 1" contype="0" conaffinity="0"/>
-                <geom type="cylinder" fromto="0 0 -0.02 0 0 -0.12" size="0.02" rgba="0 1 0 1" contype="0" conaffinity="0"/>
+            <body name="camera_body" pos="0.4 0 0.25" euler="0 0 0">
+                <camera name="firstperson" pos="0 0 0" euler="90 -90 0" fovy="110"/>
+                <geom type="box" pos="0 0 0" size="0.1 0.05 0.05" rgba="0 0 0 1" contype="0" conaffinity="0"/>
+                <geom type="cylinder" fromto="0.02 0 0 0.12 0 0" size="0.02" rgba="0 1 0 1" contype="0" conaffinity="0"/>
             </body>
 
             <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10"/>

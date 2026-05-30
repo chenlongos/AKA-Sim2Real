@@ -7,7 +7,7 @@ const MJ_GEOM_SPHERE = 2;
 const MJ_GEOM_CYLINDER = 5;
 const MJ_GEOM_BOX = 6;
 
-const SUBSTEPS = 16;
+const SUBSTEPS = 5;
 
 const T = new THREE.Matrix4().set(
   1, 0,  0, 0,
@@ -92,7 +92,8 @@ function createGeomMesh(
       cylMesh.receiveShadow = true;
       wheelGroup.add(cylMesh);
 
-      // Cross-spokes to make rotation visible (cylinder rotating around own axis is invisible)
+      // Cross-spokes in XZ plane (perpendicular to cylinder axis Y)
+      // After mjToThree, the cylinder axis (MuJoCo Y) maps to Three.js -Z; spokes rotate around Z
       const spokeHalfLen = radius * 0.9;
       const spokeThick = halfHeight * 0.3;
       const spokeGeomX = new THREE.BoxGeometry(spokeHalfLen * 2, spokeThick, spokeThick);
@@ -270,8 +271,8 @@ export default function MujocoRenderer({
       const axesGroup = new THREE.Group();
       axesGroup.add(new THREE.AxesHelper(1.0));
       axesGroup.add(makeLabelSprite("X", "#ff4444").translateX(1.15));
-      axesGroup.add(makeLabelSprite("Y", "#44ff44").translateY(1.15));
-      axesGroup.add(makeLabelSprite("Z", "#4444ff").translateZ(1.15));
+      axesGroup.add(makeLabelSprite("Z", "#4444ff").translateY(1.15));
+      axesGroup.add(makeLabelSprite("Y", "#44ff44").translateZ(1.15));
       axesScene.add(axesGroup);
       axesGroupRef.current = axesGroup;
       const size = 120;
@@ -430,8 +431,22 @@ export default function MujocoRenderer({
         }
 
         // Track car body position for orbit camera target
+        // Body IDs: 0=world, 1=car (freejoint), 2=camera_body, 3=wheel_fl, 4=wheel_fr, 5=wheel_rl, 6=wheel_rr
         const carBodyId = 1;
         const carXpos = d.xpos.slice(carBodyId * 3, carBodyId * 3 + 3) as Float64Array;
+        // Log car state every ~15 frames
+        // qvel: 0-2=freejoint linear vel, 3-5=freejoint angular vel, 6=wheel_fl, 7=wheel_fr, 8=wheel_rl, 9=wheel_rr
+        if (Math.random() < 0.07) {
+          const ctrlAll = [d.ctrl[0]?.toFixed(2), d.ctrl[1]?.toFixed(2), d.ctrl[2]?.toFixed(2), d.ctrl[3]?.toFixed(2)];
+          const wheelVels = [d.qvel[6]?.toFixed(2), d.qvel[7]?.toFixed(2), d.qvel[8]?.toFixed(2), d.qvel[9]?.toFixed(2)];
+          const yawVel = d.qvel[5]?.toFixed(3);
+          const carXquat = d.xquat.slice(carBodyId * 4, carBodyId * 4 + 4);
+          console.log("[MJC] car pos:", carXpos[0].toFixed(4), carXpos[1].toFixed(4), carXpos[2].toFixed(4),
+            "| ctrl:", ctrlAll.join(","),
+            "| wheelVel:", wheelVels.join(","),
+            "| yawVel:", yawVel,
+            "| quat:", carXquat[0]?.toFixed(3), carXquat[1]?.toFixed(3), carXquat[2]?.toFixed(3), carXquat[3]?.toFixed(3));
+        }
         orbitStateRef.current.target.set(carXpos[0], carXpos[2] + 0.3, -carXpos[1]);
         updateOrbitCamera();
 
