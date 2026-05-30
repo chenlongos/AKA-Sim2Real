@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useMujoco } from "./useMujoco";
 import MujocoRenderer from "./MujocoRenderer";
 import { ControlPanel } from "./ControlPanel";
@@ -10,6 +10,7 @@ export default function MujocoPage() {
   const { isLoaded, mujoco, model, data, step, setControl, reset } =
     useMujoco();
   const keysRef = useRef<Set<string>>(new Set());
+  const [showJointOverlay, setShowJointOverlay] = useState(true);
 
   const applyDrive = useCallback(() => {
     let leftVel = 0;
@@ -102,6 +103,7 @@ export default function MujocoPage() {
             data={data}
             isLoaded={isLoaded}
             onStep={stepWithDrive}
+            showJointOverlay={showJointOverlay}
           />
         </div>
 
@@ -110,7 +112,8 @@ export default function MujocoPage() {
             isLoaded={isLoaded}
             setControl={setControl}
             reset={reset}
-            data={data}
+            showJointOverlay={showJointOverlay}
+            setShowJointOverlay={setShowJointOverlay}
           />
           <p className="text-xs text-slate-500 mt-3 text-center">
             WASD / Arrow keys to drive

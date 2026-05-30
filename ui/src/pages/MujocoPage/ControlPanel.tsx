@@ -6,9 +6,11 @@ interface Props {
   setControl: (name: string, value: number) => void;
   reset: () => void;
   data: React.RefObject<MjData | null>;
+  showJointOverlay: boolean;
+  setShowJointOverlay: (v: boolean) => void;
 }
 
-export function ControlPanel({ isLoaded, setControl, reset }: Props) {
+export function ControlPanel({ isLoaded, setControl, reset, showJointOverlay, setShowJointOverlay }: Props) {
   const [yaw, setYaw] = useState(0);
   const [pitch, setPitch] = useState(0);
   const [roll, setRoll] = useState(0);
@@ -123,6 +125,16 @@ export function ControlPanel({ isLoaded, setControl, reset }: Props) {
       >
         Reset
       </button>
+
+      <label className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 rounded-lg cursor-pointer hover:bg-slate-700/50 transition-colors">
+        <input
+          type="checkbox"
+          checked={showJointOverlay}
+          onChange={(e) => setShowJointOverlay(e.target.checked)}
+          className="w-4 h-4 rounded accent-emerald-500 cursor-pointer"
+        />
+        <span className="text-sm text-slate-300 select-none">Show Joints</span>
+      </label>
     </div>
   );
 }

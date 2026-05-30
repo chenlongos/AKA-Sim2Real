@@ -190,12 +190,21 @@ function resolveCameraIndices(model: MjModel) {
   return { fpIdx, tdIdx };
 }
 
+interface JointOverlay {
+  cylinder: THREE.Mesh;
+  sprite: THREE.Sprite;
+  jointIdx: number;
+  name: string;
+  qposAdr: number;
+}
+
 interface Props {
   mujoco: React.RefObject<MainModule | null>;
   model: React.RefObject<MjModel | null>;
   data: React.RefObject<MjData | null>;
   isLoaded: boolean;
   onStep: () => void;
+  showJointOverlay: boolean;
 }
 
 export default function MujocoRenderer({
@@ -204,6 +213,7 @@ export default function MujocoRenderer({
   data,
   isLoaded,
   onStep,
+  showJointOverlay,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fpContainerRef = useRef<HTMLDivElement>(null);
@@ -228,6 +238,11 @@ export default function MujocoRenderer({
     target: new THREE.Vector3(0, 0.3, 0),
   });
   const fpCamIdxRef = useRef(-1);
+  const jointGroupRef = useRef<THREE.Group | null>(null);
+  const jointOverlaysRef = useRef<JointOverlay[]>([]);
+  const jointFrameCountRef = useRef(0);
+  const showJointOverlayRef = useRef(showJointOverlay);
+  showJointOverlayRef.current = showJointOverlay;
 
   const setupScene = useCallback(() => {
     const container = containerRef.current;
@@ -407,6 +422,48 @@ export default function MujocoRenderer({
       fpCam.updateProjectionMatrix();
     }
 
+    // Joint overlay group
+    const jointGroup = new THREE.Group();
+    jointGroup.visible = showJointOverlay;
+    scene.add(jointGroup);
+    jointGroupRef.current = jointGroup;
+    const overlays: JointOverlay[] = [];
+
+    for (let i = 0; i < m.njnt; i++) {
+      const jtype = m.jnt_type[i];
+      if (jtype !== 3) continue; // only hinge joints for now
+
+      const name = resolveName(m.names, m.name_jntadr[i]);
+
+      const qposAdr = m.jnt_qposadr[i];
+
+      // axis cylinder - use MeshBasicMaterial for guaranteed visibility
+      const cylGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8);
+      const cylMat = new THREE.MeshBasicMaterial({
+        color: 0xff4444,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const cylinder = new THREE.Mesh(cylGeo, cylMat);
+      cylinder.renderOrder = 999;
+
+      // label sprite
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext("2d")!;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(0.6, 0.15, 1);
+
+      jointGroup.add(cylinder);
+      jointGroup.add(sprite);
+      overlays.push({ cylinder, sprite, jointIdx: i, name, qposAdr });
+    }
+    jointOverlaysRef.current = overlays;
+
     updateOrbitCamera();
   }, [isLoaded, model, updateOrbitCamera]);
 
@@ -435,19 +492,6 @@ export default function MujocoRenderer({
         // Body IDs: 0=world, 1=car (freejoint), 2=camera_body, 3=wheel_fl, 4=wheel_fr, 5=wheel_rl, 6=wheel_rr
         const carBodyId = 1;
         const carXpos = d.xpos.slice(carBodyId * 3, carBodyId * 3 + 3) as Float64Array;
-        // Log car state every ~15 frames
-        // qvel: 0-2=freejoint linear vel, 3-5=freejoint angular vel, 6=wheel_fl, 7=wheel_fr, 8=wheel_rl, 9=wheel_rr
-        if (Math.random() < 0.07) {
-          const ctrlAll = [d.ctrl[0]?.toFixed(2), d.ctrl[1]?.toFixed(2), d.ctrl[2]?.toFixed(2), d.ctrl[3]?.toFixed(2)];
-          const wheelVels = [d.qvel[6]?.toFixed(2), d.qvel[7]?.toFixed(2), d.qvel[8]?.toFixed(2), d.qvel[9]?.toFixed(2)];
-          const yawVel = d.qvel[5]?.toFixed(3);
-          const carXquat = d.xquat.slice(carBodyId * 4, carBodyId * 4 + 4);
-          console.log("[MJC] car pos:", carXpos[0].toFixed(4), carXpos[1].toFixed(4), carXpos[2].toFixed(4),
-            "| ctrl:", ctrlAll.join(","),
-            "| wheelVel:", wheelVels.join(","),
-            "| yawVel:", yawVel,
-            "| quat:", carXquat[0]?.toFixed(3), carXquat[1]?.toFixed(3), carXquat[2]?.toFixed(3), carXquat[3]?.toFixed(3));
-        }
         orbitStateRef.current.target.set(carXpos[0], carXpos[2] + 0.3, -carXpos[1]);
         updateOrbitCamera();
 
@@ -479,6 +523,58 @@ export default function MujocoRenderer({
           fpCamera.position.copy(pos3);
           fpCamera.up.copy(up3);
           fpCamera.lookAt(pos3.clone().add(look3));
+        }
+
+        // Joint overlay update
+        const jointGroup = jointGroupRef.current;
+        const overlays = jointOverlaysRef.current;
+        if (jointGroup) {
+          const show = showJointOverlayRef.current;
+          jointGroup.visible = show;
+          if (show && overlays.length > 0) {
+            jointFrameCountRef.current++;
+            const updateLabels = jointFrameCountRef.current % 30 === 0;
+            for (const ov of overlays) {
+              const ji = ov.jointIdx;
+              const jnt = d.jnt(ji);
+
+              const anchorRaw = jnt.xanchor;
+              const axisRaw = jnt.xaxis;
+              const anchor = (anchorRaw instanceof Float64Array || ArrayBuffer.isView(anchorRaw))
+                ? new Float64Array(anchorRaw.buffer, anchorRaw.byteOffset, 3)
+                : (Array.isArray(anchorRaw) ? anchorRaw : [0, 0, 0]) as unknown as Float64Array;
+              const axis = (axisRaw instanceof Float64Array || ArrayBuffer.isView(axisRaw))
+                ? new Float64Array(axisRaw.buffer, axisRaw.byteOffset, 3)
+                : (Array.isArray(axisRaw) ? axisRaw : [0, 1, 0]) as unknown as Float64Array;
+
+              const posT = new THREE.Vector3(anchor[0], anchor[2], -anchor[1]);
+              const axT = new THREE.Vector3(axis[0], axis[2], -axis[1]).normalize();
+
+              ov.cylinder.position.copy(posT);
+              ov.cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axT);
+
+              ov.sprite.position.copy(posT).add(new THREE.Vector3(0, 0.25, 0));
+
+              if (updateLabels) {
+                const qposVal = d.qpos[ov.qposAdr]?.toFixed(3) ?? "?";
+                const canvas = (ov.sprite.material as THREE.SpriteMaterial).map?.image as HTMLCanvasElement;
+                if (canvas) {
+                  const ctx = canvas.getContext("2d");
+                  if (ctx) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = "rgba(0,0,0,0.75)";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "20px monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(`${ov.name}: ${qposVal}`, 128, 32);
+                    (ov.sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
