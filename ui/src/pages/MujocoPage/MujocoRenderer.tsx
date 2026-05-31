@@ -9,12 +9,6 @@ const MJ_GEOM_BOX = 6;
 
 const SUBSTEPS = 5;
 
-// Three.js CylinderGeometry extends along Y, but MuJoCo geom local Z is the cylinder axis.
-// Pre-rotation: Y → Z so that mjToThree quat maps Z → world cylinder axis direction.
-const Y_TO_Z = new THREE.Quaternion().setFromAxisAngle(
-  new THREE.Vector3(1, 0, 0), Math.PI / 2,
-);
-
 const T = new THREE.Matrix4().set(
   1, 0,  0, 0,
   0, 0,  1, 0,
@@ -38,7 +32,7 @@ function mjToThree(pos: Float64Array, mat: Float64Array) {
     0, 0, 0, 1,
   );
 
-  const Rthree = T.clone().multiply(Rmj).multiply(Tinv);
+  const Rthree = Tinv.clone().multiply(Rmj).multiply(T);
   const quaternion = new THREE.Quaternion().setFromRotationMatrix(Rthree);
 
   return { position, quaternion };
@@ -84,7 +78,6 @@ function createGeomMesh(
       const radius = size[0];
       const halfHeight = size[1];
 
-      // Keep geometry default (extends along Y). Orientation fixed per-frame via setFromUnitVectors.
       const cylGeom = new THREE.CylinderGeometry(radius, radius, halfHeight * 2, 32);
 
       const cylMat = new THREE.MeshStandardMaterial({
@@ -105,7 +98,6 @@ function createGeomMesh(
       if (radius >= halfHeight) {
         const spokeHalfLen = radius * 0.9;
         const spokeThick = halfHeight * 0.3;
-        // Spokes in XZ plane (perpendicular to cylinder default Y axis in group-local space)
         const spokeGeomX = new THREE.BoxGeometry(spokeHalfLen * 2, spokeThick, spokeThick);
         const spokeGeomZ = new THREE.BoxGeometry(spokeThick, spokeThick, spokeHalfLen * 2);
         const spokeMat = new THREE.MeshStandardMaterial({
@@ -238,7 +230,6 @@ export default function MujocoRenderer({
   const fpRendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const axesRendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const meshesRef = useRef<THREE.Object3D[]>([]);
-  const geomTypesRef = useRef<number[]>([]);
   const animRef = useRef(0);
   const draggingRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
@@ -408,7 +399,6 @@ export default function MujocoRenderer({
 
     meshesRef.current.forEach((mesh) => scene.remove(mesh));
     meshesRef.current = [];
-    geomTypesRef.current = [];
 
     for (let i = 0; i < m.ngeom; i++) {
       const type = m.geom_type[i];
@@ -418,7 +408,6 @@ export default function MujocoRenderer({
       const mesh = createGeomMesh(type, size, rgba);
       scene.add(mesh);
       meshesRef.current.push(mesh);
-      geomTypesRef.current.push(type);
     }
 
     const { fpIdx, tdIdx } = resolveCameraIndices(m);
@@ -512,15 +501,9 @@ export default function MujocoRenderer({
           const g = d.geom(i);
           const pos = g.xpos as Float64Array;
           const mat = g.xmat as Float64Array;
-
           const { position, quaternion } = mjToThree(pos, mat);
-          const mesh = meshesRef.current[i];
-          mesh.position.copy(position);
-          if (geomTypesRef.current[i] === MJ_GEOM_CYLINDER) {
-            mesh.quaternion.copy(quaternion).multiply(Y_TO_Z);
-          } else {
-            mesh.quaternion.copy(quaternion);
-          }
+          meshesRef.current[i].position.copy(position);
+          meshesRef.current[i].quaternion.copy(quaternion);
         }
 
         // First-person camera: use MuJoCo native camera world pose
