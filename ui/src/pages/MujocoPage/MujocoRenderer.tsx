@@ -230,6 +230,7 @@ export default function MujocoRenderer({
   const fpRendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const axesRendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const meshesRef = useRef<THREE.Object3D[]>([]);
+  const geomTypesRef = useRef<number[]>([]);
   const animRef = useRef(0);
   const draggingRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
@@ -399,6 +400,7 @@ export default function MujocoRenderer({
 
     meshesRef.current.forEach((mesh) => scene.remove(mesh));
     meshesRef.current = [];
+    geomTypesRef.current = [];
 
     for (let i = 0; i < m.ngeom; i++) {
       const type = m.geom_type[i];
@@ -408,6 +410,7 @@ export default function MujocoRenderer({
       const mesh = createGeomMesh(type, size, rgba);
       scene.add(mesh);
       meshesRef.current.push(mesh);
+      geomTypesRef.current.push(type);
     }
 
     const { fpIdx, tdIdx } = resolveCameraIndices(m);
@@ -498,12 +501,58 @@ export default function MujocoRenderer({
         updateOrbitCamera();
 
             for (let i = 0; i < meshesRef.current.length; i++) {
-          const g = d.geom(i);
-          const pos = g.xpos as Float64Array;
-          const mat = g.xmat as Float64Array;
-          const { position, quaternion } = mjToThree(pos, mat);
-          meshesRef.current[i].position.copy(position);
-          meshesRef.current[i].quaternion.copy(quaternion);
+          const pos = d.geom_xpos.slice(i * 3, i * 3 + 3) as Float64Array;
+          const mat = d.geom_xmat.slice(i * 9, i * 9 + 9) as Float64Array;
+          const position = new THREE.Vector3(pos[0], pos[2], -pos[1]);
+
+          // Extract body's world axes from xmat (column-major), convert to Three.js coords
+          const bx = new THREE.Vector3(mat[0], mat[2], -mat[1]);  // body X in Three
+          const by = new THREE.Vector3(mat[3], mat[5], -mat[4]);  // body Y in Three
+          const bz = new THREE.Vector3(mat[6], mat[8], -mat[7]);  // body Z in Three
+
+          // Default geom axes = body axes
+          let gx = bx.clone();
+          let gy = by.clone();
+          let gz = bz.clone();
+
+          // For cylinders with fromto on the same body as another geom:
+          // find a non-cylinder geom on the same body (same xmat) and use its position
+          // as the body reference to compute fromto direction
+          if (geomTypesRef.current[i] === MJ_GEOM_CYLINDER) {
+            for (let j = 0; j < meshesRef.current.length; j++) {
+              if (j === i || geomTypesRef.current[j] === MJ_GEOM_CYLINDER) continue;
+              const otherMat = d.geom_xmat.slice(j * 9, j * 9 + 9) as Float64Array;
+              let sameBody = true;
+              for (let k = 0; k < 9; k++) {
+                if (Math.abs(mat[k] - otherMat[k]) > 1e-8) { sameBody = false; break; }
+              }
+              if (sameBody) {
+                const bodyPos = d.geom_xpos.slice(j * 3, j * 3 + 3) as Float64Array;
+                const bodyPos3 = new THREE.Vector3(bodyPos[0], bodyPos[2], -bodyPos[1]);
+                const offset = position.clone().sub(bodyPos3);
+                const offsetLen = offset.length();
+                // If offset > 1e-6, this cylinder has fromto (midpoint ≠ body origin)
+                if (offsetLen > 1e-6) {
+                  gz = offset.normalize();
+                  const arbitrary = Math.abs(gz.x) < 0.9
+                    ? new THREE.Vector3(1, 0, 0)
+                    : new THREE.Vector3(0, 1, 0);
+                  gx = new THREE.Vector3().crossVectors(arbitrary, gz).normalize();
+                  gy = new THREE.Vector3().crossVectors(gz, gx).normalize();
+                }
+                break;
+              }
+            }
+          }
+
+          {
+            // Build proper rotation (det=+1): mesh Y → geom Z (cylinder axis / box height)
+            // Negate gz to keep det=+1 while preserving rotation direction.
+            // mesh Z → gy keeps the box depth face correctly oriented.
+            const R = new THREE.Matrix4().makeBasis(gx, gz.clone().negate(), gy);
+            meshesRef.current[i].position.copy(position);
+            meshesRef.current[i].quaternion.setFromRotationMatrix(R);
+          }
         }
 
         // First-person camera: use MuJoCo native camera world pose
@@ -515,9 +564,10 @@ export default function MujocoRenderer({
           const pos3 = new THREE.Vector3(camPos[0], camPos[2], -camPos[1]);
 
           // MuJoCo camera looks along local -Z, up is local +Y
-          // cam_xmat columns are the camera's local axes in MuJoCo world coords
-          const lookMj = new THREE.Vector3(-camMat[2], -camMat[5], -camMat[8]);
-          const upMj = new THREE.Vector3(camMat[1], camMat[4], camMat[7]);
+          // cam_xmat is column-major: cols 0,1,2 = camera local X,Y,Z in MuJoCo world
+          // look direction = -Z (negative of column 2), up = +Y (column 1)
+          const lookMj = new THREE.Vector3(-camMat[6], -camMat[7], -camMat[8]);
+          const upMj = new THREE.Vector3(camMat[3], camMat[4], camMat[5]);
           const look3 = new THREE.Vector3(lookMj.x, lookMj.z, -lookMj.y);
           const up3 = new THREE.Vector3(upMj.x, upMj.z, -upMj.y);
 
