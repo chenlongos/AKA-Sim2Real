@@ -11,7 +11,7 @@ export const CAR_ARM_XML = `<mujoco>
         <geom type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1" friction="1.5 0.005 0.0001"/>
 
         <body name="car" pos="0 0 0.22">
-            <freejoint damping="0.5"/>
+            <freejoint/>
 
             <body name="camera_body" pos="0.4 0 0.2" euler="0 0 -90">
                 <camera name="firstperson" pos="0 0 0" euler="0 0 0" fovy="110"/>
