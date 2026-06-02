@@ -1,5 +1,5 @@
 export const MAZE_XML = `
-        <geom type="plane" size="100 100 0.1" rgba="0.8 0.8 0.8 1" friction="1.5 0.005 0.0001"/>
+        <geom type="plane" size="100 100 0.1" rgba="0.8 0.8 0.8 1" friction="2.5 0.005 0.0001"/>
 
         <!-- Maze: corridors 2m wide, wall height 0.6m, thickness 0.1m -->
         <!-- Outer boundary -->

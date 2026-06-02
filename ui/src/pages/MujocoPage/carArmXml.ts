@@ -23,7 +23,7 @@ export const CAR_ARM_XML = `<mujoco>
             <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10"/>
 
             <body name="wheel_fl" pos="0.4 0.3 -0.1">
-                <joint name="wheel_fl_joint" type="hinge" axis="0 1 0"/>
+                <joint name="wheel_fl_joint" type="hinge" axis="0 1 0" damping="1.5"/>
                 <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
             </body>
             <body name="wheel_fr" pos="0.4 -0.3 -0.1">
