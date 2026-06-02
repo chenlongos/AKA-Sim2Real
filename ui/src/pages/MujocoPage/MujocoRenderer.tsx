@@ -221,6 +221,7 @@ export default function MujocoRenderer({
     target: new THREE.Vector3(0, 0.3, 0),
   });
   const fpCamIdxRef = useRef(-1);
+  const fpCamBodyIdRef = useRef(-1);
   const jointGroupRef = useRef<THREE.Group | null>(null);
   const jointOverlaysRef = useRef<JointOverlay[]>([]);
   const jointFrameCountRef = useRef(0);
@@ -416,6 +417,7 @@ export default function MujocoRenderer({
 
     const { fpIdx, tdIdx } = resolveCameraIndices(m);
     fpCamIdxRef.current = fpIdx;
+    fpCamBodyIdRef.current = fpIdx >= 0 ? (m.cam_bodyid?.[fpIdx] ?? -1) : -1;
 
     const orbitCam = orbitCameraRef.current;
     const fpCam = fpCameraRef.current;
@@ -508,25 +510,12 @@ export default function MujocoRenderer({
         orbitStateRef.current.target.set(carPos3.x, carPos3.y + 0.3, carPos3.z);
         updateOrbitCamera();
 
-        // First-person camera: use MuJoCo native camera world pose
+        // First-person camera: reuse body group transform (same proven quaternion path)
         const fpIdx = fpCamIdxRef.current;
-        if (fpCamera && fpIdx >= 0) {
-          const camPos = d.cam_xpos.slice(fpIdx * 3, fpIdx * 3 + 3) as Float64Array;
-          const camMat = d.cam_xmat.slice(fpIdx * 9, fpIdx * 9 + 9) as Float64Array;
-
-          const pos3 = new THREE.Vector3(camPos[0], camPos[2], -camPos[1]);
-
-          // MuJoCo camera looks along local -Z, up is local +Y
-          // cam_xmat is column-major: cols 0,1,2 = camera local X,Y,Z in MuJoCo world
-          // look direction = -Z (negative of column 2), up = +Y (column 1)
-          const lookMj = new THREE.Vector3(-camMat[6], -camMat[7], -camMat[8]);
-          const upMj = new THREE.Vector3(camMat[3], camMat[4], camMat[5]);
-          const look3 = new THREE.Vector3(lookMj.x, lookMj.z, -lookMj.y);
-          const up3 = new THREE.Vector3(upMj.x, upMj.z, -upMj.y);
-
-          fpCamera.position.copy(pos3);
-          fpCamera.up.copy(up3);
-          fpCamera.lookAt(pos3.clone().add(look3));
+        const camBodyId = fpCamBodyIdRef.current;
+        if (fpCamera && fpIdx >= 0 && camBodyId >= 0 && bodyGroups[camBodyId]) {
+          fpCamera.position.copy(bodyGroups[camBodyId].position);
+          fpCamera.quaternion.copy(bodyGroups[camBodyId].quaternion);
         }
 
         // Joint overlay update
