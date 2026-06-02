@@ -382,21 +382,20 @@ export default function MujocoRenderer({
     bodyGroupsRef.current.forEach((g) => scene.remove(g));
     bodyGroupsRef.current = [];
 
-    // Create body groups (hierarchical: child bodies are children of parent body groups)
+    // Create body groups, all as direct children of world (body 0)
+    // We use world positions from d.xpos, so no parent-child body hierarchy needed
     const bodyGroups: THREE.Group[] = [];
     for (let b = 0; b < m.nbody; b++) {
       const group = new THREE.Group();
       const nameAddr = m.name_bodyadr?.[b] ?? -1;
       group.name = nameAddr >= 0 ? resolveName(m.names, nameAddr) : `body_${b}`;
       bodyGroups.push(group);
+      if (b === 0) {
+        scene.add(group);
+      } else {
+        bodyGroups[0].add(group);
+      }
     }
-
-    // Build body hierarchy: body 0 (world) is root, others parented by m.body_parentid
-    for (let b = 1; b < m.nbody; b++) {
-      const parentId = m.body_parentid?.[b] ?? 0;
-      bodyGroups[parentId].add(bodyGroups[b]);
-    }
-    scene.add(bodyGroups[0]);
 
     // Create geom meshes and attach to body groups with LOCAL pos/quat
     for (let i = 0; i < m.ngeom; i++) {
