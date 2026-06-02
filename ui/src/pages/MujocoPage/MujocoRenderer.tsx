@@ -9,33 +9,14 @@ const MJ_GEOM_BOX = 6;
 
 const SUBSTEPS = 5;
 
-const T = new THREE.Matrix4().set(
-  1, 0,  0, 0,
-  0, 0,  1, 0,
-  0, -1, 0, 0,
-  0, 0,  0, 1,
-);
-const Tinv = new THREE.Matrix4().set(
-  1, 0,  0, 0,
-  0, 0, -1, 0,
-  0, 1,  0, 0,
-  0, 0,  0, 1,
-);
+// Coordinate conversion: MuJoCo (x,y,z) → Three.js (x, z, -y)
+function mjPosToThree(buf: Float64Array, index: number, target: THREE.Vector3): THREE.Vector3 {
+  return target.set(buf[index * 3 + 0], buf[index * 3 + 2], -buf[index * 3 + 1]);
+}
 
-function mjToThree(pos: Float64Array, mat: Float64Array) {
-  const position = new THREE.Vector3(pos[0], pos[2], -pos[1]);
-
-  const Rmj = new THREE.Matrix4().set(
-    mat[0], mat[3], mat[6], 0,
-    mat[1], mat[4], mat[7], 0,
-    mat[2], mat[5], mat[8], 0,
-    0, 0, 0, 1,
-  );
-
-  const Rthree = Tinv.clone().multiply(Rmj).multiply(T);
-  const quaternion = new THREE.Quaternion().setFromRotationMatrix(Rthree);
-
-  return { position, quaternion };
+// Quaternion conversion: MuJoCo [w,x,y,z] → Three.js (-x, -z, y, -w)
+function mjQuatToThree(buf: Float64Array, index: number, target: THREE.Quaternion): THREE.Quaternion {
+  return target.set(-buf[index * 4 + 1], -buf[index * 4 + 3], buf[index * 4 + 2], -buf[index * 4 + 0]);
 }
 
 function createGeomMesh(
@@ -229,8 +210,7 @@ export default function MujocoRenderer({
   const mainRendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const fpRendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const axesRendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const meshesRef = useRef<THREE.Object3D[]>([]);
-  const geomTypesRef = useRef<number[]>([]);
+  const bodyGroupsRef = useRef<THREE.Group[]>([]);
   const animRef = useRef(0);
   const draggingRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
@@ -398,20 +378,42 @@ export default function MujocoRenderer({
     const scene = sceneRef.current;
     if (!scene) return;
 
-    meshesRef.current.forEach((mesh) => scene.remove(mesh));
-    meshesRef.current = [];
-    geomTypesRef.current = [];
+    // Remove old body groups
+    bodyGroupsRef.current.forEach((g) => scene.remove(g));
+    bodyGroupsRef.current = [];
 
+    // Create body groups (hierarchical: child bodies are children of parent body groups)
+    const bodyGroups: THREE.Group[] = [];
+    for (let b = 0; b < m.nbody; b++) {
+      const group = new THREE.Group();
+      const nameAddr = m.name_bodyadr?.[b] ?? -1;
+      group.name = nameAddr >= 0 ? resolveName(m.names, nameAddr) : `body_${b}`;
+      bodyGroups.push(group);
+    }
+
+    // Build body hierarchy: body 0 (world) is root, others parented by m.body_parentid
+    for (let b = 1; b < m.nbody; b++) {
+      const parentId = m.body_parentid?.[b] ?? 0;
+      bodyGroups[parentId].add(bodyGroups[b]);
+    }
+    scene.add(bodyGroups[0]);
+
+    // Create geom meshes and attach to body groups with LOCAL pos/quat
     for (let i = 0; i < m.ngeom; i++) {
       const type = m.geom_type[i];
       const size = m.geom_size.slice(i * 3, i * 3 + 3) as Float64Array;
       const rgba = m.geom_rgba.slice(i * 4, i * 4 + 4) as Float64Array;
+      const bodyId = m.geom_bodyid[i];
 
       const mesh = createGeomMesh(type, size, rgba);
-      scene.add(mesh);
-      meshesRef.current.push(mesh);
-      geomTypesRef.current.push(type);
+      mjPosToThree(m.geom_pos, i, mesh.position);
+      if (type !== MJ_GEOM_PLANE) {
+        mjQuatToThree(m.geom_quat, i, mesh.quaternion);
+      }
+      bodyGroups[bodyId].add(mesh);
     }
+
+    bodyGroupsRef.current = bodyGroups;
 
     const { fpIdx, tdIdx } = resolveCameraIndices(m);
     fpCamIdxRef.current = fpIdx;
@@ -493,67 +495,19 @@ export default function MujocoRenderer({
           m.mj_step(model.current!, data.current!);
         }
 
-        // Track car body position for orbit camera target
-        // Body IDs: 0=world, 1=car (freejoint), 2=camera_body, 3=wheel_fl, 4=wheel_fr, 5=wheel_rl, 6=wheel_rr
-        const carBodyId = 1;
-        const carXpos = d.xpos.slice(carBodyId * 3, carBodyId * 3 + 3) as Float64Array;
-        orbitStateRef.current.target.set(carXpos[0], carXpos[2] + 0.3, -carXpos[1]);
-        updateOrbitCamera();
-
-            for (let i = 0; i < meshesRef.current.length; i++) {
-          const pos = d.geom_xpos.slice(i * 3, i * 3 + 3) as Float64Array;
-          const mat = d.geom_xmat.slice(i * 9, i * 9 + 9) as Float64Array;
-          const position = new THREE.Vector3(pos[0], pos[2], -pos[1]);
-
-          // Extract body's world axes from xmat (column-major), convert to Three.js coords
-          const bx = new THREE.Vector3(mat[0], mat[2], -mat[1]);  // body X in Three
-          const by = new THREE.Vector3(mat[3], mat[5], -mat[4]);  // body Y in Three
-          const bz = new THREE.Vector3(mat[6], mat[8], -mat[7]);  // body Z in Three
-
-          // Default geom axes = body axes
-          let gx = bx.clone();
-          let gy = by.clone();
-          let gz = bz.clone();
-
-          // For cylinders with fromto on the same body as another geom:
-          // find a non-cylinder geom on the same body (same xmat) and use its position
-          // as the body reference to compute fromto direction
-          if (geomTypesRef.current[i] === MJ_GEOM_CYLINDER) {
-            for (let j = 0; j < meshesRef.current.length; j++) {
-              if (j === i || geomTypesRef.current[j] === MJ_GEOM_CYLINDER) continue;
-              const otherMat = d.geom_xmat.slice(j * 9, j * 9 + 9) as Float64Array;
-              let sameBody = true;
-              for (let k = 0; k < 9; k++) {
-                if (Math.abs(mat[k] - otherMat[k]) > 1e-8) { sameBody = false; break; }
-              }
-              if (sameBody) {
-                const bodyPos = d.geom_xpos.slice(j * 3, j * 3 + 3) as Float64Array;
-                const bodyPos3 = new THREE.Vector3(bodyPos[0], bodyPos[2], -bodyPos[1]);
-                const offset = position.clone().sub(bodyPos3);
-                const offsetLen = offset.length();
-                // If offset > 1e-6, this cylinder has fromto (midpoint ≠ body origin)
-                if (offsetLen > 1e-6) {
-                  gz = offset.normalize();
-                  const arbitrary = Math.abs(gz.x) < 0.9
-                    ? new THREE.Vector3(1, 0, 0)
-                    : new THREE.Vector3(0, 1, 0);
-                  gx = new THREE.Vector3().crossVectors(arbitrary, gz).normalize();
-                  gy = new THREE.Vector3().crossVectors(gz, gx).normalize();
-                }
-                break;
-              }
-            }
-          }
-
-          {
-            // Build proper rotation (det=+1): mesh Y → geom Z (cylinder axis / box height)
-            // Negate gz to keep det=+1 while preserving rotation direction.
-            // mesh Z → gy keeps the box depth face correctly oriented.
-            const R = new THREE.Matrix4().makeBasis(gx, gz.clone().negate(), gy);
-            meshesRef.current[i].position.copy(position);
-            meshesRef.current[i].quaternion.setFromRotationMatrix(R);
-          }
+        // Update body group transforms from MuJoCo world data
+        const bodyGroups = bodyGroupsRef.current;
+        for (let b = 0; b < bodyGroups.length; b++) {
+          mjPosToThree(d.xpos, b, bodyGroups[b].position);
+          mjQuatToThree(d.xquat, b, bodyGroups[b].quaternion);
         }
+
+        // Track car body position for orbit camera target
+        const carBodyId = 1;
+        const carPos3 = new THREE.Vector3();
+        mjPosToThree(d.xpos, carBodyId, carPos3);
+        orbitStateRef.current.target.set(carPos3.x, carPos3.y + 0.3, carPos3.z);
+        updateOrbitCamera();
 
         // First-person camera: use MuJoCo native camera world pose
         const fpIdx = fpCamIdxRef.current;
