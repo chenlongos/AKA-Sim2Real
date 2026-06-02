@@ -8,9 +8,39 @@ export const CAR_ARM_XML = `<mujoco>
     <worldbody>
         <light diffuse=".5 .5 .5" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
 
-        <geom type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1" friction="1.5 0.005 0.0001"/>
+        <geom type="plane" size="100 100 0.1" rgba="0.8 0.8 0.8 1" friction="1.5 0.005 0.0001"/>
 
-        <body name="car" pos="0 0 0.22">
+        <!-- Maze: corridors 2m wide, wall height 0.6m, thickness 0.1m -->
+        <!-- Outer boundary -->
+        <geom type="box" pos=" 0   -4 0.3" size=" 4   0.05 0.3" rgba="0.5 0.3 0.1 1"/>
+        <geom type="box" pos=" 0    4 0.3" size=" 4   0.05 0.3" rgba="0.5 0.3 0.1 1"/>
+        <geom type="box" pos="-4    0 0.3" size="0.05  4   0.3" rgba="0.5 0.3 0.1 1"/>
+        <geom type="box" pos=" 4    0 0.3" size="0.05  4   0.3" rgba="0.5 0.3 0.1 1"/>
+
+        <!-- Inner walls -->
+        <!-- V: x=-2, y=-3..1  (gap at y=1..3) -->
+        <geom type="box" pos="-2  -1   0.3" size="0.05 2   0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- V: x=-2, y=1..3 -->
+        <geom type="box" pos="-2   2   0.3" size="0.05 1   0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- V: x=0,  y=-2..1  (gap at y=1..3, y=-4..-2) -->
+        <geom type="box" pos=" 0  -0.5 0.3" size="0.05 1.5 0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- V: x=0,  y=1..3 -->
+        <geom type="box" pos=" 0   2   0.3" size="0.05 1   0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- V: x=2,  y=-3..-1 -->
+        <geom type="box" pos=" 2  -2   0.3" size="0.05 1   0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- V: x=2,  y=0..3 -->
+        <geom type="box" pos=" 2   1.5 0.3" size="0.05 1.5 0.3" rgba="0.6 0.4 0.2 1"/>
+
+        <!-- H: y=-1, x=-2..1 (gap at x=1..2 for car to pass) -->
+        <geom type="box" pos="-0.5 -1 0.3" size=" 1.5 0.05 0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- H: y= 1, x=-4..-1 -->
+        <geom type="box" pos="-2.5 1   0.3" size=" 1.5 0.05 0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- H: y= 1, x= 1..4 -->
+        <geom type="box" pos=" 2.5 1   0.3" size=" 1.5 0.05 0.3" rgba="0.6 0.4 0.2 1"/>
+        <!-- H: y= 3, x= 0..4 -->
+        <geom type="box" pos=" 2   3   0.3" size=" 2   0.05 0.3" rgba="0.6 0.4 0.2 1"/>
+
+        <body name="car" pos="3 -3 0.22">
             <freejoint/>
 
             <body name="camera_body" pos="0.4 0 0.2" euler="0 0 -90">
@@ -19,7 +49,7 @@ export const CAR_ARM_XML = `<mujoco>
                 <geom type="cylinder" fromto="0 0.15 0 0 0 0" size="0.02" rgba="0 1 0 1" contype="0" conaffinity="0"/>
             </body>
 
-            <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10" contype="0" conaffinity="0"/>
+            <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10"/>
 
             <body name="wheel_fl" pos="0.4 0.3 -0.1">
                 <joint name="wheel_fl_joint" type="hinge" axis="0 1 0"/>
