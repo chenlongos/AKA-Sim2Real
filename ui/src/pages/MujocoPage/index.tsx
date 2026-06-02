@@ -3,14 +3,13 @@ import { useMujoco } from "./useMujoco";
 import MujocoRenderer from "./MujocoRenderer";
 import { ControlPanel } from "./ControlPanel";
 
-const DRIVE_SPEED = 5;
-const TURN_SPEED = 3;
-
 export default function MujocoPage() {
   const { isLoaded, mujoco, model, data, step, setControl, reset } =
     useMujoco();
   const keysRef = useRef<Set<string>>(new Set());
   const [showJointOverlay, setShowJointOverlay] = useState(false);
+  const [driveSpeed, setDriveSpeed] = useState(5);
+  const [turnSpeed, setTurnSpeed] = useState(3);
 
   const applyDrive = useCallback(() => {
     let leftVel = 0;
@@ -19,27 +18,27 @@ export default function MujocoPage() {
     const k = keysRef.current;
 
     if (k.has("KeyW") || k.has("ArrowUp")) {
-      leftVel += DRIVE_SPEED;
-      rightVel += DRIVE_SPEED;
+      leftVel += driveSpeed;
+      rightVel += driveSpeed;
     }
     if (k.has("KeyS") || k.has("ArrowDown")) {
-      leftVel -= DRIVE_SPEED;
-      rightVel -= DRIVE_SPEED;
+      leftVel -= driveSpeed;
+      rightVel -= driveSpeed;
     }
     if (k.has("KeyA") || k.has("ArrowLeft")) {
-      leftVel -= TURN_SPEED;
-      rightVel += TURN_SPEED;
+      leftVel -= turnSpeed;
+      rightVel += turnSpeed;
     }
     if (k.has("KeyD") || k.has("ArrowRight")) {
-      leftVel += TURN_SPEED;
-      rightVel -= TURN_SPEED;
+      leftVel += turnSpeed;
+      rightVel -= turnSpeed;
     }
 
     setControl("motor_wheel_fl", leftVel);
     setControl("motor_wheel_rl", leftVel);
     setControl("motor_wheel_fr", rightVel);
     setControl("motor_wheel_rr", rightVel);
-  }, [setControl]);
+  }, [setControl, driveSpeed, turnSpeed]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -110,10 +109,13 @@ export default function MujocoPage() {
         <div className="w-72 bg-slate-900/50 border-l border-slate-800 p-3 overflow-y-auto">
           <ControlPanel
             isLoaded={isLoaded}
-            setControl={setControl}
             reset={reset}
             showJointOverlay={showJointOverlay}
             setShowJointOverlay={setShowJointOverlay}
+            driveSpeed={driveSpeed}
+            turnSpeed={turnSpeed}
+            onDriveSpeedChange={setDriveSpeed}
+            onTurnSpeedChange={setTurnSpeed}
           />
           <p className="text-xs text-slate-500 mt-3 text-center">
             WASD / Arrow keys to drive
