@@ -3,6 +3,12 @@ import { useMujoco } from "./useMujoco";
 import MujocoRenderer from "./MujocoRenderer";
 import { ControlPanel } from "./ControlPanel";
 
+const DRIVE_KEYS = [
+  "KeyW", "KeyA", "KeyS", "KeyD",
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+  "Space",
+];
+
 export default function MujocoPage() {
   const { isLoaded, mujoco, model, data, step, setControl, reset } =
     useMujoco();
@@ -10,6 +16,9 @@ export default function MujocoPage() {
   const [showJointOverlay, setShowJointOverlay] = useState(false);
   const [driveSpeed, setDriveSpeed] = useState(5);
   const [turnSpeed, setTurnSpeed] = useState(3);
+  const [fps, setFps] = useState(0);
+  const fpsFramesRef = useRef(0);
+  const fpsLastTimeRef = useRef(performance.now());
 
   const applyDrive = useCallback(() => {
     let leftVel = 0;
@@ -33,6 +42,10 @@ export default function MujocoPage() {
       leftVel += turnSpeed;
       rightVel -= turnSpeed;
     }
+    if (k.has("Space")) {
+      leftVel = 0;
+      rightVel = 0;
+    }
 
     setControl("motor_wheel_fl", leftVel);
     setControl("motor_wheel_rl", leftVel);
@@ -42,26 +55,37 @@ export default function MujocoPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
+      if (DRIVE_KEYS.includes(e.code)) {
         e.preventDefault();
+        e.stopPropagation();
         keysRef.current.add(e.code);
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       keysRef.current.delete(e.code);
     };
-
-    window.addEventListener("keydown", handleKeyDown);
+    // capture:true ensures we intercept before the browser scrolls
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("keyup", handleKeyUp);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, []);
 
-  // Apply drive controls every frame before mj_step
+  // Apply drive controls every frame before mj_step, with real FPS
   const stepWithDrive = useCallback(() => {
     applyDrive();
+
+    // Real FPS counter
+    fpsFramesRef.current++;
+    const now = performance.now();
+    if (now - fpsLastTimeRef.current >= 1000) {
+      setFps(fpsFramesRef.current);
+      fpsFramesRef.current = 0;
+      fpsLastTimeRef.current = now;
+    }
+
     step();
   }, [applyDrive, step]);
 
@@ -81,7 +105,7 @@ export default function MujocoPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-xs text-slate-500">
-            FPS: {isLoaded ? "60" : "--"}
+            FPS: {fps || "--"}
           </span>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/50 border border-slate-700">
             <span
@@ -118,7 +142,7 @@ export default function MujocoPage() {
             onTurnSpeedChange={setTurnSpeed}
           />
           <p className="text-xs text-slate-500 mt-3 text-center">
-            WASD / Arrow keys to drive
+            WASD / Arrows: drive · Space: brake
           </p>
         </div>
       </div>
