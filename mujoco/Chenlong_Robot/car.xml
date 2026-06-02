@@ -8,10 +8,10 @@
     <worldbody>
         <light diffuse=".5 .5 .5" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
 
-        <geom type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1" friction="1 0.1 0.1"/>
+        <geom type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1" friction="1.5 0.005 0.0001"/>
 
         <body name="car" pos="0 0 0.22">
-            <freejoint/>
+            <freejoint damping="0.5"/>
 
             <body name="camera_body" pos="0.4 0 0.25" euler="90 -90 0">
                 <camera name="firstperson" pos="0 0 0" euler="0 0 0" fovy="110"/>
@@ -23,27 +23,27 @@
 
             <body name="wheel_fl" pos="0.4 0.3 -0.1">
                 <joint name="wheel_fl_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
             </body>
             <body name="wheel_fr" pos="0.4 -0.3 -0.1">
                 <joint name="wheel_fr_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
             </body>
             <body name="wheel_rl" pos="-0.4 0.3 -0.1">
                 <joint name="wheel_rl_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
             </body>
             <body name="wheel_rr" pos="-0.4 -0.3 -0.1">
                 <joint name="wheel_rr_joint" type="hinge" axis="0 1 0"/>
-                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
             </body>
         </body>
     </worldbody>
 
     <actuator>
-        <motor joint="wheel_fl_joint" name="motor_wheel_fl" gear="5" ctrllimited="true" ctrlrange="-10 10"/>
-        <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="5" ctrllimited="true" ctrlrange="-10 10"/>
-        <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="5" ctrllimited="true" ctrlrange="-10 10"/>
-        <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="5" ctrllimited="true" ctrlrange="-10 10"/>
+        <motor joint="wheel_fl_joint" name="motor_wheel_fl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
     </actuator>
 </mujoco>
