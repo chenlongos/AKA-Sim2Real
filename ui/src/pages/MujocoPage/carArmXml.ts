@@ -1,7 +1,7 @@
 import { MAZE_XML } from './mazeXml';
 
 export const CAR_ARM_XML = `<mujoco>
-    <option timestep="0.001" integrator="RK4"/>
+    <option timestep="0.001" integrator="RK4" gravity="0 0 -15"/>
 
     <default>
         <geom friction="1 0.1 0.1"/>
@@ -23,7 +23,7 @@ export const CAR_ARM_XML = `<mujoco>
             <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10"/>
 
             <body name="wheel_fl" pos="0.4 0.3 -0.1">
-                <joint name="wheel_fl_joint" type="hinge" axis="0 1 0" damping="1.5"/>
+                <joint name="wheel_fl_joint" type="hinge" axis="0 1 0" damping="0.1"/>
                 <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
             </body>
             <body name="wheel_fr" pos="0.4 -0.3 -0.1">
@@ -42,9 +42,9 @@ export const CAR_ARM_XML = `<mujoco>
     </worldbody>
 
     <actuator>
-        <motor joint="wheel_fl_joint" name="motor_wheel_fl" gear="2" ctrllimited="true" ctrlrange="-5 5"/>
-        <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="2" ctrllimited="true" ctrlrange="-5 5"/>
-        <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="2" ctrllimited="true" ctrlrange="-5 5"/>
-        <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="2" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_fl_joint" name="motor_wheel_fl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
     </actuator>
 </mujoco>`;
