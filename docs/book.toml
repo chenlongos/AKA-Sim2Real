@@ -1,3 +1,6 @@
 [book]
 authors = ["junbo.dai"]
-language = "en"
+language = "zh-CN"
+
+[output.html]
+mathjax-support = true
