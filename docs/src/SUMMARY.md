@@ -1,6 +1,6 @@
 # Summary
 
-- [第一部分：SimToReal](SimToReal/catalogue.md)
+- 第一部分：SimToReal
   - [概述](SimToReal/catalogue.md)
   - [快速开始](SimToReal/quickstart.md)
   - [数据采集](SimToReal/data-collection.md)
