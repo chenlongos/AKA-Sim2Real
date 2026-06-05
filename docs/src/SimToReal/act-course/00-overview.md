@@ -25,7 +25,9 @@ ACT（Action Chunking Transformer）来自论文 *Learning Fine-Grained Bimanual
 
 ACT 的解决方案：一次预测未来 $k$ 步的动作序列（称为一个 "chunk"）：
 
-$$ \hat{a}_{t:t+k} = \pi\sb{\theta}(o_t) $$
+$$
+\hat{a}_{t:t+k} = \pi\sb{\theta}(o_t)
+$$
 
 推理时，每次只执行 chunk 的第一个动作，然后重新预测。这相当于每次预测都"向前看"了 $k$ 步，减少了短视（myopic）行为。
 
