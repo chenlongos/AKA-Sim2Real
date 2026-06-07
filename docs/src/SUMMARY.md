@@ -33,3 +33,4 @@
   - [No.9 单腿跳跃机器人（Hopper）4 状态 FSM](MuJoCo/No_9.md)
   - [No.11 抛射体轨迹优化（NLopt 非线性规划）](MuJoCo/No_11.md)
   - [No.12 双摆 Lemniscate 数值逆运动学](MuJoCo/No_12.md)
+  - [No.13 双足步行机器人（Biped）—— 3 状态机并行控制](MuJoCo/No_13.md)
