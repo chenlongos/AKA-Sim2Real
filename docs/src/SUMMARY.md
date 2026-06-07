@@ -26,3 +26,4 @@
   - [No.2 交互式仿真与鼠标控制](MuJoCo/No_2.md)
   - [No.3 单摆控制仿真](MuJoCo/No_3.md)
   - [No.4 双摆控制仿真](MuJoCo/No_4.md)
+  - [No.5 双摆有限状态机（FSM）轨迹跟踪](MuJoCo/No_5.md)
