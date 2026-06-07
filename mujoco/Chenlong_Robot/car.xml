@@ -21,6 +21,35 @@
 
             <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10" contype="0" conaffinity="0"/>
 
+            <!-- ========== 4-DOF Arm (M1) ========== -->
+            <!-- 5 actuators: shoulder_pan + shoulder_lift + elbow + wrist_pitch + gripper -->
+            <body name="arm_base" pos="0 0 0.16">
+                <joint name="shoulder_pan" type="hinge" axis="0 0 1" range="-1.57 1.57" armature="0.05" damping="0.5"/>
+                <geom type="cylinder" size="0.05 0.04" rgba="0.9 0.5 0.1 1" mass="0.15"/>
+
+                <body name="upper_arm" pos="0 0 0.08">
+                    <joint name="shoulder_lift" type="hinge" axis="0 1 0" range="-1.57 1.57" armature="0.05" damping="0.5"/>
+                    <geom type="capsule" size="0.035" fromto="0 0 0 0 0 0.25" rgba="0.9 0.5 0.1 1" mass="0.12"/>
+
+                    <body name="forearm" pos="0 0 0.25">
+                        <joint name="elbow" type="hinge" axis="0 1 0" range="-2.0 2.0" armature="0.05" damping="0.5"/>
+                        <geom type="capsule" size="0.03" fromto="0 0 0 0 0 0.20" rgba="0.9 0.5 0.1 1" mass="0.10"/>
+
+                        <body name="wrist" pos="0 0 0.20">
+                            <joint name="wrist_pitch" type="hinge" axis="0 1 0" range="-1.57 1.57" armature="0.05" damping="0.5"/>
+                            <geom type="capsule" size="0.025" fromto="0 0 0 0 0 0.08" rgba="0.9 0.5 0.1 1" mass="0.05"/>
+
+                            <body name="gripper" pos="0 0 0.08">
+                                <joint name="gripper" type="slide" axis="1 0 0" range="-0.03 0.03" armature="0.01" damping="1.0"/>
+                                <geom type="box" pos="0 0 0" size="0.04 0.04 0.04" rgba="0.3 0.3 0.3 1" mass="0.03"/>
+                                <site name="end_effector" pos="0 0 0" size="0.015" rgba="1 0 0 1"/>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+            <!-- ========== /Arm ========== -->
+
             <body name="wheel_fl" pos="0.4 0.3 -0.1">
                 <joint name="wheel_fl_joint" type="hinge" axis="0 1 0"/>
                 <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
@@ -45,5 +74,11 @@
         <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
         <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
         <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <!-- Arm position servos (M1) -->
+        <position name="pservo_shoulder_pan"  joint="shoulder_pan"  kp="50" kv="5"/>
+        <position name="pservo_shoulder_lift" joint="shoulder_lift" kp="50" kv="5"/>
+        <position name="pservo_elbow"          joint="elbow"         kp="50" kv="5"/>
+        <position name="pservo_wrist_pitch"    joint="wrist_pitch"   kp="30" kv="3"/>
+        <position name="pservo_gripper"        joint="gripper"       kp="100" kv="10"/>
     </actuator>
 </mujoco>
