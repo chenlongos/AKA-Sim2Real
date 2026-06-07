@@ -32,3 +32,4 @@
   - [No.8 双摆约束力「移交」仿真](MuJoCo/No_8.md)
   - [No.9 单腿跳跃机器人（Hopper）4 状态 FSM](MuJoCo/No_9.md)
   - [No.11 抛射体轨迹优化（NLopt 非线性规划）](MuJoCo/No_11.md)
+  - [No.12 双摆 Lemniscate 数值逆运动学](MuJoCo/No_12.md)
