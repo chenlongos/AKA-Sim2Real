@@ -1,0 +1,23 @@
+# .github/workflows/sync-cnb.yml
+name: Sync to CNB
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Sync to CNB Repository
+        uses: docker://tencentcom/git-sync
+        env:
+          PLUGIN_TARGET_URL: "https://cnb.cool/opencamp/chenlongos/AKA-Sim2Real.git"
+          PLUGIN_AUTH_TYPE: "https"
+          PLUGIN_USERNAME: "cnb"
+          PLUGIN_PASSWORD: ${{ secrets.GIT_PASSWORD }}
+          PLUGIN_FORCE: "true"
