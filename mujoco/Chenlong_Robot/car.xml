@@ -1,14 +1,35 @@
 <mujoco>
-    <option timestep="0.001" integrator="RK4"/>
+    <option timestep="0.001" integrator="RK4" gravity="0 0 -15"/>
 
     <default>
         <geom friction="1 0.1 0.1"/>
     </default>
 
+    <visual>
+        <headlight ambient="0.7 0.7 0.7"/>
+        <global offwidth="1920" offheight="1080"/>
+    </visual>
+
     <worldbody>
-        <light diffuse=".5 .5 .5" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
+        <!-- 3-point studio lighting for M2: brighter + multiple sources -->
+        <light diffuse="0.9 0.9 0.9" pos="0 0 6"  dir="0 0 -1"  castshadow="true"/>
+        <light diffuse="0.4 0.4 0.4" pos="4  4 4"  dir="-1 -1 -1"/>
+        <light diffuse="0.4 0.4 0.4" pos="-4 4 4"  dir="1 -1 -1"/>
+        <light diffuse="0.3 0.3 0.4" pos="0 -4 4"  dir="0 1 -1"/>
 
         <geom type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1" friction="1.5 0.005 0.0001"/>
+
+        <!-- ========== Target object for M2 (mobile manipulation task) ========== -->
+        <!-- Pedestal (fixed, provides a stable platform) -->
+        <body name="pedestal" pos="1.5 0 0">
+            <geom type="cylinder" size="0.15 0.2" rgba="0.4 0.4 0.5 1" mass="2" friction="1.5 0.005 0.0001"/>
+        </body>
+
+        <!-- Target box (free joint, can be lifted) -->
+        <body name="target_box" pos="1.5 0 0.45">
+            <freejoint/>
+            <geom type="box" size="0.04 0.04 0.04" rgba="1.0 0.85 0.2 1" mass="0.05" friction="1.5 0.1 0.1"/>
+        </body>
 
         <body name="car" pos="0 0 0.22">
             <freejoint/>
