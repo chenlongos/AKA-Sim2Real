@@ -23,10 +23,16 @@ class Config:
     REDIS_URL = os.getenv("REDIS_URL", None)
 
     # CORS 配置（逗号分隔多个来源）
-    CORS_ORIGINS = os.getenv(
+    _cors = os.getenv(
         "CORS_ORIGINS",
         "http://localhost:5175,https://act.chenlongrobot.com"
-    ).split(",")
+    )
+    # CNB 预览环境自动注入域名，无需手动配 CORS
+    _cnb_preview = os.getenv("CNB_VSCODE_PREVIEW_URL", "")
+    if _cnb_preview:
+        _cnb_preview = _cnb_preview.rstrip("/")
+        _cors = f"{_cors},{_cnb_preview}"
+    CORS_ORIGINS = _cors.split(",")
 
     # 模拟配置
     MAP_WIDTH = 800
