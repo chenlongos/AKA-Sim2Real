@@ -1,0 +1,57 @@
+# =============================================================================
+# AKA-Sim2Real Docker Compose
+# 一键启动: docker compose up -d
+# =============================================================================
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: aka-sim2real-redis
+    restart: unless-stopped
+
+  aka-sim2real:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # GPU 构建: 改为 cu124 / cu121 / cu118
+        CUDA: "cpu"
+    image: aka-sim2real:latest
+    container_name: aka-sim2real
+    ports:
+      - "80:80"
+    depends_on:
+      - redis
+
+    volumes:
+      # 挂载整个 output 目录
+      # 结构: output/train/{user_id}/model.pt, output/dataset/{user_id}/
+      - ./output:/opt/aka-sim/output
+      - ./logs:/var/log/aka-sim
+
+    environment:
+      # 生产环境替换为实际域名（这是唯一需要改的变量，其余都有默认值）
+      - CORS_ORIGINS=http://localhost:5175,http://localhost
+      # Redis 连接（多 worker + Socket.IO 必需）
+      - REDIS_URL=redis://redis:6379/0
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8g
+        # GPU: 取消注释下面这段
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
+
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

@@ -1,0 +1,30 @@
+# =============================================================================
+# CNB (cnb.cool) — 自动构建 + 长时间保活 + Web 公网访问
+# push main → Docker 构建 → 启动预览容器 → 公网 URL
+# =============================================================================
+
+main:
+  push:
+    - stages:
+        - name: build-and-push
+          script: |
+            docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest .
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest
+      services:
+        - docker
+
+$:
+  vscode:
+    - runner:
+        cpus: 16
+      services:
+        - docker
+        - name: aka-sim2real
+          options:
+            onlyPreview: true
+            # 容器监听 8686 (entrypoint 自动适配 $PORT)
+            launch: docker run -d --network host -e PORT=8686 ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest
+            # 保活 7 天无心跳才关闭（单位毫秒），只要有访问就重置计时
+            # 默认 10 分钟，设为 604800000 (7天) 实现长时间保活
+            keepAliveTimeout: 604800000
+            daemon: true

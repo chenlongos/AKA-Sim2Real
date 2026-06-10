@@ -1,0 +1,46 @@
+# Dependencies
+node_modules
+ui/node_modules
+
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+
+# Test / coverage
+.coverage
+htmlcov
+tests/
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Build artifacts
+ui/dist/
+*.log
+
+# Docs / dev
+docs/
+*.md
+!README.md
+
+# Misc
+output*
+demo_*
+.cursor/
+.claude/

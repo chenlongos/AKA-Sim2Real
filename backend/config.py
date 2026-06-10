@@ -19,6 +19,9 @@ class Config:
     ACTION_CHUNK_SIZE = int(os.getenv("ACTION_CHUNK_SIZE", "8"))
     HIDDEN_DIM = int(os.getenv("HIDDEN_DIM", "512"))
 
+    # Redis 配置（多 worker + Socket.IO 必需）
+    REDIS_URL = os.getenv("REDIS_URL", None)
+
     # CORS 配置（逗号分隔多个来源）
     CORS_ORIGINS = os.getenv(
         "CORS_ORIGINS",

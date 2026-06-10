@@ -71,12 +71,18 @@ app = FastAPI(
 )
 
 # Socket.IO 服务器
-sio = AsyncServer(
+sio_kwargs = dict(
     async_mode="asgi",
     cors_allowed_origins=config.CORS_ORIGINS,
     ping_timeout=60,
     ping_interval=25,
 )
+if config.REDIS_URL:
+    from socketio import AsyncRedisManager
+    sio_kwargs["client_manager"] = AsyncRedisManager(config.REDIS_URL, write_only=False)
+    logger.info(f"Socket.IO Redis manager: {config.REDIS_URL}")
+
+sio = AsyncServer(**sio_kwargs)
 
 # 注册三个独立的命名空间
 sio.register_namespace(SimNamespace("/sim"))

@@ -22,5 +22,6 @@ pytest>=8.0.0
 
 python-multipart
 einops
+redis>=5.0.0
 
 mujoco
