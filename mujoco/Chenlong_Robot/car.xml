@@ -6,16 +6,17 @@
     </default>
 
     <visual>
-        <headlight ambient="0.7 0.7 0.7"/>
+        <headlight ambient="0.5 0.5 0.5" diffuse="0.3 0.3 0.3" specular="0.1 0.1 0.1"/>
         <global offwidth="1920" offheight="1080"/>
     </visual>
 
     <worldbody>
-        <!-- 3-point studio lighting for M2: brighter + multiple sources -->
-        <light diffuse="0.9 0.9 0.9" pos="0 0 6"  dir="0 0 -1"  castshadow="true"/>
+        <!-- Balanced 5-point lighting: no shadows, symmetric coverage -->
+        <light diffuse="0.6 0.6 0.6" pos="0 0 6"  dir="0 0 -1"/>
         <light diffuse="0.4 0.4 0.4" pos="4  4 4"  dir="-1 -1 -1"/>
         <light diffuse="0.4 0.4 0.4" pos="-4 4 4"  dir="1 -1 -1"/>
-        <light diffuse="0.3 0.3 0.4" pos="0 -4 4"  dir="0 1 -1"/>
+        <light diffuse="0.4 0.4 0.4" pos="4 -4 4"  dir="-1 1 -1"/>
+        <light diffuse="0.4 0.4 0.4" pos="-4 -4 4"  dir="1 1 -1"/>
 
         <geom type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1" friction="1.5 0.005 0.0001"/>
 
@@ -45,19 +46,19 @@
             <!-- ========== 4-DOF Arm (M1) ========== -->
             <!-- 5 actuators: shoulder_pan + shoulder_lift + elbow + wrist_pitch + gripper -->
             <body name="arm_base" pos="0 0 0.16">
-                <joint name="shoulder_pan" type="hinge" axis="0 0 1" range="-1.57 1.57" armature="0.05" damping="0.5"/>
+                <joint name="shoulder_pan" type="hinge" axis="0 0 1" range="-90 90" armature="0.05" damping="0.5"/>
                 <geom type="cylinder" size="0.05 0.04" rgba="0.9 0.5 0.1 1" mass="0.15"/>
 
                 <body name="upper_arm" pos="0 0 0.08">
-                    <joint name="shoulder_lift" type="hinge" axis="0 1 0" range="-1.57 1.57" armature="0.05" damping="0.5"/>
+                    <joint name="shoulder_lift" type="hinge" axis="0 1 0" range="-90 90" armature="0.05" damping="0.5"/>
                     <geom type="capsule" size="0.035" fromto="0 0 0 0 0 0.25" rgba="0.9 0.5 0.1 1" mass="0.12"/>
 
                     <body name="forearm" pos="0 0 0.25">
-                        <joint name="elbow" type="hinge" axis="0 1 0" range="-2.0 2.0" armature="0.05" damping="0.5"/>
+                        <joint name="elbow" type="hinge" axis="0 1 0" range="-115 115" armature="0.05" damping="0.5"/>
                         <geom type="capsule" size="0.03" fromto="0 0 0 0 0 0.20" rgba="0.9 0.5 0.1 1" mass="0.10"/>
 
                         <body name="wrist" pos="0 0 0.20">
-                            <joint name="wrist_pitch" type="hinge" axis="0 1 0" range="-1.57 1.57" armature="0.05" damping="0.5"/>
+                            <joint name="wrist_pitch" type="hinge" axis="0 1 0" range="-90 90" armature="0.05" damping="0.5"/>
                             <geom type="capsule" size="0.025" fromto="0 0 0 0 0 0.08" rgba="0.9 0.5 0.1 1" mass="0.05"/>
 
                             <body name="gripper" pos="0 0 0.08">
@@ -95,11 +96,16 @@
         <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
         <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
         <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
-        <!-- Arm position servos (M1) -->
-        <position name="pservo_shoulder_pan"  joint="shoulder_pan"  kp="50" kv="5"/>
-        <position name="pservo_shoulder_lift" joint="shoulder_lift" kp="50" kv="5"/>
-        <position name="pservo_elbow"          joint="elbow"         kp="50" kv="5"/>
-        <position name="pservo_wrist_pitch"    joint="wrist_pitch"   kp="30" kv="3"/>
-        <position name="pservo_gripper"        joint="gripper"       kp="100" kv="10"/>
+        <!-- Arm position servos (M3) — higher gains for faster response -->
+        <position name="pservo_shoulder_pan"  joint="shoulder_pan"  kp="200" kv="10"/>
+        <position name="pservo_shoulder_lift" joint="shoulder_lift" kp="200" kv="10"/>
+        <position name="pservo_elbow"          joint="elbow"         kp="200" kv="10"/>
+        <position name="pservo_wrist_pitch"    joint="wrist_pitch"   kp="120" kv="6"/>
+        <position name="pservo_gripper"        joint="gripper"       kp="300" kv="15"/>
     </actuator>
+
+    <equality>
+        <weld name="grasp_weld" body1="gripper" body2="target_box"
+              active="false" solref="0.02 1" solimp="0.9 0.95 0.001"/>
+    </equality>
 </mujoco>
