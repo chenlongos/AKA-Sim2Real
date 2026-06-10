@@ -24,7 +24,18 @@ $:
             onlyPreview: true
             # 容器监听 8686 (entrypoint 自动适配 $PORT)
             launch: docker run -d --network host -e PORT=8686 ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest
-            # 保活 7 天无心跳才关闭（单位毫秒），只要有访问就重置计时
-            # 默认 10 分钟，设为 604800000 (7天) 实现长时间保活
+            # CNB 边缘代理处理 CORS，无需业务代码操心
+            cors:
+              allowOrigins:
+                - "*"
+              allowMethods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - OPTIONS
+              allowHeaders:
+                - "*"
+            # 保活 7 天
             keepAliveTimeout: 604800000
             daemon: true
