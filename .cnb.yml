@@ -19,7 +19,7 @@ $:
         cpus: 16
       services:
         - docker
-        - name: aka-sim2real
+        - name: vscode
           options:
             onlyPreview: true
             # 容器监听 8686 (entrypoint 自动适配 $PORT)
