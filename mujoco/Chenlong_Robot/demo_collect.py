@@ -85,11 +85,11 @@ COLLECT_HZ    = 10     # data sampling rate
 NUM_EPISODES  = 5      # number of task repetitions (use --episodes N to override)
 
 # Home / stowed arm pose (joint angles, radians)
-STOWED = np.array([0.0, 0.5, -1.0, 0.0, 0.0])  # [pan, lift, elbow, wrist, gripper]
+STOWED = np.array([0.0, 0.5, -1.0, 0.0, 0.04, 0.04])  # [pan, lift, elbow, wrist, finger_l, finger_r]
 
 # Joint limits (radians / meters for gripper slide) — must match car.xml joint ranges
-Q_MIN = np.array([-3.14, -2.62, -2.62, -2.62])
-Q_MAX = np.array([ 3.14,  2.62,  2.62,  2.62])
+Q_MIN = np.array([-6.28, -6.28, -6.28, -6.28])  # ±360° (matches car.xml)
+Q_MAX = np.array([ 6.28,  6.28,  6.28,  6.28])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FSM state machine  (No.5: FSM pattern    No.9: position-triggered transitions)
@@ -117,9 +117,10 @@ def _cache_ids(m):
     for name in ("car", "arm_base", "target_box"):
         _ids[name] = mj.mj_name2id(m, mj.mjtObj.mjOBJ_BODY, name)
     _ids["ee"]    = mj.mj_name2id(m, mj.mjtObj.mjOBJ_SITE, "end_effector")
-    _ids["gripper"] = mj.mj_name2id(m, mj.mjtObj.mjOBJ_BODY, "gripper")
+    _ids["gripper"] = mj.mj_name2id(m, mj.mjtObj.mjOBJ_BODY, "gripper_palm")
 
-    arm_names = ["shoulder_pan", "shoulder_lift", "elbow", "wrist_pitch", "gripper"]
+    arm_names = ["shoulder_pan", "shoulder_lift", "elbow", "wrist_pitch",
+                 "finger_l_j", "finger_r_j"]
     global _arm_qpos_adr, _arm_dof_adr
     _arm_qpos_adr = [m.jnt_qposadr[m.joint(n).id] for n in arm_names]
     _arm_dof_adr  = [m.jnt_dofadr[m.joint(n).id]  for n in arm_names]
@@ -181,7 +182,7 @@ def numerical_ik(target_world, arm_base_pos, q_guess=None, max_iter=40,
 
     # If FK model unavailable, return analytical result directly
     if m is None or d is None:
-        return np.array([q[0], q[1], q[2], q[3], gripper_cmd])
+        return np.array([q[0], q[1], q[2], q[3], gripper_cmd, gripper_cmd])
 
     # Jacobian refinement (No.11: numerical optimisation)
     d.qpos[:] = data.qpos[:]
@@ -189,7 +190,7 @@ def numerical_ik(target_world, arm_base_pos, q_guess=None, max_iter=40,
     mj.mj_fwdPosition(m, d)
 
     for _ in range(max_iter):
-        for adr, val in zip(_arm_qpos_adr, [q[0], q[1], q[2], q[3], gripper_cmd]):
+        for adr, val in zip(_arm_qpos_adr, [q[0], q[1], q[2], q[3], gripper_cmd, gripper_cmd]):
             d.qpos[adr] = val
         mj.mj_fwdPosition(m, d)
         ee = d.site_xpos[_ids["ee"]]
@@ -209,7 +210,7 @@ def numerical_ik(target_world, arm_base_pos, q_guess=None, max_iter=40,
         q[3] = float(np.clip(-(q[1] + q[2]), -1.57, 1.57))
 
     q[3] = float(np.clip(-(q[1] + q[2]), -1.57, 1.57))
-    return np.array([q[0], q[1], q[2], q[3], gripper_cmd])
+    return np.array([q[0], q[1], q[2], q[3], gripper_cmd, gripper_cmd])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # No.5 : Cubic polynomial trajectory generation
@@ -260,10 +261,11 @@ class DataCollector:
         self.reset()
 
     def reset(self):
-        self.joint_states   = []   # list of (12,) float
+        self.joint_states   = []   # list of (13,) float
         self.ee_positions   = []   # list of (3,) float
         self.target_positions = [] # list of (3,) float
-        self.actions        = []   # list of (9,) float
+        self.actions        = []   # list of (10,) float
+        self.sensordata     = []   # list of (nsensordata,) float — raw sensor readings
         self.fsm_states     = []   # list of int
         self.timestamps     = []   # list of float
         self._last_coll_t   = -0.2
@@ -279,6 +281,7 @@ class DataCollector:
         self.ee_positions.append(ee.copy())
         self.target_positions.append(target.copy())
         self.actions.append(last_action.copy())
+        self.sensordata.append(data.sensordata.copy())
         self.fsm_states.append(fsm)
         self.timestamps.append(t)
 
@@ -299,6 +302,7 @@ class DataCollector:
             ee_position=np.array(self.ee_positions, dtype=np.float32),
             target_position=np.array(self.target_positions, dtype=np.float32),
             actions=np.array(self.actions, dtype=np.float32),
+            sensordata=np.array(self.sensordata, dtype=np.float32),
             fsm_state=np.array(self.fsm_states, dtype=np.int8),
             timestamps=np.array(self.timestamps, dtype=np.float32),
         )
@@ -315,7 +319,7 @@ class SimState:
         self.fsm_enter = 0.0
         self.last_print = -1.0
         self.frozen_arm = None       # cached arm pose during DRIVE_BACK
-        self.last_action = np.zeros(9, dtype=float)
+        self.last_action = np.zeros(10, dtype=float)
         # Cubic trajectory state  (No.5)
         self._traj_coeffs = None     # (5, 4) array or None
         self._traj_t0 = 0.0
@@ -346,34 +350,32 @@ def _compute_arm_target(fsm, st):
 
     if fsm == FSM_REACH:
         goal = TARGET_POS.copy(); goal[2] += 0.15
-        st._cached_target = numerical_ik(goal, arm_base, cur_q, gripper_cmd=0.0)
+        st._cached_target = numerical_ik(goal, arm_base, cur_q, gripper_cmd=0.04)  # open fingers
         return
 
     if fsm in (FSM_LOWER, FSM_GRASP):
-        # Target slightly above actual box (arm can't reach all the way down)
         goal = TARGET_POS.copy(); goal[2] = max(TARGET_POS[2], _target_pos(data)[2] + 0.10)
-        st._cached_target = numerical_ik(goal, arm_base, cur_q, gripper_cmd=-0.025)
+        st._cached_target = numerical_ik(goal, arm_base, cur_q, gripper_cmd=0.0)   # close fingers
         return
 
     if fsm == FSM_LIFT:
-        goal = TARGET_POS.copy(); goal[2] += 0.15  # modest lift
-        st._cached_target = numerical_ik(goal, arm_base, cur_q, gripper_cmd=-0.025)
+        goal = TARGET_POS.copy(); goal[2] += 0.15
+        st._cached_target = numerical_ik(goal, arm_base, cur_q, gripper_cmd=0.0)   # hold
         return
 
     if fsm == FSM_DRIVE_BACK:
         if st.frozen_arm is None:
             goal = TARGET_POS.copy(); goal[2] += 0.15
-            st.frozen_arm = numerical_ik(goal, arm_base, cur_q, gripper_cmd=-0.025).copy()
+            st.frozen_arm = numerical_ik(goal, arm_base, cur_q, gripper_cmd=0.0).copy()
         st._cached_target = st.frozen_arm
         return
 
     if fsm == FSM_PLACE:
-        st._cached_target = numerical_ik(PLACE_POS, arm_base, cur_q, gripper_cmd=-0.025)
+        st._cached_target = numerical_ik(PLACE_POS, arm_base, cur_q, gripper_cmd=0.0)  # hold
         return
 
     if fsm == FSM_RELEASE:
-        q = numerical_ik(PLACE_POS, arm_base, cur_q, gripper_cmd=0.025)
-        st._cached_target = q
+        st._cached_target = numerical_ik(PLACE_POS, arm_base, cur_q, gripper_cmd=0.04)  # open
         return
 
     st._cached_target = STOWED.copy()
@@ -474,7 +476,7 @@ def controller(m, d):
             if np.linalg.norm(state._cached_target - old_target) > 0.03:
                 cur_q = _arm_qpos(data)
                 state._traj_coeffs = np.array([_cubic_coeffs(
-                    cur_q[j], state._cached_target[j], TRAJ_DURATION) for j in range(5)])
+                    cur_q[j], state._cached_target[j], TRAJ_DURATION) for j in range(6)])
                 state._traj_t0 = data.time
                 state._traj_T  = TRAJ_DURATION
 
@@ -484,13 +486,13 @@ def controller(m, d):
     if (state._traj_coeffs is not None and
         data.time - state._traj_t0 < state._traj_T):
         t = data.time - state._traj_t0
-        arm_cmd = np.array([_eval_cubic(state._traj_coeffs[j], t)[0] for j in range(5)])
+        arm_cmd = np.array([_eval_cubic(state._traj_coeffs[j], t)[0] for j in range(6)])
     else:
         arm_cmd = state._cached_target
         state._traj_coeffs = None
 
     # Write arm position-servo targets  (No.3: PD via <position> actuators)
-    for i in range(5):
+    for i in range(6):
         d.ctrl[4 + i] = arm_cmd[i]
 
     # Store action for data collection
@@ -528,7 +530,7 @@ def controller(m, d):
         cur_q = _arm_qpos(data)
         state._traj_coeffs = np.array([_cubic_coeffs(cur_q[j],
                                        state._cached_target[j], TRAJ_DURATION)
-                                       for j in range(5)])
+                                       for j in range(6)])
         state._traj_t0 = data.time
         state._traj_T  = TRAJ_DURATION
         # Log dynamics once per phase change  (No.4)
@@ -617,8 +619,8 @@ def _plot_summary():
 
     # (2) Joint angles
     ax = axes[0, 1]
-    names = ["pan", "lift", "elbow", "wrist", "gripper"]
-    for j in range(5):
+    names = ["pan", "lift", "elbow", "wrist", "finger_l", "finger_r"]
+    for j in range(6):
         ax.plot(t, js[:, 7+j], label=names[j])
     ax.set_xlabel("Time (s)"); ax.set_ylabel("Angle (rad)")
     ax.set_title("Arm Joint Angles"); ax.legend(fontsize=7); ax.grid(True, alpha=0.3)
