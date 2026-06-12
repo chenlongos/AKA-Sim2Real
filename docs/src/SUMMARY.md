@@ -34,3 +34,4 @@
   - [No.11 抛射体轨迹优化（NLopt 非线性规划）](MuJoCo/No_11.md)
   - [No.12 双摆 Lemniscate 数值逆运动学](MuJoCo/No_12.md)
   - [No.13 双足步行机器人（Biped）—— 3 状态机并行控制](MuJoCo/No_13.md)
+  - [统一 Demo：移动操作机器人 + 数据采集](MuJoCo/demo_collect.md)
