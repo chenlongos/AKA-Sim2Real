@@ -1,0 +1,144 @@
+<mujoco>
+    <option timestep="0.001" integrator="RK4" gravity="0 0 -15"/>
+
+    <default>
+        <geom friction="1 0.1 0.1"/>
+    </default>
+
+    <visual>
+        <headlight ambient="0.5 0.5 0.5" diffuse="0.3 0.3 0.3" specular="0.1 0.1 0.1"/>
+        <global offwidth="1920" offheight="1080"/>
+    </visual>
+
+    <worldbody>
+        <light diffuse="0.6 0.6 0.6" pos="0 0 6"  dir="0 0 -1"/>
+        <light diffuse="0.4 0.4 0.4" pos="4  4 4"  dir="-1 -1 -1"/>
+        <light diffuse="0.4 0.4 0.4" pos="-4 4 4"  dir="1 -1 -1"/>
+        <light diffuse="0.4 0.4 0.4" pos="4 -4 4"  dir="-1 1 -1"/>
+        <light diffuse="0.4 0.4 0.4" pos="-4 -4 4"  dir="1 1 -1"/>
+
+        <geom type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1" friction="2.5 1.0 0.001"/>
+
+<!-- Target box on ground (bottom at z=0) -->
+        <body name="target_box" pos="1.5 0 0.04">
+            <freejoint/>
+            <geom type="box" size="0.04 0.04 0.04" rgba="1.0 0.85 0.2 1" mass="0.05" friction="1.5 0.1 0.1"/>
+        </body>
+
+        <body name="car" pos="0 0 0.22">
+            <freejoint/>
+
+            <geom type="box" size="0.5 0.3 0.15" rgba="0.2 0.6 0.8 1" mass="10" contype="0" conaffinity="0"/>
+
+            <!-- ========== 4-DOF Arm (2× scale, wide joint ranges) ========== -->
+            <body name="arm_base" pos="0 0 0.22">
+                <joint name="shoulder_pan" type="hinge" axis="0 0 1" range="-360 360" armature="0.10" damping="0.5"/>
+                <geom type="cylinder" size="0.08 0.07" rgba="0.9 0.5 0.1 1" mass="0.35"/>
+
+                <body name="upper_arm" pos="0 0 0.12">
+                    <joint name="shoulder_lift" type="hinge" axis="0 1 0" range="-360 360" armature="0.10" damping="0.5"/>
+                    <geom type="capsule" size="0.065" fromto="0 0 0 0 0 0.50" rgba="0.9 0.5 0.1 1" mass="0.40"/>
+
+                    <body name="forearm" pos="0 0 0.50">
+                        <joint name="elbow" type="hinge" axis="0 1 0" range="-360 360" armature="0.10" damping="0.5"/>
+                        <geom type="capsule" size="0.055" fromto="0 0 0 0 0 0.40" rgba="0.9 0.5 0.1 1" mass="0.30"/>
+
+                        <body name="wrist" pos="0 0 0.40">
+                            <joint name="wrist_pitch" type="hinge" axis="0 1 0" range="-360 360" armature="0.06" damping="0.5"/>
+                            <geom type="capsule" size="0.045" fromto="0 0 0 0 0 0.16" rgba="0.9 0.5 0.1 1" mass="0.15"/>
+
+                            <!-- Two-finger parallel gripper -->
+                            <body name="gripper_palm" pos="0 0 0.16">
+                                <geom type="box" pos="0 0 -0.03" size="0.04 0.06 0.03" rgba="0.3 0.3 0.3 1" mass="0.10"/>
+
+                                <body name="finger_l" pos="0 0.03 0.04">
+                                    <joint name="finger_l_j" type="slide" axis="0 1 0" range="0 0.04" armature="0.01" damping="1.0"/>
+                                    <geom type="box" size="0.015 0.008 0.06" rgba="0.5 0.5 0.5 1" mass="0.03"/>
+                                    <site name="touch_l" pos="0 -0.01 0" size="0.004" rgba="0 1 0 0.5"/>
+                                </body>
+
+                                <body name="finger_r" pos="0 -0.03 0.04">
+                                    <joint name="finger_r_j" type="slide" axis="0 -1 0" range="0 0.04" armature="0.01" damping="1.0"/>
+                                    <geom type="box" size="0.015 0.008 0.06" rgba="0.5 0.5 0.5 1" mass="0.03"/>
+                                    <site name="touch_r" pos="0 0.01 0" size="0.004" rgba="0 1 0 0.5"/>
+                                </body>
+
+                                <site name="end_effector" pos="0 0 0.05" size="0.02" rgba="1 0 0 1"/>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+            <!-- ========== /Arm ========== -->
+
+            <body name="wheel_fl" pos="0.4 0.3 -0.1">
+                <joint name="wheel_fl_joint" type="hinge" axis="0 1 0" damping="0.5"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
+            </body>
+            <body name="wheel_fr" pos="0.4 -0.3 -0.1">
+                <joint name="wheel_fr_joint" type="hinge" axis="0 1 0" damping="0.5"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
+            </body>
+            <body name="wheel_rl" pos="-0.4 0.3 -0.1">
+                <joint name="wheel_rl_joint" type="hinge" axis="0 1 0" damping="0.5"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
+            </body>
+            <body name="wheel_rr" pos="-0.4 -0.3 -0.1">
+                <joint name="wheel_rr_joint" type="hinge" axis="0 1 0" damping="0.5"/>
+                <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <motor joint="wheel_fl_joint" name="motor_wheel_fl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <position name="pservo_shoulder_pan"  joint="shoulder_pan"  kp="200" kv="10"/>
+        <position name="pservo_shoulder_lift" joint="shoulder_lift" kp="200" kv="10"/>
+        <position name="pservo_elbow"          joint="elbow"         kp="200" kv="10"/>
+        <position name="pservo_wrist_pitch"    joint="wrist_pitch"   kp="120" kv="6"/>
+        <position name="pservo_finger_l"      joint="finger_l_j"    kp="200" kv="10"/>
+        <position name="pservo_finger_r"      joint="finger_r_j"    kp="200" kv="10"/>
+    </actuator>
+
+    <equality>
+        <weld name="grasp_weld" body1="gripper_palm" body2="target_box"
+              active="false" solref="0.02 1" solimp="0.9 0.95 0.001"/>
+    </equality>
+
+    <sensor>
+        <!-- ===== Arm joint sensors (6 joints × 2 = 12) ===== -->
+        <jointpos joint="shoulder_pan"  name="arm_pan_pos"/>
+        <jointvel joint="shoulder_pan"  name="arm_pan_vel"/>
+        <jointpos joint="shoulder_lift" name="arm_lift_pos"/>
+        <jointvel joint="shoulder_lift" name="arm_lift_vel"/>
+        <jointpos joint="elbow"         name="arm_elbow_pos"/>
+        <jointvel joint="elbow"         name="arm_elbow_vel"/>
+        <jointpos joint="wrist_pitch"   name="arm_wrist_pos"/>
+        <jointvel joint="wrist_pitch"   name="arm_wrist_vel"/>
+        <jointpos joint="finger_l_j"    name="arm_finger_l_pos"/>
+        <jointvel joint="finger_l_j"    name="arm_finger_l_vel"/>
+        <jointpos joint="finger_r_j"    name="arm_finger_r_pos"/>
+        <jointvel joint="finger_r_j"    name="arm_finger_r_vel"/>
+
+        <!-- ===== Wheel joint sensors (4 joints × 2 = 8) ===== -->
+        <jointpos joint="wheel_fl_joint" name="wheel_fl_pos"/>
+        <jointvel joint="wheel_fl_joint" name="wheel_fl_vel"/>
+        <jointpos joint="wheel_fr_joint" name="wheel_fr_pos"/>
+        <jointvel joint="wheel_fr_joint" name="wheel_fr_vel"/>
+        <jointpos joint="wheel_rl_joint" name="wheel_rl_pos"/>
+        <jointvel joint="wheel_rl_joint" name="wheel_rl_vel"/>
+        <jointpos joint="wheel_rr_joint" name="wheel_rr_pos"/>
+        <jointvel joint="wheel_rr_joint" name="wheel_rr_vel"/>
+
+        <!-- ===== End-effector world position + velocity ===== -->
+        <framepos    objtype="site" objname="end_effector" name="ee_pos"/>
+        <framelinvel objtype="site" objname="end_effector" name="ee_vel"/>
+
+        <!-- ===== Finger touch sensors ===== -->
+        <touch site="touch_l" name="finger_l_touch"/>
+        <touch site="touch_r" name="finger_r_touch"/>
+    </sensor>
+</mujoco>
