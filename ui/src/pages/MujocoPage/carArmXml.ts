@@ -1,5 +1,3 @@
-import { MAZE_XML } from './mazeXml';
-
 export const CAR_ARM_XML = `<mujoco>
     <option timestep="0.001" integrator="RK4" gravity="0 0 -15"/>
 
@@ -9,9 +7,9 @@ export const CAR_ARM_XML = `<mujoco>
 
     <worldbody>
         <light diffuse=".5 .5 .5" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
-        ${MAZE_XML}
+        <geom type="plane" size="20 20 0.1" rgba="0.8 0.8 0.8 1" friction="2.5 0.005 0.0001"/>
 
-        <body name="car" pos="3 -3 0.22">
+        <body name="car" pos="0 -6 0.22" euler="0 0 90">
             <freejoint/>
 
             <body name="camera_body" pos="0.4 0 0.2" euler="0 0 -90">
@@ -39,12 +37,17 @@ export const CAR_ARM_XML = `<mujoco>
                 <geom type="cylinder" size="0.12 0.05" euler="90 0 0" rgba="0.1 0.1 0.1 1" mass="1" friction="1.5 0.005 0.0001"/>
             </body>
         </body>
+
+        <body name="target_ball" pos="0 0 0.25">
+            <freejoint name="target_ball_free"/>
+            <geom type="sphere" size="0.25" rgba="1 0.05 0.03 1" mass="0.5" friction="1 0.005 0.0001"/>
+        </body>
     </worldbody>
 
     <actuator>
-        <motor joint="wheel_fl_joint" name="motor_wheel_fl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
-        <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
-        <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
-        <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="3" ctrllimited="true" ctrlrange="-5 5"/>
+        <motor joint="wheel_fl_joint" name="motor_wheel_fl" gear="3" ctrllimited="true" ctrlrange="-8 8"/>
+        <motor joint="wheel_fr_joint" name="motor_wheel_fr" gear="3" ctrllimited="true" ctrlrange="-8 8"/>
+        <motor joint="wheel_rl_joint" name="motor_wheel_rl" gear="3" ctrllimited="true" ctrlrange="-8 8"/>
+        <motor joint="wheel_rr_joint" name="motor_wheel_rr" gear="3" ctrllimited="true" ctrlrange="-8 8"/>
     </actuator>
 </mujoco>`;

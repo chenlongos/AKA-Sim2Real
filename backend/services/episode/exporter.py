@@ -176,17 +176,23 @@ class LeRobotDatasetMetadata:
         batch_count = int(values.shape[0])
         batch_min = values.min(axis=0).astype(np.float64)
         batch_max = values.max(axis=0).astype(np.float64)
+        batch_sum = values.sum(axis=0).astype(np.float64)
+        batch_sumsq = np.square(values).sum(axis=0).astype(np.float64)
 
         existing = self._stats_accumulators.get(key)
         if existing is None:
             accum = {
                 "count": batch_count,
+                "sum": batch_sum,
+                "sumsq": batch_sumsq,
                 "min": batch_min,
                 "max": batch_max,
             }
         else:
             accum = {
                 "count": existing["count"] + batch_count,
+                "sum": existing.get("sum", np.zeros_like(batch_sum)) + batch_sum,
+                "sumsq": existing.get("sumsq", np.zeros_like(batch_sumsq)) + batch_sumsq,
                 "min": np.minimum(existing["min"], batch_min),
                 "max": np.maximum(existing["max"], batch_max),
             }
@@ -205,13 +211,50 @@ class LeRobotDatasetMetadata:
         all_values = self._stats_accumulators[values_key]
         q01 = np.percentile(all_values, 1, axis=0).astype(np.float64)
         q99 = np.percentile(all_values, 99, axis=0).astype(np.float64)
+        mean = accum["sum"] / max(accum["count"], 1)
+        variance = accum["sumsq"] / max(accum["count"], 1) - np.square(mean)
+        std = np.sqrt(np.maximum(variance, 0.0))
 
         return {
             "count": int(accum["count"]),
+            "sum": accum["sum"].tolist(),
+            "sumsq": accum["sumsq"].tolist(),
             "min": accum["min"].tolist(),
             "max": accum["max"].tolist(),
+            "mean": mean.tolist(),
+            "std": std.tolist(),
             "q01": q01.tolist(),
             "q99": q99.tolist(),
+        }
+
+    def _read_saved_numeric_columns(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """从已写入 parquet 的全量数据重建状态和动作数组。"""
+        if not self.data_dir.exists():
+            return None
+
+        states = []
+        actions = []
+        for parquet_file in sorted(self.data_dir.glob("chunk-*/file-*.parquet")):
+            df = pd.read_parquet(parquet_file, columns=["observation.state", "action"])
+            states.extend(np.asarray(value, dtype=np.float32) for value in df["observation.state"])
+            actions.extend(np.asarray(value, dtype=np.float32) for value in df["action"])
+
+        if not states or not actions:
+            return None
+
+        return np.stack(states), np.stack(actions)
+
+    def _rebuild_stats_from_saved_data(self):
+        """确保 stats.json 反映整个数据集，而不是最近一次导出的 episode。"""
+        saved_data = self._read_saved_numeric_columns()
+        if saved_data is None:
+            return
+
+        states_array, actions_array = saved_data
+        self._stats_accumulators = {}
+        self._stats = {
+            "observation.state": self._build_stats_entry("observation.state", states_array),
+            "action": self._build_stats_entry("action", actions_array),
         }
 
     def _ensure_dirs(self):
@@ -415,6 +458,7 @@ class LeRobotDatasetMetadata:
         """保存所有元数据文件"""
         # 保存 info.json
         self._ensure_dirs()
+        self._rebuild_stats_from_saved_data()
         info = self.info
         with open(self.meta_dir / "info.json", "w") as f:
             json.dump(info, f, indent=2)

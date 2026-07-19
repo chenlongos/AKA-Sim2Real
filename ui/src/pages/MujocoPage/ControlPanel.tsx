@@ -9,6 +9,10 @@ interface Props {
   onTurnSpeedChange: (v: number) => void;
 }
 
+const DRIVE_SPEED_MIN = 0.5;
+const DRIVE_SPEED_MAX = 5;
+const DRIVE_SPEED_STEP = 0.1;
+
 export function ControlPanel({
   isLoaded,
   reset,
@@ -27,10 +31,13 @@ export function ControlPanel({
         <h3 className="text-sm font-medium text-slate-300 mb-3">Drive Settings</h3>
         <div className="mb-2">
           <label className="block text-xs text-slate-400 mb-1">
-            Speed: {driveSpeed.toFixed(0)}
+            Speed: {driveSpeed.toFixed(1)}
           </label>
           <input
-            type="range" min={1} max={15} step={1}
+            type="range"
+            min={DRIVE_SPEED_MIN}
+            max={DRIVE_SPEED_MAX}
+            step={DRIVE_SPEED_STEP}
             value={driveSpeed}
             onChange={(e) => onDriveSpeedChange(parseFloat(e.target.value))}
             className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"

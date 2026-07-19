@@ -22,6 +22,13 @@ def set_sio_server(sio):
     _sio_server = sio
 
 
+async def _run_training_task(**kwargs):
+    try:
+        await training.train_model(_sio_server, **kwargs)
+    except Exception:
+        logger.exception("后台训练任务异常退出")
+
+
 @router.post("")
 async def start_training(request: TrainRequest, user_id: str = Query(...)):
     """启动训练。"""
@@ -59,20 +66,24 @@ async def start_training(request: TrainRequest, user_id: str = Query(...)):
         if request.resume_from:
             resume_path = str(project_root / request.resume_from)
 
-        logger.info(f"收到开始训练请求: user={user_id}, epochs={request.epochs}, batch_size={request.batch_size}, lr={request.lr}, resume_from={resume_path}")
-
-        asyncio.create_task(
-            training.train_model(
-                _sio_server,
-                user_id=user_id,
-                data_dir=str(data_path),
-                output_dir=str(output_path),
-                epochs=request.epochs,
-                batch_size=request.batch_size,
-                lr=request.lr,
-                resume_from=resume_path,
-            )
+        logger.info(
+            "收到开始训练请求: user=%s, epochs=%s, batch_size=%s, lr=%s, resume_from=%s",
+            user_id,
+            request.epochs,
+            request.batch_size,
+            request.lr,
+            resume_path,
         )
+
+        asyncio.create_task(_run_training_task(
+            user_id=user_id,
+            data_dir=str(data_path),
+            output_dir=str(output_path),
+            epochs=request.epochs,
+            batch_size=request.batch_size,
+            lr=request.lr,
+            resume_from=resume_path,
+        ))
 
         resume_msg = f"，从模型继续: {request.resume_from}" if request.resume_from else ""
         return {

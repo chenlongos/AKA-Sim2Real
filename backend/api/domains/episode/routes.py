@@ -2,6 +2,7 @@
 AKA-Sim 后端 - Episode/数据采集域 API
 """
 
+import json
 import logging
 from pathlib import Path
 
@@ -27,10 +28,13 @@ async def list_dataset_dirs(user_id: str):
 
     datasets = []
     for item in user_dataset_path.iterdir():
-        if item.is_dir() and (item / "data").exists() or (item / "meta").exists():
-            datasets.append(item.name)
+        if item.is_dir() and ((item / "data").exists() or (item / "meta").exists()):
+            info_path = item / "meta" / "info.json"
+            sort_time = info_path.stat().st_mtime if info_path.exists() else item.stat().st_mtime
+            datasets.append((item.name, sort_time))
 
-    return {"datasets": sorted(datasets)}
+    datasets.sort(key=lambda entry: entry[1], reverse=True)
+    return {"datasets": [name for name, _ in datasets]}
 
 
 @router.get("/models")
@@ -43,13 +47,50 @@ async def list_models(user_id: str, dataset_name: str = "default"):
     if not train_path.exists():
         return {"models": []}
 
+    if dataset_name:
+        dataset_model_path = train_path / dataset_name
+        has_model = (dataset_model_path / "model.pt").exists() or (dataset_model_path / "final_model.pt").exists()
+        if dataset_model_path.is_dir() and has_model:
+            return {"models": [dataset_name]}
+        return {"models": []}
+
     # 返回子文件夹名称
     models = []
     for item in train_path.iterdir():
-        if item.is_dir():
+        has_model = (item / "model.pt").exists() or (item / "final_model.pt").exists()
+        if item.is_dir() and has_model:
             models.append(item.name)
 
     return {"models": sorted(models)}
+
+
+@router.get("/info")
+async def get_dataset_info(user_id: str, dataset_name: str):
+    """读取数据集元信息。"""
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not dataset_name or ".." in dataset_name or "/" in dataset_name or "\\" in dataset_name:
+        raise HTTPException(status_code=400, detail="invalid dataset_name")
+
+    project_root = Path(__file__).resolve().parents[4]
+    info_path = project_root / "output" / "dataset" / user_id / dataset_name / "meta" / "info.json"
+    if not info_path.exists():
+        return {
+            "dataset_name": dataset_name,
+            "total_frames": 0,
+            "total_episodes": 0,
+            "exists": False,
+        }
+
+    with open(info_path, "r") as f:
+        info = json.load(f)
+
+    return {
+        "dataset_name": dataset_name,
+        "total_frames": int(info.get("total_frames", 0) or 0),
+        "total_episodes": int(info.get("total_episodes", 0) or 0),
+        "exists": True,
+    }
 
 
 @router.post("/collect")

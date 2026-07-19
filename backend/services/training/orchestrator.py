@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -22,12 +23,37 @@ from backend.services.training.state import get_training_state, stop_training
 
 logger = logging.getLogger(__name__)
 
+TRAINING_MAX_CPU_THREADS = 4
+TRAINING_RESERVED_CPU_THREADS = 2
+
 
 def _extract_checkpoint_payload(checkpoint):
     """兼容旧格式 state_dict 和新格式 checkpoint dict。"""
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
         return checkpoint["model_state_dict"], checkpoint.get("config", {})
     return checkpoint, {}
+
+
+def _configure_training_cpu_threads():
+    cpu_count = os.cpu_count() or 1
+    available_threads = max(1, cpu_count - TRAINING_RESERVED_CPU_THREADS)
+    training_threads = min(TRAINING_MAX_CPU_THREADS, available_threads)
+
+    if torch.get_num_threads() != training_threads:
+        torch.set_num_threads(training_threads)
+
+    try:
+        if torch.get_num_interop_threads() != training_threads:
+            torch.set_num_interop_threads(training_threads)
+    except RuntimeError as exc:
+        logger.debug("PyTorch interop 线程数已锁定，保持当前设置: %s", exc)
+
+    logger.info(
+        "训练 CPU 线程配置: torch=%s, interop=%s, cpu=%s",
+        torch.get_num_threads(),
+        torch.get_num_interop_threads(),
+        cpu_count,
+    )
 
 
 def _train_model_sync(
@@ -48,6 +74,8 @@ def _train_model_sync(
     training_state["total_epochs"] = epochs
     training_state["loss"] = 0.0
     training_state["progress"] = 0.0
+    training_state["error"] = None
+    training_state["message"] = "训练中"
 
     callbacks = TrainingCallbacks(sio_server, loop=loop, namespace="/", training_state=training_state)
 
@@ -57,8 +85,12 @@ def _train_model_sync(
         if resume_from:
             logger.info(f"从已有模型继续训练: {resume_from}")
         logger.info("=" * 20)
+        _configure_training_cpu_threads()
 
         data = load_dataset(data_dir)
+        if not data:
+            raise ValueError(f"训练集为空或无法加载: {data_dir}")
+
         action_dim = data["action"].shape[-1]
         raw_state_dim = data["observation.state"].shape[-1]
         state_dim = 2
@@ -172,10 +204,13 @@ def _train_model_sync(
             logger.info(f"模型已保存到: {final_path}")
 
         callbacks.on_train_end(str(final_path))
+        training_state["message"] = f"训练完成: {final_path}"
         return model
     except Exception as exc:
-        logger.error(f"训练失败: {exc}")
+        logger.exception("训练失败")
         training_state["is_running"] = False
+        training_state["error"] = str(exc)
+        training_state["message"] = f"训练失败: {exc}"
         raise
 
 

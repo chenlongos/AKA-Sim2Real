@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, type RefObject } from "react";
 import * as THREE from "three";
 import type { MainModule, MjModel, MjData } from "@mujoco/mujoco";
 
@@ -32,7 +32,7 @@ function createGeomMesh(
 
   switch (type) {
     case MJ_GEOM_PLANE: {
-      const geometry = new THREE.PlaneGeometry(20, 20);
+      const geometry = new THREE.PlaneGeometry(size[0] * 2, size[1] * 2);
       geometry.rotateX(-Math.PI / 2);
       const material = new THREE.MeshStandardMaterial({
         color,
@@ -188,6 +188,9 @@ interface Props {
   isLoaded: boolean;
   onStep: () => void;
   showJointOverlay: boolean;
+  onPlaceBall?: (position: { x: number; y: number }) => void;
+  onFirstPersonCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+  firstPersonContainerRef?: RefObject<HTMLDivElement | null>;
 }
 
 export default function MujocoRenderer({
@@ -197,14 +200,17 @@ export default function MujocoRenderer({
   isLoaded,
   onStep,
   showJointOverlay,
+  onPlaceBall,
+  onFirstPersonCanvasReady,
+  firstPersonContainerRef,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fpContainerRef = useRef<HTMLDivElement>(null);
+  const fallbackFpContainerRef = useRef<HTMLDivElement>(null);
   const axesContainerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const orbitCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const fpCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const axesCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const axesCameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const axesSceneRef = useRef<THREE.Scene | null>(null);
   const axesGroupRef = useRef<THREE.Group | null>(null);
   const mainRendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -213,6 +219,7 @@ export default function MujocoRenderer({
   const bodyGroupsRef = useRef<THREE.Group[]>([]);
   const animRef = useRef(0);
   const draggingRef = useRef(false);
+  const draggingBallRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const orbitStateRef = useRef({
     azimuth: 0.5,
@@ -222,15 +229,61 @@ export default function MujocoRenderer({
   });
   const fpCamIdxRef = useRef(-1);
   const fpCamBodyIdRef = useRef(-1);
+  const carBodyIdRef = useRef(-1);
   const jointGroupRef = useRef<THREE.Group | null>(null);
   const jointOverlaysRef = useRef<JointOverlay[]>([]);
   const jointFrameCountRef = useRef(0);
+  const prevLoadedRef = useRef(false);
   const showJointOverlayRef = useRef(showJointOverlay);
-  showJointOverlayRef.current = showJointOverlay;
+
+  useEffect(() => {
+    showJointOverlayRef.current = showJointOverlay;
+  }, [showJointOverlay]);
+
+  const getRaycasterFromPointer = useCallback((e: React.PointerEvent) => {
+    const container = containerRef.current;
+    const camera = orbitCameraRef.current;
+    if (!container || !camera) return null;
+
+    const rect = container.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(pointer, camera);
+    return raycaster;
+  }, []);
+
+  const findTargetBallGroup = useCallback(() => {
+    return bodyGroupsRef.current.find((group) => group.name === "target_ball") ?? null;
+  }, []);
+
+  const isPointerOnTargetBall = useCallback((e: React.PointerEvent) => {
+    const ballGroup = findTargetBallGroup();
+    const raycaster = getRaycasterFromPointer(e);
+    if (!ballGroup || !raycaster) return false;
+
+    return raycaster.intersectObject(ballGroup, true).length > 0;
+  }, [findTargetBallGroup, getRaycasterFromPointer]);
+
+  const placeBallFromPointer = useCallback((e: React.PointerEvent) => {
+    const raycaster = getRaycasterFromPointer(e);
+    if (!raycaster || !onPlaceBall) return;
+
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const hitPoint = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(groundPlane, hitPoint)) return;
+
+    onPlaceBall({
+      x: hitPoint.x,
+      y: -hitPoint.z,
+    });
+  }, [getRaycasterFromPointer, onPlaceBall]);
 
   const setupScene = useCallback(() => {
     const container = containerRef.current;
-    const fpContainer = fpContainerRef.current;
+    const fpContainer = firstPersonContainerRef?.current ?? fallbackFpContainerRef.current;
     if (!container || !fpContainer) return;
 
     const scene = new THREE.Scene();
@@ -254,17 +307,22 @@ export default function MujocoRenderer({
     mainRenderer.domElement.style.left = "0";
     container.appendChild(mainRenderer.domElement);
 
-    const fpRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const fpRenderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: true,
+    });
     fpRenderer.setClearColor(0x2a2a4e, 1);
     fpRenderer.setSize(fpW, fpH);
     fpRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     fpRenderer.shadowMap.enabled = true;
     fpContainer.appendChild(fpRenderer.domElement);
+    onFirstPersonCanvasReady?.(fpRenderer.domElement);
 
     // Axes gizmo (bottom-left)
     const axesContainer = axesContainerRef.current;
     let axesScene: THREE.Scene | null = null;
-    let axesCamera: THREE.PerspectiveCamera | null = null;
+    let axesCamera: THREE.OrthographicCamera | null = null;
     let axesRenderer: THREE.WebGLRenderer | null = null;
     if (axesContainer) {
       axesScene = new THREE.Scene();
@@ -277,8 +335,9 @@ export default function MujocoRenderer({
       axesGroupRef.current = axesGroup;
       const size = 120;
       const halfSize = 1.3;
-      axesCamera = new THREE.OrthographicCamera(-halfSize, halfSize, halfSize, -halfSize, 0.1, 10);
-      axesCamera.position.set(0, 0, 3);
+      const orthographicCamera = new THREE.OrthographicCamera(-halfSize, halfSize, halfSize, -halfSize, 0.1, 10);
+      orthographicCamera.position.set(0, 0, 3);
+      axesCamera = orthographicCamera;
       axesRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       axesRenderer.setClearColor(0x1a1a2e, 1);
       axesRenderer.setSize(size, size);
@@ -301,7 +360,7 @@ export default function MujocoRenderer({
     const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3a3a3a, 0.7);
     scene.add(hemi);
 
-    const grid = new THREE.GridHelper(10, 20, 0x444466, 0x222244);
+    const grid = new THREE.GridHelper(20, 40, 0x444466, 0x222244);
     scene.add(grid);
 
     const axes = new THREE.AxesHelper(2);
@@ -312,7 +371,7 @@ export default function MujocoRenderer({
     fpCameraRef.current = fpCamera;
     mainRendererRef.current = mainRenderer;
     fpRendererRef.current = fpRenderer;
-  }, []);
+  }, [firstPersonContainerRef, onFirstPersonCanvasReady]);
 
   const updateOrbitCamera = useCallback(() => {
     const camera = orbitCameraRef.current;
@@ -336,7 +395,7 @@ export default function MujocoRenderer({
     setupScene();
     const handleResize = () => {
       const container = containerRef.current;
-      const fpContainer = fpContainerRef.current;
+      const fpContainer = firstPersonContainerRef?.current ?? fallbackFpContainerRef.current;
       const mainRenderer = mainRendererRef.current;
       const fpRenderer = fpRendererRef.current;
       const orbitCamera = orbitCameraRef.current;
@@ -367,10 +426,11 @@ export default function MujocoRenderer({
       fpRendererRef.current?.dispose();
       axesRendererRef.current?.domElement?.remove();
       axesRendererRef.current?.dispose();
+      onFirstPersonCanvasReady?.(null);
+      prevLoadedRef.current = false;
     };
-  }, [setupScene]);
+  }, [firstPersonContainerRef, setupScene, onFirstPersonCanvasReady]);
 
-  const prevLoadedRef = useRef(false);
   useEffect(() => {
     if (!isLoaded || !model.current || prevLoadedRef.current) return;
     prevLoadedRef.current = true;
@@ -418,6 +478,7 @@ export default function MujocoRenderer({
     const { fpIdx, tdIdx } = resolveCameraIndices(m);
     fpCamIdxRef.current = fpIdx;
     fpCamBodyIdRef.current = fpIdx >= 0 ? (m.cam_bodyid?.[fpIdx] ?? -1) : -1;
+    carBodyIdRef.current = bodyGroups.findIndex((group) => group.name === "car");
 
     const orbitCam = orbitCameraRef.current;
     const fpCam = fpCameraRef.current;
@@ -459,7 +520,6 @@ export default function MujocoRenderer({
       const canvas = document.createElement("canvas");
       canvas.width = 256;
       canvas.height = 64;
-      const ctx = canvas.getContext("2d")!;
       const texture = new THREE.CanvasTexture(canvas);
       texture.minFilter = THREE.LinearFilter;
       const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
@@ -473,7 +533,7 @@ export default function MujocoRenderer({
     jointOverlaysRef.current = overlays;
 
     updateOrbitCamera();
-  }, [isLoaded, model, updateOrbitCamera]);
+  }, [isLoaded, model, showJointOverlay, updateOrbitCamera]);
 
   useEffect(() => {
     let running = true;
@@ -504,11 +564,13 @@ export default function MujocoRenderer({
         }
 
         // Track car body position for orbit camera target
-        const carBodyId = 1;
+        const carBodyId = carBodyIdRef.current;
         const carPos3 = new THREE.Vector3();
-        mjPosToThree(d.xpos, carBodyId, carPos3);
-        orbitStateRef.current.target.set(carPos3.x, carPos3.y + 0.3, carPos3.z);
-        updateOrbitCamera();
+        if (carBodyId >= 0) {
+          mjPosToThree(d.xpos, carBodyId, carPos3);
+          orbitStateRef.current.target.set(carPos3.x, carPos3.y + 0.3, carPos3.z);
+          updateOrbitCamera();
+        }
 
         // First-person camera: reuse body group transform (same proven quaternion path)
         const fpIdx = fpCamIdxRef.current;
@@ -552,16 +614,16 @@ export default function MujocoRenderer({
                 const qposVal = d.qpos[ov.qposAdr]?.toFixed(3) ?? "?";
                 const canvas = (ov.sprite.material as THREE.SpriteMaterial).map?.image as HTMLCanvasElement;
                 if (canvas) {
-                  const ctx = canvas.getContext("2d");
-                  if (ctx) {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.fillStyle = "rgba(0,0,0,0.75)";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.fillStyle = "#ffffff";
-                    ctx.font = "20px monospace";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillText(`${ov.name}: ${qposVal}`, 128, 32);
+                  const labelCtx = canvas.getContext("2d");
+                  if (labelCtx) {
+                    labelCtx.clearRect(0, 0, canvas.width, canvas.height);
+                    labelCtx.fillStyle = "rgba(0,0,0,0.75)";
+                    labelCtx.fillRect(0, 0, canvas.width, canvas.height);
+                    labelCtx.fillStyle = "#ffffff";
+                    labelCtx.font = "20px monospace";
+                    labelCtx.textAlign = "center";
+                    labelCtx.textBaseline = "middle";
+                    labelCtx.fillText(`${ov.name}: ${qposVal}`, 128, 32);
                     (ov.sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
                   }
                 }
@@ -599,16 +661,28 @@ export default function MujocoRenderer({
       running = false;
       cancelAnimationFrame(animRef.current);
     };
-  }, [isLoaded, mujoco, data, onStep]);
+  }, [isLoaded, mujoco, data, model, onStep, updateOrbitCamera]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (isPointerOnTargetBall(e)) {
+      draggingBallRef.current = true;
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      placeBallFromPointer(e);
+      return;
+    }
+
     draggingRef.current = true;
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
+  }, [isPointerOnTargetBall, placeBallFromPointer]);
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (draggingBallRef.current) {
+        placeBallFromPointer(e);
+        return;
+      }
+
       if (!draggingRef.current) return;
       const dx = e.clientX - lastMouseRef.current.x;
       const dy = e.clientY - lastMouseRef.current.y;
@@ -622,10 +696,15 @@ export default function MujocoRenderer({
       );
       updateOrbitCamera();
     },
-    [updateOrbitCamera],
+    [placeBallFromPointer, updateOrbitCamera],
   );
 
   const handlePointerUp = useCallback(() => {
+    if (draggingBallRef.current) {
+      draggingBallRef.current = false;
+      return;
+    }
+
     draggingRef.current = false;
   }, []);
 
@@ -660,11 +739,13 @@ export default function MujocoRenderer({
         ref={axesContainerRef}
         className="absolute bottom-3 left-3 w-[120px] h-[120px] z-10 rounded-md overflow-hidden border border-slate-600/50"
       />
-      <div
-        ref={fpContainerRef}
-        className="absolute bottom-3 right-3 w-[300px] h-[200px] border-2 border-violet-500/60 rounded-md overflow-hidden shadow-lg shadow-violet-900/30 z-10"
-        style={{ pointerEvents: "none" }}
-      />
+      {!firstPersonContainerRef && (
+        <div
+          ref={fallbackFpContainerRef}
+          className="absolute bottom-3 right-3 w-[300px] h-[200px] border-2 border-violet-500/60 rounded-md overflow-hidden shadow-lg shadow-violet-900/30 z-10"
+          style={{ pointerEvents: "none" }}
+        />
+      )}
     </div>
   );
 }

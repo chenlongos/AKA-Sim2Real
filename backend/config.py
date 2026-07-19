@@ -10,7 +10,7 @@ class Config:
 
     # 服务器配置
     HOST = os.getenv("HOST", "0.0.0.0")
-    PORT = int(os.getenv("PORT", "8000"))
+    PORT = int(os.getenv("PORT", "8001"))
 
     # 模型配置
     MODEL_PATH = os.getenv("MODEL_PATH", None)
