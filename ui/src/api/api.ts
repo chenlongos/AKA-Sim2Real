@@ -18,6 +18,18 @@ export const listDatasetDirs = (userId: string) =>
     .get(`dataset/dirs?user_id=${encodeURIComponent(userId)}`)
     .json<DatasetDirsResponse>();
 
+export interface DatasetInfoResponse {
+  dataset_name: string;
+  total_frames: number;
+  total_episodes: number;
+  exists: boolean;
+}
+
+export const getDatasetInfo = (userId: string, datasetName: string) =>
+  api
+    .get(`dataset/info?user_id=${encodeURIComponent(userId)}&dataset_name=${encodeURIComponent(datasetName)}`)
+    .json<DatasetInfoResponse>();
+
 export interface ModelsResponse {
   models?: string[];
 }
@@ -48,6 +60,21 @@ export const startTraining = (userId: string, params: TrainingParams) =>
   api
     .post(`train?user_id=${encodeURIComponent(userId)}`, { json: params })
     .json<TrainingResponse>();
+
+export interface TrainingStatus {
+  is_running: boolean;
+  epoch: number;
+  total_epochs: number;
+  loss: number;
+  progress: number;
+  error?: string | null;
+  message?: string;
+}
+
+export const getTrainingStatus = (userId: string) =>
+  api
+    .get(`train/status?user_id=${encodeURIComponent(userId)}`)
+    .json<TrainingStatus>();
 
 export interface StopTrainingResponse {
   success?: boolean;

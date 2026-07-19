@@ -1,53 +1,138 @@
 import { useRef, useCallback, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import type { MjData } from "@mujoco/mujoco";
+import type { MjModel, MjData } from "@mujoco/mujoco";
 
-const CAPTURE_INTERVAL_MS = 100; // 10 FPS
-const USER_ID = "sim_user";
-
-interface Frame {
-  timestamp: number;
-  image: string; // base64 JPEG
-  action: [number, number, number]; // [left, right, gripper]
-  state: { vel_left: number; vel_right: number };
+interface UseDataCollectionOptions {
+  userId: string;
+  datasetName: string;
+  episodeId: number;
+  fps: number;
+  taskName: string;
+  modelRef: React.RefObject<MjModel | null>;
+  dataRef: React.RefObject<MjData | null>;
+  fpCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  onLog?: (message: string) => void;
+  onEpisodeEnded?: (payload: { output_path?: string; frame_count?: number; error?: string }) => void;
 }
 
-export function useDataCollection(
-  dataRef: React.RefObject<MjData | null>,
-  fpCanvasRef: React.RefObject<HTMLCanvasElement | null>,
-) {
+const LEFT_WHEEL_JOINTS = ["wheel_fl_joint", "wheel_rl_joint"];
+const RIGHT_WHEEL_JOINTS = ["wheel_fr_joint", "wheel_rr_joint"];
+
+function toUint8Array(buf: unknown): Uint8Array | null {
+  if (typeof buf === "string") {
+    return new TextEncoder().encode(buf);
+  }
+  if (buf instanceof ArrayBuffer) {
+    return new Uint8Array(buf);
+  }
+  if (ArrayBuffer.isView(buf)) {
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+  return null;
+}
+
+function resolveName(names: unknown, addr: number): string {
+  const buf = toUint8Array(names);
+  if (!buf || addr < 0) return "";
+  let end = addr;
+  while (end < buf.length && buf[end] !== 0) end++;
+  return new TextDecoder().decode(buf.slice(addr, end));
+}
+
+function getJointQvel(model: MjModel, data: MjData, jointName: string) {
+  for (let jointId = 0; jointId < model.njnt; jointId++) {
+    if (resolveName(model.names, model.name_jntadr[jointId]) === jointName) {
+      return Number(data.qvel[model.jnt_dofadr[jointId]] ?? 0);
+    }
+  }
+  return 0;
+}
+
+function averageJointVelocity(model: MjModel, data: MjData, jointNames: string[]) {
+  const values = jointNames.map((jointName) => getJointQvel(model, data, jointName));
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function readWheelState(model: MjModel | null, data: MjData | null) {
+  if (!data) return { velLeft: 0, velRight: 0 };
+  if (model) {
+    return {
+      velLeft: averageJointVelocity(model, data, LEFT_WHEEL_JOINTS),
+      velRight: averageJointVelocity(model, data, RIGHT_WHEEL_JOINTS),
+    };
+  }
+
+  const qvel = data.qvel;
+  const get = (index: number) => (qvel.length > index ? Number(qvel[index]) : 0);
+  const velLeft = (get(0) + get(2)) / 2;
+  const velRight = (get(1) + get(3)) / 2;
+  return { velLeft, velRight };
+}
+
+export function useDataCollection({
+  userId,
+  datasetName,
+  episodeId,
+  fps,
+  taskName,
+  modelRef,
+  dataRef,
+  fpCanvasRef,
+  onLog,
+  onEpisodeEnded,
+}: UseDataCollectionOptions) {
   const [isRecording, setIsRecording] = useState(false);
   const [frameCount, setFrameCount] = useState(0);
-  const [episodeId, setEpisodeId] = useState(1);
-  const [socketStatus, setSocketStatus] = useState<string>("disconnected");
+  const [socketStatus, setSocketStatus] = useState<"disconnected" | "connecting" | "connected" | "error">("disconnected");
 
   const socketRef = useRef<Socket | null>(null);
   const recordingRef = useRef(false);
   const lastCaptureRef = useRef(0);
-  const episodeIdRef = useRef(1);
-  const leftVelRef = useRef(0);
-  const rightVelRef = useRef(0);
+  const leftTargetRef = useRef(0);
+  const rightTargetRef = useRef(0);
+  const localFrameCountRef = useRef(0);
 
-  // Connect to backend
   const connect = useCallback(() => {
-    if (socketRef.current?.connected) return;
-    const s = io("http://localhost:8000", {
-      transports: ["websocket"],
-      namespace: "/sim",
+    if (socketRef.current?.connected) return socketRef.current;
+
+    setSocketStatus("connecting");
+    const socket = io("/sim", {
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+      auth: { clientId: `mujoco_${userId}` },
     });
-    s.on("connect", () => setSocketStatus("connected"));
-    s.on("disconnect", () => setSocketStatus("disconnected"));
-    s.on("connect_error", () => setSocketStatus("error"));
-    s.on("episode_started", (data: { episode_id: number }) => {
-      setEpisodeId(data.episode_id);
-      episodeIdRef.current = data.episode_id;
+
+    socket.on("connect", () => {
+      setSocketStatus("connected");
+      onLog?.("Socket connected to /sim");
     });
-    s.on("collection_count", (data: { count: number }) => {
-      setFrameCount(data.count);
+    socket.on("disconnect", () => {
+      setSocketStatus("disconnected");
+      onLog?.("Socket disconnected");
     });
-    socketRef.current = s;
-    return s;
-  }, []);
+    socket.on("connect_error", () => {
+      setSocketStatus("error");
+      onLog?.("Socket connection failed");
+    });
+    socket.on("collection_count", (payload: { count: number }) => {
+      setFrameCount(payload.count);
+      localFrameCountRef.current = payload.count;
+    });
+    socket.on("episode_started", (payload: { episode_id: number }) => {
+      onLog?.(`Episode ${payload.episode_id} started`);
+    });
+    socket.on("episode_ended", (payload: { output_path?: string; frame_count?: number; error?: string }) => {
+      if (payload.error) {
+        onLog?.(`Export failed: ${payload.error}`);
+      } else {
+        onLog?.(`Dataset exported: ${payload.output_path || "unknown path"}`);
+      }
+      onEpisodeEnded?.(payload);
+    });
+
+    socketRef.current = socket;
+    return socket;
+  }, [onEpisodeEnded, onLog, userId]);
 
   const disconnect = useCallback(() => {
     socketRef.current?.disconnect();
@@ -55,92 +140,78 @@ export function useDataCollection(
     setSocketStatus("disconnected");
   }, []);
 
-  // Start recording
   const startRecording = useCallback(() => {
-    const s = connect();
+    const socket = connect();
     recordingRef.current = true;
     setIsRecording(true);
     setFrameCount(0);
+    localFrameCountRef.current = 0;
     lastCaptureRef.current = 0;
 
-    s.emit("start_episode", {
-      user_id: USER_ID,
-      episode_id: episodeIdRef.current,
-      task_name: "maze_driving",
+    socket.emit("start_episode", {
+      user_id: userId,
+      episode_id: episodeId,
+      task_name: taskName,
     });
-  }, [connect]);
+    onLog?.(`Start collection: ${datasetName}, episode ${episodeId}`);
+  }, [connect, datasetName, episodeId, onLog, taskName, userId]);
 
-  // Stop recording
   const stopRecording = useCallback(() => {
     recordingRef.current = false;
     setIsRecording(false);
-    const s = socketRef.current;
-    if (s) {
-      s.emit("end_episode", {
-        user_id: USER_ID,
-        episode_id: episodeIdRef.current,
-      });
-      episodeIdRef.current += 1;
-    }
-  }, []);
 
-  // Set current action values (called from drive loop)
+    socketRef.current?.emit("end_episode", {
+      user_id: userId,
+      episode_id: episodeId,
+    });
+    onLog?.(`Stop collection: ${localFrameCountRef.current} frames`);
+  }, [episodeId, onLog, userId]);
+
   const setAction = useCallback((left: number, right: number) => {
-    leftVelRef.current = left;
-    rightVelRef.current = right;
+    leftTargetRef.current = left;
+    rightTargetRef.current = right;
   }, []);
 
-  // Capture frame + send data (called each physics step)
   const captureFrame = useCallback(() => {
     if (!recordingRef.current) return;
 
     const now = performance.now();
-    if (now - lastCaptureRef.current < CAPTURE_INTERVAL_MS) return;
+    const intervalMs = 1000 / Math.max(1, fps);
+    if (now - lastCaptureRef.current < intervalMs) return;
     lastCaptureRef.current = now;
 
-    // Capture FPV canvas
-    const fpCanvas = fpCanvasRef.current;
-    if (!fpCanvas) return;
-    const image = fpCanvas.toDataURL("image/jpeg", 0.7);
-
-    // Read wheel velocities from MuJoCo data
-    const d = dataRef.current;
-    let velLeft = 0;
-    let velRight = 0;
-    if (d) {
-      // Wheel joints are at indices 0-3 (fl, fr, rl, rr)
-      // Joint velocity = d.qvel[joint_dof_adr]
-      const getJointVel = (name: string) => {
-        // Simplified: use the first 4 hinge joints
-        // wheel_fl=0, wheel_fr=1, wheel_rl=2, wheel_rr=3
-        const idx = ["wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"].indexOf(name);
-        if (idx >= 0 && d.qvel.length > idx) return d.qvel[idx];
-        return 0;
-      };
-      velLeft = (getJointVel("wheel_fl") + getJointVel("wheel_rl")) / 2;
-      velRight = (getJointVel("wheel_fr") + getJointVel("wheel_rr")) / 2;
+    const canvas = fpCanvasRef.current;
+    if (!canvas) {
+      onLog?.("Skip frame: first-person canvas is not ready");
+      return;
     }
 
-    const action: [number, number, number] = [
-      leftVelRef.current,
-      rightVelRef.current,
-      0, // gripper (not used for car)
-    ];
+    const image = canvas.toDataURL("image/jpeg", 0.75);
+    const { velLeft, velRight } = readWheelState(modelRef.current, dataRef.current);
 
     socketRef.current?.emit("collect_data", {
-      user_id: USER_ID,
-      image: image.replace(/^data:image\/jpeg;base64,/, ""),
-      dataset_name: "maze",
-      timestamp: now,
-      state: { vel_left: velLeft, vel_right: velRight },
-      action,
+      user_id: userId,
+      dataset_name: datasetName,
+      image,
+      timestamp: Date.now(),
+      state: {
+        vel_left: velLeft,
+        vel_right: velRight,
+      },
+      action: [
+        leftTargetRef.current,
+        rightTargetRef.current,
+        0,
+      ],
     });
-  }, [dataRef, fpCanvasRef]);
+
+    localFrameCountRef.current += 1;
+    setFrameCount(localFrameCountRef.current);
+  }, [dataRef, datasetName, fpCanvasRef, fps, modelRef, onLog, userId]);
 
   return {
     isRecording,
     frameCount,
-    episodeId,
     socketStatus,
     connect,
     disconnect,

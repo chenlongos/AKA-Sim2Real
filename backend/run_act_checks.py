@@ -6,7 +6,7 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PYTEST_CMD = ["python3", "-m", "pytest", "tests/act", "-q"]
+PYTEST_CMD = [sys.executable, "-m", "pytest", "tests/act", "-q"]
 
 
 def main() -> int:

@@ -28,7 +28,7 @@ npm run dev
 npm run build
 ```
 
-前端运行在 **http://localhost:5173**，会自动代理 API 请求到后端 `http://localhost:8000`。
+前端运行在 **http://localhost:5175**，会自动代理 API 请求到后端 `http://localhost:8000`。
 
 ## 页面
 
